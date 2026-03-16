@@ -52,7 +52,11 @@ public class SlimeMapRenderer : MonoBehaviour
 
     private void Initialize()
     {
-        if (isInitialized || SlimeShader == null) return;
+        if (isInitialized) return;
+        if (SlimeShader == null) {
+            Debug.LogError("[RENDERER] SlimeShader is NULL! Cannot initialize.");
+            return;
+        }
 
         try {
             drawKernel = SlimeShader.FindKernel("DrawMap");
@@ -90,18 +94,20 @@ public class SlimeMapRenderer : MonoBehaviour
         SlimeShader.SetTexture(clearKernel, "TrailMap", TrailMap);
         SlimeShader.SetTexture(clearKernel, "DiffusedTrailMap", DiffusedMap);
 
-        // Clear textures to diagnostic Red
+        // Clear textures to Black via shader
         int groupsX = Mathf.CeilToInt(Width / 8f);
         int groupsY = Mathf.CeilToInt(Height / 8f);
         SlimeShader.Dispatch(clearKernel, groupsX, groupsY, 1);
 
         if (DisplayTarget != null) {
             DisplayTarget.sharedMaterial.mainTexture = DiffusedMap;
-            DisplayTarget.sharedMaterial.SetTexture("_MainTex", DiffusedMap);
+            Debug.LogWarning($"[RENDERER] Assigned DiffusedMap to {DisplayTarget.name} material.");
+        } else {
+             Debug.LogWarning("[RENDERER] DisplayTarget is STILL NULL during Initialize.");
         }
 
         isInitialized = true;
-        Debug.Log("[RENDERER] Initialized successfully.");
+        Debug.LogWarning("[RENDERER] Initialized successfully.");
     }
 
     // Called by ECS Dispatcher
