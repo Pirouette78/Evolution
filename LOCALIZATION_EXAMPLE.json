@@ -1,0 +1,10 @@
+{
+    "language": "fr",
+    "strings": [
+        {"key": "PHASE_1_TITLE", "value": "Origine Cellulaire"},
+        {"key": "TECH_SPEED_NAME", "value": "Flagelles Vibratiles"},
+        {"key": "TECH_SPEED_DESC", "value": "Augmente la vélocité de base de vos cellules."},
+        {"key": "UI_ENERGY", "value": "Énergie : "},
+        {"key": "UI_EVOLUTION_POINTS", "value": "Points d'Évolution : "}
+    ]
+}

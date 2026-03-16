@@ -1,0 +1,13 @@
+fileFormatVersion: 2
+guid: 6f5a07de7066e834fb33d691244aefd6
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - CellPrefab: {fileID: 4190042043768946925, guid: 407e952aa3ed15e428a8606ce01561a1, type: 3}
+  - FoodPrefab: {fileID: 1124399385610906857, guid: 324912006a219c345943b23dae44f24b, type: 3}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

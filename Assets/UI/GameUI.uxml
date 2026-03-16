@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ui:UXML
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:ui="UnityEngine.UIElements"
+    xsi:noNamespaceSchemaLocation="../../UIElementsSchema/UIElements.xsd">
+
+    <ui:VisualElement name="MainContainer" style="flex-direction: row; justify-content: space-between; padding: 20px; align-items: flex-start; height: 100%;">
+        <ui:Label name="EnergyLabel" text="Énergie : 0" style="font-size: 24px; color: white; -unity-font-style: bold; text-shadow: 1px 1px 2px black;" />
+        <ui:Button name="PauseButton" text="Pause" style="font-size: 20px; padding: 10px 20px; background-color: rgb(50, 50, 50); color: white; border-radius: 5px;" />
+    </ui:VisualElement>
+
+    <ui:VisualElement name="TechContainer" style="position: absolute; bottom: 20px; right: 20px; padding: 15px; background-color: rgba(0, 0, 0, 0.7); border-radius: 10px;">
+        <ui:Label name="TechNameLabel" text="Tech: Membrane Sélective" style="font-size: 18px; color: white; -unity-font-style: bold; margin-bottom: 5px;" />
+        <ui:Label name="TechCostLabel" text="Coût : 1500 Énergie" style="font-size: 14px; color: rgb(200, 200, 200); margin-bottom: 10px;" />
+        <ui:Button name="ResearchButton" text="Rechercher" style="font-size: 16px; padding: 8px 15px; background-color: rgb(0, 100, 200); color: white; border-radius: 5px;" />
+    </ui:VisualElement>
+
+</ui:UXML>
