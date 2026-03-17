@@ -34,11 +34,9 @@ public partial struct FoodSpawnerSystem : ISystem {
 
         if (config.TimeSinceLastSpawn >= config.SpawnInterval) {
             
-            // Count current food
-            int currentFood = 0;
-            foreach (var _ in SystemAPI.Query<RefRO<FoodComponent>>()) {
-                currentFood++;
-            }
+            // Count current food (fast, no allocation)
+            var foodQuery = SystemAPI.QueryBuilder().WithAll<FoodComponent>().Build();
+            int currentFood = foodQuery.CalculateEntityCount();
 
             if (currentFood < config.MaxFoodCount) {
                 var terrainData = SystemAPI.GetSingleton<TerrainMapData>();

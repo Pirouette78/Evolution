@@ -4,12 +4,36 @@
     xmlns:ui="UnityEngine.UIElements"
     xsi:noNamespaceSchemaLocation="../../UIElementsSchema/UIElements.xsd">
 
-    <ui:VisualElement name="MainContainer" style="flex-direction: row; justify-content: space-between; padding: 20px; align-items: flex-start; height: 100%;">
-        <ui:Label name="EnergyLabel" text="Énergie : 0" style="font-size: 24px; color: white; -unity-font-style: bold; text-shadow: 1px 1px 2px black;" />
-        <ui:Button name="PauseButton" text="Pause" style="font-size: 20px; padding: 10px 20px; background-color: rgb(50, 50, 50); color: white; border-radius: 5px;" />
+    <!-- Top bar: Energy + Pause -->
+    <ui:VisualElement name="TopBar" style="flex-direction: row; justify-content: space-between; padding: 12px 20px; align-items: center;">
+        <ui:Label name="EnergyLabel" text="Énergie : 0" style="font-size: 22px; color: white; -unity-font-style: bold; text-shadow: 1px 1px 2px black;" />
+        <ui:Label name="EntityCountLabel" text="Entités : 0" style="font-size: 18px; color: rgb(200, 220, 255); -unity-font-style: bold; text-shadow: 1px 1px 2px black;" />
+        <ui:Button name="PauseButton" text="Pause" style="font-size: 18px; padding: 8px 20px; background-color: rgb(50, 50, 50); color: white; border-radius: 5px;" />
     </ui:VisualElement>
 
-    <ui:VisualElement name="TechContainer" style="position: absolute; bottom: 20px; right: 20px; padding: 15px; background-color: rgba(0, 0, 0, 0.7); border-radius: 10px;">
+    <!-- Bottom-left control panel -->
+    <ui:VisualElement name="ControlPanel" style="position: absolute; bottom: 16px; left: 16px; padding: 14px 18px; background-color: rgba(10, 10, 15, 0.85); border-radius: 10px; min-width: 260px;">
+        
+        <!-- Speed Slider -->
+        <ui:Label text="Vitesse du jeu" style="font-size: 14px; color: rgb(180, 180, 180); margin-bottom: 4px;" />
+        <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 12px;">
+            <ui:Slider name="SpeedSlider" low-value="0" high-value="10" value="1" style="flex-grow: 1;" />
+            <ui:Label name="SpeedValueLabel" text="1.0x" style="font-size: 14px; color: white; min-width: 45px; -unity-text-align: middle-right; margin-left: 8px;" />
+        </ui:VisualElement>
+
+        <!-- Add Entities Button -->
+        <ui:Button name="AddEntitiesButton" text="+ 1000 Entités" style="font-size: 16px; padding: 8px 14px; background-color: rgb(30, 100, 180); color: white; border-radius: 5px; margin-bottom: 8px;" />
+
+        <!-- Toggle Strategy Map -->
+        <ui:Button name="ToggleStrategyMapButton" text="Cacher Strategy Map" style="font-size: 16px; padding: 8px 14px; background-color: rgb(80, 50, 120); color: white; border-radius: 5px; margin-bottom: 8px;" />
+
+        <!-- Overlay Mode -->
+        <ui:Button name="OverlayModeButton" text="Mode Overlay" style="font-size: 16px; padding: 8px 14px; background-color: rgb(50, 80, 100); color: white; border-radius: 5px;" />
+
+    </ui:VisualElement>
+
+    <!-- Bottom-right tech panel -->
+    <ui:VisualElement name="TechContainer" style="position: absolute; bottom: 16px; right: 16px; padding: 15px; background-color: rgba(0, 0, 0, 0.7); border-radius: 10px;">
         <ui:Label name="TechNameLabel" text="Tech: Membrane Sélective" style="font-size: 18px; color: white; -unity-font-style: bold; margin-bottom: 5px;" />
         <ui:Label name="TechCostLabel" text="Coût : 1500 Énergie" style="font-size: 14px; color: rgb(200, 200, 200); margin-bottom: 10px;" />
         <ui:Button name="ResearchButton" text="Rechercher" style="font-size: 16px; padding: 8px 15px; background-color: rgb(0, 100, 200); color: white; border-radius: 5px;" />

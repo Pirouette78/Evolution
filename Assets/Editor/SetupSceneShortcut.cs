@@ -19,77 +19,135 @@ public class SetupSceneShortcut {
             cam.transform.position = new Vector3(256, 256, -10);
             cam.orthographic = true;
             cam.orthographicSize = 256;
-        }
-        
-        var bg = GameObject.Find("BackgroundRenderer");
-        if (bg == null) {
-            bg = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            bg.name = "BackgroundRenderer";
-        }
-        bg.transform.position = new Vector3(256f, 256f, 0f); // Move to Z=0
-        bg.transform.localScale = new Vector3(512f, 512f, 1f);
-        
-        var meshFilter = bg.GetComponent<MeshFilter>();
-        if (meshFilter == null) bg.AddComponent<MeshFilter>().mesh = Resources.GetBuiltinResource<Mesh>("Quad.fbx");
-        
-        var meshRenderer = bg.GetComponent<MeshRenderer>();
-        if (meshRenderer == null) meshRenderer = bg.AddComponent<MeshRenderer>();
-        
-        var renderer = bg.GetComponent<SlimeMapRenderer>();
-        if (renderer == null) renderer = bg.AddComponent<SlimeMapRenderer>();
-        
-        renderer.SlimeShader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/Art/Shaders/SlimeTrailRender.compute");
 
-        // --- Terrain Map Renderer ---
-        var terrainRenderer = bg.GetComponent<TerrainMapRenderer>();
-        if (terrainRenderer == null) terrainRenderer = bg.AddComponent<TerrainMapRenderer>();
-        terrainRenderer.DisplayTarget = meshRenderer;
+            var camCtrl = cam.GetComponent<CameraController>();
+            if (camCtrl == null) camCtrl = cam.gameObject.AddComponent<CameraController>();
+            EditorUtility.SetDirty(cam.gameObject);
+        }
+
+        // --- Game HUD (UIDocument) ---
+        var uiGO = GameObject.Find("GameHUD");
+        if (uiGO == null) uiGO = new GameObject("GameHUD");
+        var uiDoc = uiGO.GetComponent<UnityEngine.UIElements.UIDocument>();
+        if (uiDoc == null) uiDoc = uiGO.AddComponent<UnityEngine.UIElements.UIDocument>();
+        var uxmlAsset = AssetDatabase.LoadAssetAtPath<UnityEngine.UIElements.VisualTreeAsset>("Assets/UI/GameUI.uxml");
+        if (uxmlAsset != null) uiDoc.visualTreeAsset = uxmlAsset;
+        var panelSettings = AssetDatabase.LoadAssetAtPath<UnityEngine.UIElements.PanelSettings>("Assets/UI/GamePanelSettings.asset");
+        if (panelSettings == null) {
+            panelSettings = ScriptableObject.CreateInstance<UnityEngine.UIElements.PanelSettings>();
+            panelSettings.scaleMode = UnityEngine.UIElements.PanelScaleMode.ScaleWithScreenSize;
+            panelSettings.referenceResolution = new Vector2Int(1920, 1080);
+            if (!AssetDatabase.IsValidFolder("Assets/UI")) AssetDatabase.CreateFolder("Assets", "UI");
+            AssetDatabase.CreateAsset(panelSettings, "Assets/UI/GamePanelSettings.asset");
+        }
+        uiDoc.panelSettings = panelSettings;
+        var uiCtrl = uiGO.GetComponent<UIController>();
+        if (uiCtrl == null) uiCtrl = uiGO.AddComponent<UIController>();
+        EditorUtility.SetDirty(uiGO);
+
+        // ============================================================
+        //  LAYER 1: TERRAIN MAP (back layer, z = 1)
+        // ============================================================
+        var terrainGO = GameObject.Find("TerrainLayer");
+        if (terrainGO == null) {
+            terrainGO = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            terrainGO.name = "TerrainLayer";
+        }
+        terrainGO.transform.position = new Vector3(256f, 256f, 1f); // z=1 (behind)
+        terrainGO.transform.localScale = new Vector3(512f, 512f, 1f);
+
+        var terrainMR = terrainGO.GetComponent<MeshRenderer>();
+        if (terrainMR == null) terrainMR = terrainGO.AddComponent<MeshRenderer>();
+
+        // Terrain material (separate)
+        Material terrainMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/Art/Materials/TerrainDisplayMaterial.mat");
+        if (terrainMat == null) {
+            terrainMat = new Material(Shader.Find("Unlit/Texture"));
+            terrainMat.name = "TerrainDisplayMaterial";
+            if (!AssetDatabase.IsValidFolder("Assets/Art/Materials")) AssetDatabase.CreateFolder("Assets/Art", "Materials");
+            AssetDatabase.CreateAsset(terrainMat, "Assets/Art/Materials/TerrainDisplayMaterial.mat");
+        }
+        terrainMat.shader = Shader.Find("Unlit/Texture");
+        terrainMat.color = Color.white;
+        terrainMR.sharedMaterial = terrainMat;
+
+        var terrainRenderer = terrainGO.GetComponent<TerrainMapRenderer>();
+        if (terrainRenderer == null) terrainRenderer = terrainGO.AddComponent<TerrainMapRenderer>();
+        terrainRenderer.DisplayTarget = terrainMR;
         terrainRenderer.Width = 512;
         terrainRenderer.Height = 512;
-        EditorUtility.SetDirty(bg);
-        
-        Material material = AssetDatabase.LoadAssetAtPath<Material>("Assets/Art/Materials/SlimeDisplayMaterial.mat");
-        if (material == null) {
-            material = new Material(Shader.Find("Unlit/Texture"));
-            material.name = "BackgroundMaterial";
-            if (!AssetDatabase.IsValidFolder("Assets/Art/Materials")) AssetDatabase.CreateFolder("Assets/Art", "Materials");
-            AssetDatabase.CreateAsset(material, "Assets/Art/Materials/SlimeDisplayMaterial.mat");
-        } else {
-            material.shader = Shader.Find("Unlit/Texture");
-            material.color = Color.white;
+
+        // Remove SlimeMapRenderer from terrain if it was there from old setup
+        var oldSlime = terrainGO.GetComponent<SlimeMapRenderer>();
+        if (oldSlime != null) Object.DestroyImmediate(oldSlime);
+
+        EditorUtility.SetDirty(terrainGO);
+
+        // ============================================================
+        //  LAYER 2: STRATEGY / SLIME MAP (front layer, z = 0)
+        // ============================================================
+        var strategyGO = GameObject.Find("StrategyLayer");
+        if (strategyGO == null) {
+            strategyGO = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            strategyGO.name = "StrategyLayer";
         }
-        meshRenderer.material = material;
-        
+        strategyGO.transform.position = new Vector3(256f, 256f, 0f); // z=0 (in front)
+        strategyGO.transform.localScale = new Vector3(512f, 512f, 1f);
+
+        var strategyMR = strategyGO.GetComponent<MeshRenderer>();
+        if (strategyMR == null) strategyMR = strategyGO.AddComponent<MeshRenderer>();
+
+        // Strategy material (separate)
+        Material stratMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/Art/Materials/SlimeDisplayMaterial.mat");
+        if (stratMat == null) {
+            stratMat = new Material(Shader.Find("Unlit/Texture"));
+            stratMat.name = "SlimeDisplayMaterial";
+            if (!AssetDatabase.IsValidFolder("Assets/Art/Materials")) AssetDatabase.CreateFolder("Assets/Art", "Materials");
+            AssetDatabase.CreateAsset(stratMat, "Assets/Art/Materials/SlimeDisplayMaterial.mat");
+        }
+        stratMat.shader = Shader.Find("Unlit/Texture");
+        stratMat.color = Color.white;
+        strategyMR.sharedMaterial = stratMat;
+
+        var slimeRenderer = strategyGO.GetComponent<SlimeMapRenderer>();
+        if (slimeRenderer == null) slimeRenderer = strategyGO.AddComponent<SlimeMapRenderer>();
+        slimeRenderer.SlimeShader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/Art/Shaders/SlimeTrailRender.compute");
+        slimeRenderer.DisplayTarget = strategyMR;
+
+        // Remove TerrainMapRenderer from strategy layer if it was there
+        var oldTerrain = strategyGO.GetComponent<TerrainMapRenderer>();
+        if (oldTerrain != null) Object.DestroyImmediate(oldTerrain);
+
+        EditorUtility.SetDirty(strategyGO);
+
+        // ============================================================
+        //  CLEANUP: Remove old BackgroundRenderer if it exists
+        // ============================================================
+        var oldBg = GameObject.Find("BackgroundRenderer");
+        if (oldBg != null) {
+            Debug.Log("[SETUP] Removing old BackgroundRenderer — replaced by TerrainLayer + StrategyLayer.");
+            Object.DestroyImmediate(oldBg);
+        }
+
         // --- ECS SubScene Setup ---
         var authoring = Object.FindAnyObjectByType<GlobalManagerAuthoring>();
         string subScenePath = "Assets/Scenes/ECS_Setup.unity";
         bool subSceneExists = System.IO.File.Exists(subScenePath);
 
-        // Only proceed if we found it and it's in the Main Scene (not already a prefab or in a subscene)
         if (authoring != null && authoring.gameObject.scene.name != "ECS_Setup") {
-            
             if (subSceneExists) {
-                // If the subscene already exists, we should check if it already has an authoring object
-                // If so, the one in the main scene is a duplicate and should be removed
-                Debug.LogWarning("[SETUP] SubScene 'ECS_Setup' already exists. Deleting duplicate authoring object in Main Scene.");
                 Object.DestroyImmediate(authoring.gameObject);
-                authoring = null; // Mark as null so prefab assignment logic below doesn't run on a destroyed object
+                authoring = null;
             } else {
-                if (!AssetDatabase.IsValidFolder("Assets/Scenes")) {
+                if (!AssetDatabase.IsValidFolder("Assets/Scenes"))
                     AssetDatabase.CreateFolder("Assets", "Scenes");
-                }
 
                 Scene newScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
                 EditorSceneManager.SaveScene(newScene, subScenePath);
-
-                // Move the authoring object to the newly created subscene
                 SceneManager.MoveGameObjectToScene(authoring.gameObject, newScene);
                 EditorSceneManager.SaveScene(newScene);
-                
-                // Unload the scene natively because SubScene component will manage it
                 EditorSceneManager.CloseScene(newScene, true);
 
-                // Create the SubScene component loader in the active (Main) scene
                 var subSceneGO = GameObject.Find("ECS_Setup_SubScene");
                 if (subSceneGO == null) {
                     subSceneGO = new GameObject("ECS_Setup_SubScene");
@@ -107,7 +165,6 @@ public class SetupSceneShortcut {
             authoring.FoodPrefab = foodPrefab;
             EditorUtility.SetDirty(authoring);
 
-            // --- Terrain Map Authoring (in same SubScene) ---
             var terrainAuth = authoring.GetComponent<TerrainMapAuthoring>();
             if (terrainAuth == null) terrainAuth = authoring.gameObject.AddComponent<TerrainMapAuthoring>();
             terrainAuth.Width = 512;
@@ -116,13 +173,12 @@ public class SetupSceneShortcut {
             EditorUtility.SetDirty(terrainAuth);
         }
 
-        // --- PROJECT-WIDE SUBSENE CLEANUP ---
+        // --- PROJECT-WIDE CLEANUP ---
         var allAuthorings = Object.FindObjectsByType<GlobalManagerAuthoring>(FindObjectsInactive.Include, FindObjectsSortMode.None);
         int totalFound = 0;
         foreach (var a in allAuthorings) {
             totalFound++;
             if (totalFound > 1) {
-                Debug.LogWarning($"[FIX] Removing duplicate GlobalManagerAuthoring from scene: {a.gameObject.scene.name} (Object: {a.gameObject.name})");
                 Object.DestroyImmediate(a.gameObject);
             }
         }
@@ -130,23 +186,20 @@ public class SetupSceneShortcut {
         if (subSceneExists) {
             var subScene = EditorSceneManager.OpenScene(subScenePath, OpenSceneMode.Additive);
             var authoringsInSub = Object.FindObjectsByType<GlobalManagerAuthoring>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            
             int subCount = 0;
             foreach (var a in authoringsInSub) {
                 if (a.gameObject.scene == subScene) {
                     subCount++;
-                    if (subCount > 1 || (totalFound > 0 && subCount > 0 && totalFound > subCount)) {
-                        Debug.LogWarning($"[FIX] Removing internal duplicate from ECS_Setup: {a.gameObject.name}");
+                    if (subCount > 1) {
                         Object.DestroyImmediate(a.gameObject);
                     }
                 }
             }
-            
             if (subCount > 1) EditorSceneManager.SaveScene(subScene);
             EditorSceneManager.CloseScene(subScene, true);
         }
 
-        Debug.Log("Scene and SubScene have been cleaned of duplicates.");
+        Debug.Log("[SETUP] Scene configured: TerrainLayer (z=1) + StrategyLayer (z=0) + GameHUD.");
         EditorPrefs.SetBool("SceneSetupDone_Evo", true);
     }
 }

@@ -37,7 +37,6 @@ public class SlimeMapRenderer : MonoBehaviour
 
     private void Awake()
     {
-        Debug.LogWarning("[RENDERER] Awake called.");
         if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
@@ -46,10 +45,9 @@ public class SlimeMapRenderer : MonoBehaviour
         Instance = this;
 
         // 32 bytes: 2 floats (pos) + 1 float (angle) + 4 floats (mask) + 1 int (index) -> 8 + 4 + 16 + 4 = 32
-        agentBuffer = new ComputeBuffer(maxAgents, 32); // Use private field
+        agentBuffer = new ComputeBuffer(maxAgents, 32);
 
         if (DisplayTarget == null) DisplayTarget = GetComponent<MeshRenderer>();
-        Debug.LogWarning($"[RENDERER] Awake finished. DisplayTarget: {DisplayTarget != null}");
     }
 
     private void Initialize()
@@ -116,13 +114,9 @@ public class SlimeMapRenderer : MonoBehaviour
             DisplayTarget.sharedMaterial.mainTexture = DiffusedMap;
             if (DisplayTarget.sharedMaterial.HasProperty("_BaseMap"))
                 DisplayTarget.sharedMaterial.SetTexture("_BaseMap", DiffusedMap);
-            Debug.LogWarning($"[RENDERER] Assigned DiffusedMap to {DisplayTarget.name} material.");
-        } else {
-             Debug.LogWarning("[RENDERER] DisplayTarget is STILL NULL during Initialize.");
         }
 
         isInitialized = true;
-        Debug.LogWarning("[RENDERER] Initialized successfully.");
     }
 
     // Called by ECS Dispatcher
@@ -141,12 +135,7 @@ public class SlimeMapRenderer : MonoBehaviour
             agentBuffer = new ComputeBuffer(maxAgents, 32); // Use private field
         }
 
-        // Log agent count once
-        if (!hasLoggedAgentCount && currentAgentCount > 0)
-        {
-            Debug.LogWarning($"[RENDERER] First dispatch with {currentAgentCount} agents.");
-            hasLoggedAgentCount = true; 
-        }
+
 
         if (agentBuffer == null) return;
 
@@ -173,15 +162,6 @@ public class SlimeMapRenderer : MonoBehaviour
 
         // Copy back to Trail for next frame
         Graphics.Blit(DiffusedMap, TrailMap);
-
-        // DIAGNOSTIC 
-        if (Time.frameCount % 300 == 0) {
-             // Periodically ensure material link
-             if (DisplayTarget != null && DisplayTarget.sharedMaterial != null)
-                 DisplayTarget.sharedMaterial.mainTexture = DiffusedMap;
-             
-             Debug.Log($"[RENDERER] Active - Agents: {currentAgentCount}");
-        }
     }
 
     private void OnDestroy()
