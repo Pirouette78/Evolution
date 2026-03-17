@@ -38,13 +38,14 @@ public class SetupSceneShortcut {
         var renderer = bg.GetComponent<SlimeMapRenderer>();
         if (renderer == null) renderer = bg.AddComponent<SlimeMapRenderer>();
         
-        renderer.SlimeShader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/code/shaders/SlimeTrailRender.compute");
+        renderer.SlimeShader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/Art/Shaders/SlimeTrailRender.compute");
         
-        Material material = AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/SlimeDisplayMaterial.mat");
+        Material material = AssetDatabase.LoadAssetAtPath<Material>("Assets/Art/Materials/SlimeDisplayMaterial.mat");
         if (material == null) {
             material = new Material(Shader.Find("Unlit/Texture"));
             material.name = "BackgroundMaterial";
-            AssetDatabase.CreateAsset(material, "Assets/Materials/SlimeDisplayMaterial.mat");
+            if (!AssetDatabase.IsValidFolder("Assets/Art/Materials")) AssetDatabase.CreateFolder("Assets/Art", "Materials");
+            AssetDatabase.CreateAsset(material, "Assets/Art/Materials/SlimeDisplayMaterial.mat");
         } else {
             material.shader = Shader.Find("Unlit/Texture");
             material.color = Color.white;
@@ -91,8 +92,8 @@ public class SetupSceneShortcut {
         }
 
         // --- ENSURE PREFABS ARE ASSIGNED ---
-        var cellPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Cell.prefab");
-        var foodPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Food.prefab");
+        var cellPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Art/Prefabs/Cell.prefab");
+        var foodPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Art/Prefabs/Food.prefab");
         if (authoring != null) {
             authoring.CellPrefab = cellPrefab;
             authoring.FoodPrefab = foodPrefab;
