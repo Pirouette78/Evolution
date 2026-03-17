@@ -77,6 +77,7 @@ public partial class WorldBootstrapSystem : SystemBase {
         }
         ecb.Playback(EntityManager);
         ecb.Dispose();
+        UnityEngine.Debug.LogWarning($"[BOOTSTRAP] Finished spawning {bootstrap.InitialCellCount} cells.");
         
         Enabled = false; // Never run again
     }

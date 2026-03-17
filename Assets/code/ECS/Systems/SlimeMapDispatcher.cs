@@ -34,6 +34,10 @@ public partial class SlimeMapDispatcher : SystemBase {
         var query = SystemAPI.QueryBuilder().WithAll<CellComponent, LocalTransform>().Build();
         int entityCount = query.CalculateEntityCount();
 
+        if (UnityEngine.Time.frameCount % 60 == 0) {
+            UnityEngine.Debug.Log($"[DISPATCHER] Heartbeat - Entities: {entityCount}, Renderer: {SlimeMapRenderer.Instance != null}");
+        }
+
         if (entityCount == 0) return;
 
         // Resize the buffer to exactly the number of cells

@@ -1,0 +1,25 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="False">
+    <Style src="project://database/Assets/UI/Styles/MainMenu.uss?fileID=7433441132597879392&amp;guid=2b91efa87b7ee304dbf493e9213d9133&amp;type=3#MainMenu" />
+    <ui:VisualElement name="Root" class="root">
+        <ui:Label text="EVOLUTION" class="title" />
+        
+        <ui:VisualElement name="MainMenuContainer" class="menu-container">
+            <ui:Button name="BtnPlay" text="PLAY" class="button" />
+            <ui:Button name="BtnOptions" text="OPTIONS" class="button" />
+            <ui:Button name="BtnQuit" text="QUIT" class="button" />
+        </ui:VisualElement>
+        
+        <ui:VisualElement name="PlaySubmenu" class="submenu">
+            <ui:VisualElement class="menu-container">
+                <ui:Label text="Simulation Settings" style="font-size: 24px; margin-bottom: 20px; align-self: center;" />
+                <ui:VisualElement class="field-container">
+                    <ui:Label text="Initial Cells" class="label" />
+                    <ui:SliderInt name="SliderCells" low-value="10" high-value="1000" class="slider" />
+                    <ui:Label name="LblCells" text="100" style="width: 50px; margin-left: 10px;" />
+                </ui:VisualElement>
+                <ui:Button name="BtnLaunch" text="LAUNCH MAP" class="button" style="background-color: #00cc88;" />
+                <ui:Button name="BtnBack" text="BACK" class="button" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

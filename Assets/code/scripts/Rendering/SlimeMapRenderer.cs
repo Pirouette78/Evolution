@@ -37,6 +37,7 @@ public class SlimeMapRenderer : MonoBehaviour
 
     private void Awake()
     {
+        Debug.LogWarning("[RENDERER] Awake called.");
         if (Instance != null && Instance != this)
         {
             Destroy(gameObject);
@@ -48,24 +49,25 @@ public class SlimeMapRenderer : MonoBehaviour
         agentBuffer = new ComputeBuffer(maxAgents, 32); // Use private field
 
         if (DisplayTarget == null) DisplayTarget = GetComponent<MeshRenderer>();
+        Debug.LogWarning($"[RENDERER] Awake finished. DisplayTarget: {DisplayTarget != null}");
     }
 
     private void Initialize()
     {
         if (isInitialized) return;
         if (SlimeShader == null) {
-            Debug.LogWarning("[RENDERER] SlimeShader is NULL! Attempting runtime load from path...");
-            SlimeShader = Resources.Load<ComputeShader>("Shaders/SlimeTrailRender");
+            Debug.LogWarning("[RENDERER] SlimeShader is NULL! Attempting runtime load...");
+            SlimeShader = Resources.Load<ComputeShader>("SlimeTrailRender");
             if (SlimeShader == null) {
-                // Try direct Assets path load (only works in editor)
                 #if UNITY_EDITOR
                 SlimeShader = UnityEditor.AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/Art/Shaders/SlimeTrailRender.compute");
+                if (SlimeShader != null) Debug.LogWarning("[RENDERER] Successfully loaded shader via AssetDatabase.");
                 #endif
             }
         }
 
         if (SlimeShader == null) {
-            Debug.LogError("[RENDERER] SlimeShader is STILL NULL! Cannot initialize.");
+            Debug.LogError("[RENDERER] SlimeShader is STILL NULL! Check Assets/Art/Shaders/SlimeTrailRender.compute exists.");
             return;
         }
 
@@ -112,6 +114,8 @@ public class SlimeMapRenderer : MonoBehaviour
 
         if (DisplayTarget != null) {
             DisplayTarget.sharedMaterial.mainTexture = DiffusedMap;
+            if (DisplayTarget.sharedMaterial.HasProperty("_BaseMap"))
+                DisplayTarget.sharedMaterial.SetTexture("_BaseMap", DiffusedMap);
             Debug.LogWarning($"[RENDERER] Assigned DiffusedMap to {DisplayTarget.name} material.");
         } else {
              Debug.LogWarning("[RENDERER] DisplayTarget is STILL NULL during Initialize.");

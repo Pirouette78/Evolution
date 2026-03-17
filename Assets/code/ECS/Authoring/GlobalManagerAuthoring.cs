@@ -26,19 +26,19 @@ public class GlobalManagerAuthoring : MonoBehaviour {
         public override void Bake(GlobalManagerAuthoring authoring) {
             
             // Registering prefabs specifically so ECS knows to convert them
-            var cellEntity = GetEntity(authoring.CellPrefab, TransformUsageFlags.Dynamic);
-            var foodEntity = GetEntity(authoring.FoodPrefab, TransformUsageFlags.Dynamic);
             
             var entity = GetEntity(TransformUsageFlags.None);
             
-            AddComponent(entity, new GlobalBootstrapData {
-                CellPrefab = cellEntity,
-                FoodPrefab = foodEntity,
+            var data = new GlobalBootstrapData
+            {
+                CellPrefab = GetEntity(authoring.CellPrefab, TransformUsageFlags.Dynamic),
+                FoodPrefab = GetEntity(authoring.FoodPrefab, TransformUsageFlags.Dynamic),
                 InitialCellCount = authoring.InitialCellCount,
                 InitialFoodCount = authoring.InitialFoodCount,
                 SpawnRadius = authoring.SpawnRadius,
                 HasSpawned = false
-            });
+            };
+            AddComponent(entity, data);
         }
     }
 }
