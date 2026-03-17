@@ -39,6 +39,14 @@ public class SetupSceneShortcut {
         if (renderer == null) renderer = bg.AddComponent<SlimeMapRenderer>();
         
         renderer.SlimeShader = AssetDatabase.LoadAssetAtPath<ComputeShader>("Assets/Art/Shaders/SlimeTrailRender.compute");
+
+        // --- Terrain Map Renderer ---
+        var terrainRenderer = bg.GetComponent<TerrainMapRenderer>();
+        if (terrainRenderer == null) terrainRenderer = bg.AddComponent<TerrainMapRenderer>();
+        terrainRenderer.DisplayTarget = meshRenderer;
+        terrainRenderer.Width = 512;
+        terrainRenderer.Height = 512;
+        EditorUtility.SetDirty(bg);
         
         Material material = AssetDatabase.LoadAssetAtPath<Material>("Assets/Art/Materials/SlimeDisplayMaterial.mat");
         if (material == null) {
@@ -98,6 +106,14 @@ public class SetupSceneShortcut {
             authoring.CellPrefab = cellPrefab;
             authoring.FoodPrefab = foodPrefab;
             EditorUtility.SetDirty(authoring);
+
+            // --- Terrain Map Authoring (in same SubScene) ---
+            var terrainAuth = authoring.GetComponent<TerrainMapAuthoring>();
+            if (terrainAuth == null) terrainAuth = authoring.gameObject.AddComponent<TerrainMapAuthoring>();
+            terrainAuth.Width = 512;
+            terrainAuth.Height = 512;
+            terrainAuth.WaterThreshold = 0.35f;
+            EditorUtility.SetDirty(terrainAuth);
         }
 
         // --- PROJECT-WIDE SUBSENE CLEANUP ---

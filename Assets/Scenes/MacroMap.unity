@@ -133,6 +133,7 @@ GameObject:
   - component: {fileID: 258827474}
   - component: {fileID: 258827473}
   - component: {fileID: 258827478}
+  - component: {fileID: 258827479}
   m_Layer: 0
   m_Name: BackgroundRenderer
   m_TagString: Untagged
@@ -152,6 +153,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 16d9c4dc1b447af4b8bec2d479413c77, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SlimeMapRenderer
+  SlimeShader: {fileID: 7200000, guid: 1e2bbf2f985345f4da6320ea9dcb187c, type: 3}
+  Width: 512
+  Height: 512
+  TrailWeight: 50
+  DecayRate: 0.5
+  DiffuseRate: 2
+  DisplayTarget: {fileID: 258827474}
 --- !u!23 &258827474
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -265,6 +273,36 @@ MonoBehaviour:
   DecayRate: 0.5
   DiffuseRate: 2
   DisplayTarget: {fileID: 258827474}
+--- !u!114 &258827479
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 258827472}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c71fde7df3398844d8bc98c419004b68, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TerrainMapRenderer
+  Width: 512
+  Height: 512
+  Noise:
+    Scale: 50
+    Octaves: 6
+    Persistance: 0.5
+    Lacunarity: 2
+    Seed: 42
+    Offset: {x: 0, y: 0}
+  WaterThreshold: 0.35
+  DisplayTarget: {fileID: 258827474}
+  DeepWater: {r: 0.05, g: 0.15, b: 0.40, a: 1}
+  ShallowWater: {r: 0.10, g: 0.35, b: 0.60, a: 1}
+  Sand: {r: 0.76, g: 0.70, b: 0.50, a: 1}
+  Grass: {r: 0.22, g: 0.55, b: 0.22, a: 1}
+  Forest: {r: 0.13, g: 0.37, b: 0.13, a: 1}
+  Rock: {r: 0.45, g: 0.40, b: 0.35, a: 1}
+  Snow: {r: 0.95, g: 0.95, b: 0.97, a: 1}
 --- !u!1 &459977938
 GameObject:
   m_ObjectHideFlags: 0

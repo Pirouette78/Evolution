@@ -19,6 +19,7 @@ public partial struct FoodSpawnerSystem : ISystem {
     public void OnCreate(ref SystemState state) {
         state.RequireForUpdate<FoodSpawnerConfig>();
         state.RequireForUpdate<GameTime>();
+        state.RequireForUpdate<TerrainMapData>();
     }
 
     [BurstCompile]
@@ -40,17 +41,29 @@ public partial struct FoodSpawnerSystem : ISystem {
             }
 
             if (currentFood < config.MaxFoodCount) {
-                // Time to spawn
+                var terrainData = SystemAPI.GetSingleton<TerrainMapData>();
+                ref var walkBlob = ref terrainData.WalkabilityRef.Value;
+
                 var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
                 uint seed = (uint)(SystemAPI.Time.ElapsedTime * 1000) + 1;
                 Random rand = new Random(seed);
                 
                 Entity newFood = ecb.Instantiate(config.FoodPrefab);
-                float3 spawnPos = new float3(
-                    rand.NextFloat(0, config.MapSize.x),
-                    rand.NextFloat(0, config.MapSize.y),
-                    0f
-                );
+
+                // Find walkable position (max 50 retries)
+                float3 spawnPos = float3.zero;
+                for (int attempt = 0; attempt < 50; attempt++)
+                {
+                    spawnPos = new float3(
+                        rand.NextFloat(0, config.MapSize.x),
+                        rand.NextFloat(0, config.MapSize.y),
+                        0f);
+
+                    int ix = math.clamp((int)spawnPos.x, 0, walkBlob.Width - 1);
+                    int iy = math.clamp((int)spawnPos.y, 0, walkBlob.Height - 1);
+                    if (walkBlob.Walkable[iy * walkBlob.Width + ix] == 1)
+                        break;
+                }
                 
                 ecb.SetComponent(newFood, LocalTransform.FromPosition(spawnPos));
                 

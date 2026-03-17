@@ -12,6 +12,7 @@ public partial struct CellMovementSystem : ISystem {
     [BurstCompile]
     public void OnCreate(ref SystemState state) {
         state.RequireForUpdate<GameTime>();
+        state.RequireForUpdate<TerrainMapData>();
         foodQuery = SystemAPI.QueryBuilder().WithAll<FoodComponent, LocalTransform>().Build();
     }
 
@@ -23,12 +24,14 @@ public partial struct CellMovementSystem : ISystem {
         float elapsedTime = (float)SystemAPI.Time.ElapsedTime;
         
         var foodTransforms = foodQuery.ToComponentDataArray<LocalTransform>(Allocator.TempJob);
+        var terrainData = SystemAPI.GetSingleton<TerrainMapData>();
         
         var job = new BrownianMotionJob {
             DeltaTime = dt,
             Time = elapsedTime,
             FoodTransforms = foodTransforms,
-            SensorRadiusSq = 50f * 50f
+            SensorRadiusSq = 50f * 50f,
+            WalkabilityRef = terrainData.WalkabilityRef
         };
         
         state.Dependency = job.ScheduleParallel(state.Dependency);
@@ -45,6 +48,9 @@ public partial struct BrownianMotionJob : IJobEntity {
     public NativeArray<LocalTransform> FoodTransforms;
     
     public float SensorRadiusSq;
+
+    [ReadOnly]
+    public BlobAssetReference<TerrainWalkabilityBlob> WalkabilityRef;
 
     public void Execute(ref LocalTransform transform, ref CellComponent cell) {
         cell.TimeSinceLastMove += DeltaTime;
@@ -89,9 +95,28 @@ public partial struct BrownianMotionJob : IJobEntity {
             cell.TargetDirection = math.normalize(cell.TargetDirection);
         }
 
-        transform.Position += cell.TargetDirection * cell.Speed * DeltaTime;
+        // Compute candidate position
+        float3 candidatePos = transform.Position + cell.TargetDirection * cell.Speed * DeltaTime;
 
-        transform.Position.x = math.clamp(transform.Position.x, 0f, 512f);
-        transform.Position.y = math.clamp(transform.Position.y, 0f, 512f);
+        // Clamp to map bounds
+        candidatePos.x = math.clamp(candidatePos.x, 0f, 512f);
+        candidatePos.y = math.clamp(candidatePos.y, 0f, 512f);
+
+        // Walkability check
+        if (TerrainMapHelper.IsWalkable(ref WalkabilityRef, candidatePos.x, candidatePos.y))
+        {
+            transform.Position = candidatePos;
+        }
+        else
+        {
+            // Bounce: reverse and randomise direction slightly
+            cell.TargetDirection = -cell.TargetDirection;
+            uint bounceSeed = (uint)(transform.Position.x * 731 + transform.Position.y * 997 + Time * 1301) + 1;
+            Unity.Mathematics.Random bounceRand = new Unity.Mathematics.Random(bounceSeed);
+            float perturbAngle = bounceRand.NextFloat(-0.5f, 0.5f);
+            float currentAngle = math.atan2(cell.TargetDirection.y, cell.TargetDirection.x) + perturbAngle;
+            cell.TargetDirection = new float3(math.cos(currentAngle), math.sin(currentAngle), 0f);
+            cell.TimeSinceLastMove = 0f;
+        }
     }
 }
