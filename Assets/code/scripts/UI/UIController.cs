@@ -41,9 +41,8 @@ public class UIController : MonoBehaviour {
     private string targetTechId = "tech_membrane";
     private int techCostCache = 1500;
 
-    // Performance: cached query + throttle
+    // Performance: throttle
     private EntityManager entityManager;
-    private EntityQuery cellQuery;
     private int uiUpdateCounter = 0;
 
     private void OnEnable() {
@@ -71,7 +70,7 @@ public class UIController : MonoBehaviour {
         if (toggleStrategyMapButton != null) toggleStrategyMapButton.clicked += OnToggleStrategyMap;
         if (overlayModeButton != null) overlayModeButton.clicked += OnToggleOverlay;
 
-        // Cache strategy layer reference (works even if it becomes inactive later)
+        // Cache strategy layer reference
         strategyLayerGO = GameObject.Find("StrategyLayer");
 
         // Cache shaders
@@ -79,7 +78,6 @@ public class UIController : MonoBehaviour {
         additiveShader = Shader.Find("Custom/UnlitAdditive");
 
         entityManager = World.DefaultGameObjectInjectionWorld.EntityManager;
-        cellQuery = entityManager.CreateEntityQuery(typeof(CellComponent));
         UpdateTechUI();
     }
 
@@ -112,56 +110,10 @@ public class UIController : MonoBehaviour {
             pauseButton.text = isPaused ? "Play" : "Pause";
     }
 
-    // ── Add 1000 Entities ─────────────────────────────────────
+    // ── Add 10 000 GPU Agents ─────────────────────────────────
     private void OnAddEntities() {
-        if (entityManager == default) return;
-
-        var bQuery = entityManager.CreateEntityQuery(typeof(GlobalBootstrapData));
-        if (bQuery.IsEmpty) return;
-
-        var bootstrap = bQuery.GetSingleton<GlobalBootstrapData>();
-        if (bootstrap.CellPrefab == Entity.Null) return;
-
-        bool hasWalkability = false;
-        TerrainMapData terrainData = default;
-        var tQuery = entityManager.CreateEntityQuery(typeof(TerrainMapData));
-        if (!tQuery.IsEmpty) {
-            terrainData = tQuery.GetSingleton<TerrainMapData>();
-            hasWalkability = true;
-        }
-
-        var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
-        uint seed = (uint)(Time.time * 10000) + 7;
-        Unity.Mathematics.Random rand = new Unity.Mathematics.Random(seed);
-
-        for (int i = 0; i < 1000; i++) {
-            Entity e = ecb.Instantiate(bootstrap.CellPrefab);
-            int playerID = rand.NextInt(0, 2);
-
-            float3 pos = float3.zero;
-            for (int attempt = 0; attempt < 50; attempt++) {
-                pos = new float3(rand.NextFloat(10f, 502f), rand.NextFloat(10f, 502f), 0f);
-                if (!hasWalkability) break;
-                ref var blob = ref terrainData.WalkabilityRef.Value;
-                int ix = math.clamp((int)pos.x, 0, blob.Width - 1);
-                int iy = math.clamp((int)pos.y, 0, blob.Height - 1);
-                if (blob.Walkable[iy * blob.Width + ix] == 1) break;
-            }
-
-            ecb.SetComponent(e, LocalTransform.FromPosition(pos));
-
-            float angle = rand.NextFloat(0f, math.PI * 2f);
-            ecb.AddComponent(e, new CellComponent {
-                Energy = 20f,
-                Speed = 50f,
-                PlayerID = playerID,
-                TimeSinceLastMove = 0f,
-                TargetDirection = new float3(math.cos(angle), math.sin(angle), 0f)
-            });
-        }
-
-        ecb.Playback(entityManager);
-        ecb.Dispose();
+        if (SlimeMapRenderer.Instance != null)
+            SlimeMapRenderer.Instance.AddAgents(10000);
     }
 
     // ── Toggle Strategy Map ───────────────────────────────────
@@ -263,49 +215,23 @@ public class UIController : MonoBehaviour {
     }
 
     private void DeductEnergyFromPlayer1(float amountToDeduct) {
-        if (entityManager == default) return;
-        var cellEntities = cellQuery.ToEntityArray(Unity.Collections.Allocator.Temp);
-        float remaining = amountToDeduct;
-        foreach (var entity in cellEntities) {
-            if (remaining <= 0) break;
-            var cell = entityManager.GetComponentData<CellComponent>(entity);
-            if (cell.PlayerID == 0) {
-                if (cell.Energy >= remaining) { cell.Energy -= remaining; remaining = 0; }
-                else { remaining -= cell.Energy; cell.Energy = 0; }
-                entityManager.SetComponentData(entity, cell);
-            }
-        }
-        cellEntities.Dispose();
+        // Energy tracking will be re-added via GPU readback in a future step
     }
-    
+
     // ── Update Loop (THROTTLED) ────────────────────────────────
     private void Update() {
-        if (entityManager == default) return;
-
-        // Only update UI every 15 frames to avoid main-thread sync overhead
         uiUpdateCounter++;
         if (uiUpdateCounter < 15) return;
         uiUpdateCounter = 0;
 
-        // Use CalculateEntityCount (no allocation, very fast)
-        int totalEntities = cellQuery.CalculateEntityCount();
-        if (entityCountLabel != null)
-            entityCountLabel.text = $"Entités : {totalEntities}";
-
-        // Energy: use Allocator.Temp (stack-like, much cheaper than TempJob)
-        if (energyLabel != null) {
-            var cellArray = cellQuery.ToComponentDataArray<CellComponent>(Unity.Collections.Allocator.Temp);
-            float totalEnergy = 0f;
-            for (int i = 0; i < cellArray.Length; i++) {
-                if (cellArray[i].PlayerID == 0)
-                    totalEnergy += cellArray[i].Energy;
-            }
-            cellArray.Dispose();
-            currentP1Energy = totalEnergy;
-            energyLabel.text = $"Énergie : {Mathf.FloorToInt(totalEnergy)}";
-
-            if (researchButton != null && !hasResearchedMembrane)
-                researchButton.SetEnabled(currentP1Energy >= techCostCache);
+        // Agent count from GPU manager
+        if (entityCountLabel != null) {
+            int count = SlimeMapRenderer.Instance != null ? SlimeMapRenderer.Instance.AgentCount : 0;
+            entityCountLabel.text = $"Entités : {count:N0}";
         }
+
+        // Energy placeholder (GPU readback not yet implemented)
+        if (energyLabel != null)
+            energyLabel.text = "Énergie : —";
     }
 }

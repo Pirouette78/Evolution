@@ -44,6 +44,8 @@ public class TerrainMapRenderer : MonoBehaviour
 
     private Texture2D terrainTexture;
 
+    public Texture2D GetTexture() => terrainTexture;
+
     private void Awake()
     {
         if (Instance != null && Instance != this)

@@ -1,3 +1,4 @@
+#pragma kernel UpdateAgents
 #pragma kernel DrawMap
 #pragma kernel Diffuse
 #pragma kernel ResetMap
@@ -9,11 +10,13 @@ struct Agent {
     int speciesIndex;
 };
 
-StructuredBuffer<Agent> agents;
+RWStructuredBuffer<Agent> agents;
 uint numAgents;
 
 RWTexture2D<float4> TrailMap;
 RWTexture2D<float4> DiffusedTrailMap;
+Texture2D<float4> TerrainWalkabilityMap; // Used to block movement
+SamplerState sampler_TerrainWalkabilityMap;
 
 int width;
 int height;
@@ -22,6 +25,118 @@ float trailWeight;
 float decayRate;
 float diffuseRate;
 float deltaTime;
+float time;
+
+float moveSpeed = 75.0;
+float turnSpeed = 10.0;
+int useTerrainCollision;
+float sensorAngleRad = 0.5235; // ~30 degrees
+float sensorOffsetDst = 20.0;
+int sensorSize = 2;
+
+// Hash function www.cs.ubc.ca/~rbridson/docs/schechter-sca08-turbulence.pdf
+uint hash(uint state) {
+    state ^= 2747636419u;
+    state *= 2654435769u;
+    state ^= state >> 16;
+    state *= 2654435769u;
+    state ^= state >> 16;
+    state *= 2654435769u;
+    return state;
+}
+
+float scaleToRange01(uint state) {
+    return state / 4294967295.0;
+}
+
+// Check if terrain is water
+bool isWalkable(float2 pos) {
+    if (pos.x < 0 || pos.x >= width || pos.y < 0 || pos.y >= height) return false;
+    
+    // If terrain collision is disabled, everything is walkable
+    if (useTerrainCollision == 0) return true;
+    
+    float2 uv = float2(pos.x / width, pos.y / height);
+    float4 col = TerrainWalkabilityMap.SampleLevel(sampler_TerrainWalkabilityMap, uv, 0);
+    
+    // DeepWater r~0.05, ShallowWater r~0.10. Land (Forest/Sand/Grass) r > 0.12.
+    return col.r > 0.12; 
+}
+
+float sense(Agent agent, float sensorAngleOffset) {
+    float sensorAngle = agent.angle + sensorAngleOffset;
+    float2 sensorDir = float2(cos(sensorAngle), sin(sensorAngle));
+    float2 sensorPos = agent.position + sensorDir * sensorOffsetDst;
+    int sensorCentreX = (int)sensorPos.x;
+    int sensorCentreY = (int)sensorPos.y;
+
+    // Avoid walking into water/walls
+    if (!isWalkable(sensorPos)) return -100.0; // strong penalty for walls
+
+    float sum = 0;
+    // Seek same species (or other species, could be modified later)
+    float4 senseWeight = agent.speciesMask;
+
+    for (int offsetX = -sensorSize; offsetX <= sensorSize; offsetX++) {
+        for (int offsetY = -sensorSize; offsetY <= sensorSize; offsetY++) {
+            int sampleX = min(width - 1, max(0, sensorCentreX + offsetX));
+            int sampleY = min(height - 1, max(0, sensorCentreY + offsetY));
+            sum += dot(senseWeight, TrailMap[int2(sampleX, sampleY)]);
+        }
+    }
+    return sum;
+}
+
+[numthreads(16,1,1)]
+void UpdateAgents (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= numAgents) return;
+
+    Agent agent = agents[id.x];
+
+    // Simple hash-based random using agent id and time
+    uint random = hash(id.x + (uint)(time * 100000.0));
+    float randomSteer = scaleToRange01(random);
+
+    // Gently steer based on trail
+    float weightForward = sense(agent, 0);
+    float weightLeft    = sense(agent, sensorAngleRad);
+    float weightRight   = sense(agent, -sensorAngleRad);
+
+    if (weightForward >= weightLeft && weightForward >= weightRight) {
+        // go straight
+    } else if (weightRight > weightLeft) {
+        agent.angle -= randomSteer * turnSpeed * deltaTime;
+    } else if (weightLeft > weightRight) {
+        agent.angle += randomSteer * turnSpeed * deltaTime;
+    } else {
+        agent.angle += (randomSteer - 0.5) * 2.0 * turnSpeed * deltaTime;
+    }
+
+    // Move forward
+    float2 dir    = float2(cos(agent.angle), sin(agent.angle));
+    float2 newPos = agent.position + dir * moveSpeed * deltaTime;
+
+    // Bounce off edge  
+    if (newPos.x < 1 || newPos.x >= (float)width  - 1 ||
+        newPos.y < 1 || newPos.y >= (float)height - 1)
+    {
+        // Reflect: pick a random new angle pointing inward
+        uint r2 = hash(random + 1u);
+        agent.angle = scaleToRange01(r2) * 6.2831;
+        newPos = agent.position; // stay put this frame
+    }
+    // Bounce off water (only when terrain collision is active)
+    else if (useTerrainCollision != 0 && !isWalkable(newPos))
+    {
+        uint r2 = hash(random + 2u);
+        agent.angle = scaleToRange01(r2) * 6.2831;
+        newPos = agent.position;
+    }
+
+    agent.position = newPos;
+    agents[id.x] = agent; // write back ENTIRE struct
+}
 
 [numthreads(16,1,1)]
 void DrawMap (uint3 id : SV_DispatchThreadID)
@@ -31,7 +146,7 @@ void DrawMap (uint3 id : SV_DispatchThreadID)
     Agent agent = agents[id.x];
     int2 cellCoords = int2((int)agent.position.x, (int)agent.position.y);
     
-    if (cellCoords.x >= 0 && cellCoords.x < (int)width && cellCoords.y >= 0 && cellCoords.y < (int)height) {
+    if (cellCoords.x >= 0 && cellCoords.x < width && cellCoords.y >= 0 && cellCoords.y < height) {
         TrailMap[cellCoords] = saturate(TrailMap[cellCoords] + agent.speciesMask * trailWeight * deltaTime);
     }
 }
@@ -63,6 +178,6 @@ void Diffuse (uint3 id : SV_DispatchThreadID)
 void ResetMap (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)width || id.y >= (uint)height) return;
-    TrailMap[id.xy] = float4(0, 0, 0, 1); // Black
+    TrailMap[id.xy] = float4(0, 0, 0, 1);
     DiffusedTrailMap[id.xy] = float4(0, 0, 0, 1);
 }

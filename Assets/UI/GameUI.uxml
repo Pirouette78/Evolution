@@ -22,7 +22,7 @@
         </ui:VisualElement>
 
         <!-- Add Entities Button -->
-        <ui:Button name="AddEntitiesButton" text="+ 1000 Entités" style="font-size: 16px; padding: 8px 14px; background-color: rgb(30, 100, 180); color: white; border-radius: 5px; margin-bottom: 8px;" />
+        <ui:Button name="AddEntitiesButton" text="+ 10000 Entités (GPU)" style="font-size: 16px; padding: 8px 14px; background-color: rgb(30, 100, 180); color: white; border-radius: 5px; margin-bottom: 8px;" />
 
         <!-- Toggle Strategy Map -->
         <ui:Button name="ToggleStrategyMapButton" text="Cacher Strategy Map" style="font-size: 16px; padding: 8px 14px; background-color: rgb(80, 50, 120); color: white; border-radius: 5px; margin-bottom: 8px;" />
