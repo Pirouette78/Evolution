@@ -17,11 +17,15 @@ public class SlimeMapRenderer : MonoBehaviour
     [Header("Simulation Settings")]
     public int Width = 512;
     public int Height = 512;
-    [Range(0.1f, 200f)] public float MoveSpeed = 75f;
-    [Range(0f, 50f)] public float TrailWeight = 5f;
-    [Range(0f, 5f)] public float DecayRate = 1f;
-    [Range(0f, 5f)] public float DiffuseRate = 2f;
-    [Range(1, 8)] public int StepsPerFrame = 1;
+    [Range(0.1f, 200f)] public float MoveSpeed     = 75f;
+    [Range(0f, 100f)]   public float TurnSpeed     = 10f;
+    [Range(0f, 50f)]    public float TrailWeight   = 5f;
+    [Range(0f, 5f)]     public float DecayRate     = 1f;
+    [Range(0f, 5f)]     public float DiffuseRate   = 2f;
+    [Range(5f, 90f)]    public float SensorAngleDeg   = 30f;
+    [Range(1f, 60f)]    public float SensorOffsetDst  = 20f;
+    [Range(1, 6)]       public int   SensorSize        = 2;
+    [Range(1, 8)]       public int   StepsPerFrame     = 1;
     [Header("Initial Spawn")]
     public int InitialAgentCount = 5000;
 
@@ -169,13 +173,22 @@ public class SlimeMapRenderer : MonoBehaviour
 
     private void CacheTerrainData(TerrainMapRenderer terrain)
     {
-        heightMapCache    = terrain.HeightMap;
+        heightMapCache      = terrain.HeightMap;
         waterThresholdCache = terrain.WaterThreshold;
 
-        // Bind terrain texture to UpdateAgents kernel
-        SlimeShader.SetTexture(updateKernel, "TerrainWalkabilityMap", terrain.GetTexture());
-        SlimeShader.SetInt("useTerrainCollision", 1);
-        Debug.Log("[RENDERER] Terrain texture bound to shader.");
+        // Bind the BINARY walkability texture (white=land, black=water)
+        var walkTex = terrain.GetWalkabilityTexture();
+        if (walkTex != null)
+        {
+            SlimeShader.SetTexture(updateKernel, "TerrainWalkabilityMap", walkTex);
+            SlimeShader.SetInt("useTerrainCollision", 1);
+            Debug.Log("[RENDERER] Binary walkability texture bound to shader.");
+        }
+        else
+        {
+            SlimeShader.SetInt("useTerrainCollision", 0);
+            Debug.LogWarning("[RENDERER] Walkability texture not ready — terrain collision disabled.");
+        }
     }
 
     // ================== Public API =================================
@@ -247,13 +260,17 @@ public class SlimeMapRenderer : MonoBehaviour
         float dt = Time.deltaTime;
 
         // Per-frame global uniforms
-        SlimeShader.SetFloat("time",        Time.time);
-        SlimeShader.SetFloat("deltaTime",   dt);
-        SlimeShader.SetFloat("moveSpeed",   MoveSpeed);
-        SlimeShader.SetFloat("trailWeight", TrailWeight);
-        SlimeShader.SetFloat("decayRate",   DecayRate);
-        SlimeShader.SetFloat("diffuseRate", DiffuseRate);
-        SlimeShader.SetInt  ("numAgents",   currentAgentCount);
+        SlimeShader.SetFloat("time",             Time.time);
+        SlimeShader.SetFloat("deltaTime",        dt);
+        SlimeShader.SetFloat("moveSpeed",        MoveSpeed);
+        SlimeShader.SetFloat("turnSpeed",        TurnSpeed);
+        SlimeShader.SetFloat("trailWeight",      TrailWeight);
+        SlimeShader.SetFloat("decayRate",        DecayRate);
+        SlimeShader.SetFloat("diffuseRate",      DiffuseRate);
+        SlimeShader.SetFloat("sensorAngleRad",   SensorAngleDeg * Mathf.Deg2Rad);
+        SlimeShader.SetFloat("sensorOffsetDst",  SensorOffsetDst);
+        SlimeShader.SetInt  ("sensorSize",       SensorSize);
+        SlimeShader.SetInt  ("numAgents",        currentAgentCount);
 
         int agentGroups  = Mathf.CeilToInt(currentAgentCount / 16f);
         int texGroupsX   = Mathf.CeilToInt(Width  / 8f);

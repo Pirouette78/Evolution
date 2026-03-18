@@ -1,237 +1,268 @@
 using UnityEngine;
 using UnityEngine.UIElements;
 using Unity.Entities;
-using Unity.Mathematics;
-using Unity.Transforms;
 
-public class UIController : MonoBehaviour {
-    
+public class UIController : MonoBehaviour
+{
     private UIDocument uiDocument;
 
-    // Top bar
-    private Label energyLabel;
-    private Label entityCountLabel;
+    // ── Top bar ────────────────────────────────────────────────────
+    private Label  energyLabel;
+    private Label  entityCountLabel;
     private Button pauseButton;
 
-    // Control panel
-    private Slider speedSlider;
-    private Label speedValueLabel;
-    private Button addEntitiesButton;
+    // ── Game controls ──────────────────────────────────────────────
+    private Slider    speedSlider;
+    private Label     speedValueLabel;
+    private Button    addEntitiesButton;
+    private SliderInt stepsPerFrameSlider;
+    private Label     stepsPerFrameLabel;
+
+    // ── Trail ──────────────────────────────────────────────────────
+    private Slider trailWeightSlider;  private Label trailWeightLabel;
+    private Slider decayRateSlider;    private Label decayRateLabel;
+    private Slider diffuseRateSlider;  private Label diffuseRateLabel;
+
+    // ── Movement ───────────────────────────────────────────────────
+    private Slider moveSpeedSlider;    private Label moveSpeedLabel;
+    private Slider turnSpeedSlider;    private Label turnSpeedLabel;
+
+    // ── Sensors ────────────────────────────────────────────────────
+    private Slider    sensorAngleSlider;  private Label sensorAngleLabel;
+    private Slider    sensorOffsetSlider; private Label sensorOffsetLabel;
+    private SliderInt sensorSizeSlider;   private Label sensorSizeLabel;
+
+    // ── Map ────────────────────────────────────────────────────────
     private Button toggleStrategyMapButton;
     private Button overlayModeButton;
 
-    // Tech panel
-    private Label techNameLabel;
-    private Label techCostLabel;
+    // ── Tech ───────────────────────────────────────────────────────
+    private Label  techNameLabel;
+    private Label  techCostLabel;
     private Button researchButton;
 
-    // State
-    private bool isPaused = false;
+    // ── State ──────────────────────────────────────────────────────
+    private bool  isPaused          = false;
     private float previousTimeScale = 1f;
-    private bool strategyMapVisible = true;
-    private bool overlayMode = false;
+    private bool  strategyMapVisible = true;
+    private bool  overlayMode        = false;
+    private bool  hasResearchedMembrane = false;
 
-    // Cached references
     private GameObject strategyLayerGO;
-    private Shader opaqueShader;
-    private Shader additiveShader;
+    private Shader     opaqueShader;
+    private Shader     additiveShader;
 
-    private float currentP1Energy = 0f;
-    private bool hasResearchedMembrane = false;
-    private string targetTechId = "tech_membrane";
-    private int techCostCache = 1500;
-
-    // Performance: throttle
     private EntityManager entityManager;
-    private int uiUpdateCounter = 0;
+    private int  uiUpdateCounter = 0;
+    private string targetTechId  = "tech_membrane";
+    private int    techCostCache  = 1500;
+    private float  currentP1Energy = 0f;
 
-    private void OnEnable() {
+    // ==============================================================
+    private void OnEnable()
+    {
         uiDocument = GetComponent<UIDocument>();
         if (uiDocument == null) return;
-
         var root = uiDocument.rootVisualElement;
-        
-        energyLabel = root.Q<Label>("EnergyLabel");
-        entityCountLabel = root.Q<Label>("EntityCountLabel");
-        pauseButton = root.Q<Button>("PauseButton");
-        speedSlider = root.Q<Slider>("SpeedSlider");
-        speedValueLabel = root.Q<Label>("SpeedValueLabel");
-        addEntitiesButton = root.Q<Button>("AddEntitiesButton");
+
+        // Top bar
+        energyLabel        = root.Q<Label> ("EnergyLabel");
+        entityCountLabel   = root.Q<Label> ("EntityCountLabel");
+        pauseButton        = root.Q<Button>("PauseButton");
+
+        // Game controls
+        speedSlider        = root.Q<Slider>   ("SpeedSlider");
+        speedValueLabel    = root.Q<Label>    ("SpeedValueLabel");
+        addEntitiesButton  = root.Q<Button>   ("AddEntitiesButton");
+        stepsPerFrameSlider= root.Q<SliderInt>("StepsPerFrameSlider");
+        stepsPerFrameLabel = root.Q<Label>    ("StepsPerFrameLabel");
+
+        // Trail
+        trailWeightSlider  = root.Q<Slider>("TrailWeightSlider");  trailWeightLabel  = root.Q<Label>("TrailWeightLabel");
+        decayRateSlider    = root.Q<Slider>("DecayRateSlider");    decayRateLabel    = root.Q<Label>("DecayRateLabel");
+        diffuseRateSlider  = root.Q<Slider>("DiffuseRateSlider");  diffuseRateLabel  = root.Q<Label>("DiffuseRateLabel");
+
+        // Movement
+        moveSpeedSlider    = root.Q<Slider>("MoveSpeedSlider");    moveSpeedLabel    = root.Q<Label>("MoveSpeedLabel");
+        turnSpeedSlider    = root.Q<Slider>("TurnSpeedSlider");    turnSpeedLabel    = root.Q<Label>("TurnSpeedLabel");
+
+        // Sensors
+        sensorAngleSlider  = root.Q<Slider>   ("SensorAngleSlider");  sensorAngleLabel  = root.Q<Label>   ("SensorAngleLabel");
+        sensorOffsetSlider = root.Q<Slider>   ("SensorOffsetSlider"); sensorOffsetLabel = root.Q<Label>   ("SensorOffsetLabel");
+        sensorSizeSlider   = root.Q<SliderInt>("SensorSizeSlider");   sensorSizeLabel   = root.Q<Label>   ("SensorSizeLabel");
+
+        // Map
         toggleStrategyMapButton = root.Q<Button>("ToggleStrategyMapButton");
-        overlayModeButton = root.Q<Button>("OverlayModeButton");
-        techNameLabel = root.Q<Label>("TechNameLabel");
-        techCostLabel = root.Q<Label>("TechCostLabel");
+        overlayModeButton       = root.Q<Button>("OverlayModeButton");
+
+        // Tech
+        techNameLabel  = root.Q<Label> ("TechNameLabel");
+        techCostLabel  = root.Q<Label> ("TechCostLabel");
         researchButton = root.Q<Button>("ResearchButton");
 
-        if (pauseButton != null) pauseButton.clicked += TogglePause;
-        if (researchButton != null) researchButton.clicked += OnResearchClicked;
-        if (speedSlider != null) speedSlider.RegisterValueChangedCallback(OnSpeedChanged);
-        if (addEntitiesButton != null) addEntitiesButton.clicked += OnAddEntities;
+        // Hooks
+        if (pauseButton        != null) pauseButton.clicked        += TogglePause;
+        if (addEntitiesButton  != null) addEntitiesButton.clicked  += OnAddEntities;
+        if (researchButton     != null) researchButton.clicked     += OnResearchClicked;
         if (toggleStrategyMapButton != null) toggleStrategyMapButton.clicked += OnToggleStrategyMap;
-        if (overlayModeButton != null) overlayModeButton.clicked += OnToggleOverlay;
+        if (overlayModeButton  != null) overlayModeButton.clicked  += OnToggleOverlay;
 
-        // Cache strategy layer reference
+        speedSlider?.RegisterValueChangedCallback(e => {
+            if (speedValueLabel != null) speedValueLabel.text = $"{e.newValue:F1}x";
+            SetGameTimeScale(e.newValue);
+        });
+
+        stepsPerFrameSlider?.RegisterValueChangedCallback(e => {
+            if (stepsPerFrameLabel != null) stepsPerFrameLabel.text = e.newValue.ToString();
+            if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.StepsPerFrame = e.newValue;
+        });
+
+        BindSlider(trailWeightSlider,  trailWeightLabel,  "F1", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.TrailWeight  = v; });
+        BindSlider(decayRateSlider,    decayRateLabel,    "F1", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.DecayRate    = v; });
+        BindSlider(diffuseRateSlider,  diffuseRateLabel,  "F1", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.DiffuseRate  = v; });
+        BindSlider(moveSpeedSlider,    moveSpeedLabel,    "F0", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.MoveSpeed    = v; });
+        BindSlider(turnSpeedSlider,    turnSpeedLabel,    "F0", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.TurnSpeed    = v; });
+        BindSlider(sensorAngleSlider,  sensorAngleLabel,  "F0°",v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.SensorAngleDeg = v; });
+        BindSlider(sensorOffsetSlider, sensorOffsetLabel, "F0", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.SensorOffsetDst = v; });
+        sensorSizeSlider?.RegisterValueChangedCallback(e => {
+            if (sensorSizeLabel  != null) sensorSizeLabel.text  = e.newValue.ToString();
+            if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.SensorSize = e.newValue;
+        });
+
+        // Scene refs
         strategyLayerGO = GameObject.Find("StrategyLayer");
-
-        // Cache shaders
-        opaqueShader = Shader.Find("Unlit/Texture");
-        additiveShader = Shader.Find("Custom/UnlitAdditive");
+        opaqueShader    = Shader.Find("Unlit/Texture");
+        additiveShader  = Shader.Find("Custom/UnlitAdditive");
 
         entityManager = World.DefaultGameObjectInjectionWorld.EntityManager;
         UpdateTechUI();
     }
 
-    private void OnDisable() {
+    private void BindSlider(Slider slider, Label label, string fmt, System.Action<float> onChange)
+    {
+        if (slider == null) return;
+        slider.RegisterValueChangedCallback(e => {
+            if (label != null) label.text = fmt.EndsWith("°") ? $"{e.newValue:F0}°" : e.newValue.ToString(fmt, System.Globalization.CultureInfo.InvariantCulture);
+            onChange?.Invoke(e.newValue);
+        });
+    }
+
+    private void OnDisable()
+    {
         if (pauseButton != null) pauseButton.clicked -= TogglePause;
-        if (researchButton != null) researchButton.clicked -= OnResearchClicked;
         if (addEntitiesButton != null) addEntitiesButton.clicked -= OnAddEntities;
         if (toggleStrategyMapButton != null) toggleStrategyMapButton.clicked -= OnToggleStrategyMap;
         if (overlayModeButton != null) overlayModeButton.clicked -= OnToggleOverlay;
-        if (speedSlider != null) speedSlider.UnregisterValueChangedCallback(OnSpeedChanged);
+        if (researchButton != null) researchButton.clicked -= OnResearchClicked;
     }
 
-    // ── Speed Slider ──────────────────────────────────────────
-    private void OnSpeedChanged(ChangeEvent<float> evt) {
-        float newSpeed = evt.newValue;
-        if (speedValueLabel != null)
-            speedValueLabel.text = $"{newSpeed:F1}x";
+    // ── Add 10,000 GPU Agents ─────────────────────────────────────
+    private void OnAddEntities()
+    {
+        SlimeMapRenderer.Instance?.AddAgents(10000);
+    }
 
+    // ── Game speed / pause ────────────────────────────────────────
+    private void SetGameTimeScale(float scale)
+    {
         if (entityManager == default) return;
-        var query = entityManager.CreateEntityQuery(typeof(GameTime));
-        if (query.IsEmpty) return;
-
-        var entity = query.GetSingletonEntity();
-        var gt = entityManager.GetComponentData<GameTime>(entity);
-        gt.TimeScale = newSpeed;
-        entityManager.SetComponentData(entity, gt);
-
-        isPaused = newSpeed <= 0.01f;
-        if (pauseButton != null)
-            pauseButton.text = isPaused ? "Play" : "Pause";
+        var q = entityManager.CreateEntityQuery(typeof(GameTime));
+        if (q.IsEmpty) return;
+        var e  = q.GetSingletonEntity();
+        var gt = entityManager.GetComponentData<GameTime>(e);
+        gt.TimeScale = scale;
+        entityManager.SetComponentData(e, gt);
+        isPaused = scale <= 0.01f;
+        if (pauseButton != null) pauseButton.text = isPaused ? "Play" : "Pause";
     }
 
-    // ── Add 10 000 GPU Agents ─────────────────────────────────
-    private void OnAddEntities() {
-        if (SlimeMapRenderer.Instance != null)
-            SlimeMapRenderer.Instance.AddAgents(10000);
+    private void TogglePause()
+    {
+        isPaused = !isPaused;
+        float newScale = isPaused ? 0f : (previousTimeScale > 0f ? previousTimeScale : 1f);
+        if (!isPaused && speedSlider != null) previousTimeScale = speedSlider.value;
+        SetGameTimeScale(newScale);
+        if (speedSlider != null && !isPaused) speedSlider.value = newScale;
+        if (pauseButton != null) pauseButton.text = isPaused ? "Play" : "Pause";
     }
 
-    // ── Toggle Strategy Map ───────────────────────────────────
-    private void OnToggleStrategyMap() {
+    // ── Strategy map ──────────────────────────────────────────────
+    private void OnToggleStrategyMap()
+    {
         strategyMapVisible = !strategyMapVisible;
-
-        if (strategyLayerGO != null) {
-            strategyLayerGO.SetActive(strategyMapVisible);
-        }
-
-        if (toggleStrategyMapButton != null) {
-            toggleStrategyMapButton.text = strategyMapVisible
-                ? "Cacher Strategy Map"
-                : "Montrer Strategy Map";
-        }
+        strategyLayerGO?.SetActive(strategyMapVisible);
+        if (toggleStrategyMapButton != null)
+            toggleStrategyMapButton.text = strategyMapVisible ? "Cacher Strategy Map" : "Montrer Strategy Map";
     }
 
-    // ── Toggle Overlay Mode ──────────────────────────────────
-    private void OnToggleOverlay() {
+    private void OnToggleOverlay()
+    {
         overlayMode = !overlayMode;
-
-        if (strategyLayerGO != null) {
+        if (strategyLayerGO != null)
+        {
             var mr = strategyLayerGO.GetComponent<MeshRenderer>();
-            if (mr != null && mr.sharedMaterial != null) {
-                if (overlayMode && additiveShader != null) {
-                    mr.sharedMaterial.shader = additiveShader;
-                } else if (opaqueShader != null) {
-                    mr.sharedMaterial.shader = opaqueShader;
-                }
-            }
-
-            // Ensure the strategy layer is visible when enabling overlay
-            if (overlayMode && !strategyMapVisible) {
+            if (mr?.sharedMaterial != null)
+                mr.sharedMaterial.shader = overlayMode && additiveShader != null ? additiveShader : opaqueShader;
+            if (overlayMode && !strategyMapVisible)
+            {
                 strategyMapVisible = true;
                 strategyLayerGO.SetActive(true);
-                if (toggleStrategyMapButton != null)
-                    toggleStrategyMapButton.text = "Cacher Strategy Map";
+                if (toggleStrategyMapButton != null) toggleStrategyMapButton.text = "Cacher Strategy Map";
             }
         }
-
-        if (overlayModeButton != null) {
+        if (overlayModeButton != null)
+        {
             overlayModeButton.text = overlayMode ? "Mode Opaque" : "Mode Overlay";
             overlayModeButton.style.backgroundColor = new StyleColor(
-                overlayMode ? new Color(0.20f, 0.50f, 0.35f) : new Color(0.20f, 0.31f, 0.39f));
+                overlayMode ? new Color(0.2f, 0.5f, 0.35f) : new Color(0.2f, 0.31f, 0.39f));
         }
     }
 
-    // ── Pause ──────────────────────────────────────────────────
-    private void TogglePause() {
-        if (entityManager == default) return;
-        
-        var query = entityManager.CreateEntityQuery(typeof(GameTime));
-        if (query.IsEmpty) return;
-
-        var gameTimeEntity = query.GetSingletonEntity();
-        var gameTime = entityManager.GetComponentData<GameTime>(gameTimeEntity);
-
-        isPaused = !isPaused;
-
-        if (isPaused) {
-            previousTimeScale = gameTime.TimeScale;
-            gameTime.TimeScale = 0f;
-            pauseButton.text = "Play";
-            if (speedSlider != null) speedSlider.value = 0f;
-        } else {
-            gameTime.TimeScale = previousTimeScale > 0 ? previousTimeScale : 1f;
-            pauseButton.text = "Pause";
-            if (speedSlider != null) speedSlider.value = gameTime.TimeScale;
-        }
-
-        entityManager.SetComponentData(gameTimeEntity, gameTime);
-    }
-    
-    // ── Tech UI ────────────────────────────────────────────────
-    private void UpdateTechUI() {
-        if (DataLoader.Instance != null && DataLoader.Instance.TechDatabase.Count > 0) {
+    // ── Tech ──────────────────────────────────────────────────────
+    private void UpdateTechUI()
+    {
+        if (DataLoader.Instance != null && DataLoader.Instance.TechDatabase.Count > 0)
+        {
             var tech = DataLoader.Instance.GetTech(targetTechId);
-            if (tech.id != null) {
-                techNameLabel.text = "Tech: " + LocalizationManager.Instance.GetText(tech.nameKey);
+            if (tech.id != null)
+            {
+                if (techNameLabel != null) techNameLabel.text = "Tech: " + LocalizationManager.Instance.GetText(tech.nameKey);
                 techCostCache = tech.energyCost;
-                techCostLabel.text = $"Coût : {techCostCache} Énergie";
+                if (techCostLabel != null) techCostLabel.text = $"Coût : {techCostCache} Énergie";
             }
         }
     }
 
-    private void OnResearchClicked() {
+    private void OnResearchClicked()
+    {
         if (hasResearchedMembrane) return;
-        if (currentP1Energy >= techCostCache) {
-            DeductEnergyFromPlayer1(techCostCache);
+        if (currentP1Energy >= techCostCache)
+        {
             hasResearchedMembrane = true;
-            researchButton.text = "Recherché !";
-            researchButton.SetEnabled(false);
-            techCostLabel.text = "Débloqué";
-            if (entityManager != default) {
-                var evtEntity = entityManager.CreateEntity();
-                entityManager.AddComponentData(evtEntity, new TechResearchedEvent { TechID = targetTechId });
+            if (researchButton != null) { researchButton.text = "Recherché !"; researchButton.SetEnabled(false); }
+            if (techCostLabel  != null)   techCostLabel.text  = "Débloqué";
+            if (entityManager  != default)
+            {
+                var ev = entityManager.CreateEntity();
+                entityManager.AddComponentData(ev, new TechResearchedEvent { TechID = targetTechId });
             }
         }
     }
 
-    private void DeductEnergyFromPlayer1(float amountToDeduct) {
-        // Energy tracking will be re-added via GPU readback in a future step
-    }
-
-    // ── Update Loop (THROTTLED) ────────────────────────────────
-    private void Update() {
+    // ── Update Loop ───────────────────────────────────────────────
+    private void Update()
+    {
         uiUpdateCounter++;
         if (uiUpdateCounter < 15) return;
         uiUpdateCounter = 0;
 
-        // Agent count from GPU manager
-        if (entityCountLabel != null) {
-            int count = SlimeMapRenderer.Instance != null ? SlimeMapRenderer.Instance.AgentCount : 0;
-            entityCountLabel.text = $"Entités : {count:N0}";
+        // GPU agent count
+        if (entityCountLabel != null)
+        {
+            int n = SlimeMapRenderer.Instance != null ? SlimeMapRenderer.Instance.AgentCount : 0;
+            entityCountLabel.text = $"Agents : {n:N0}";
         }
 
-        // Energy placeholder (GPU readback not yet implemented)
-        if (energyLabel != null)
-            energyLabel.text = "Énergie : —";
+        if (energyLabel != null) energyLabel.text = "Énergie : —";
     }
 }

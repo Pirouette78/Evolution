@@ -43,8 +43,10 @@ public class TerrainMapRenderer : MonoBehaviour
     public float[,] HeightMap { get; private set; }
 
     private Texture2D terrainTexture;
+    private Texture2D walkabilityTexture;  // White = land, Black = water
 
-    public Texture2D GetTexture() => terrainTexture;
+    public Texture2D GetTexture()             => terrainTexture;
+    public Texture2D GetWalkabilityTexture()  => walkabilityTexture;
 
     private void Awake()
     {
@@ -122,6 +124,20 @@ public class TerrainMapRenderer : MonoBehaviour
 
         terrainTexture.SetPixels(pixels);
         terrainTexture.Apply();
+
+        // --- Binary walkability texture (R8: 1.0 = land, 0.0 = water) ---
+        walkabilityTexture = new Texture2D(Width, Height, TextureFormat.R8, false);
+        walkabilityTexture.filterMode = FilterMode.Point;
+        walkabilityTexture.wrapMode   = TextureWrapMode.Clamp;
+
+        Color[] walkPixels = new Color[Width * Height];
+        for (int y = 0; y < Height; y++)
+            for (int x = 0; x < Width; x++)
+                walkPixels[y * Width + x] = WalkabilityGrid[x, y] ? Color.white : Color.black;
+
+        walkabilityTexture.SetPixels(walkPixels);
+        walkabilityTexture.Apply();
+        Debug.Log("[TERRAIN] Walkability texture generated.");
     }
 
     private Color HeightToColour(float h)
@@ -164,7 +180,7 @@ public class TerrainMapRenderer : MonoBehaviour
 
     private void OnDestroy()
     {
-        if (terrainTexture != null)
-            Destroy(terrainTexture);
+        if (terrainTexture != null)     Destroy(terrainTexture);
+        if (walkabilityTexture != null) Destroy(walkabilityTexture);
     }
 }

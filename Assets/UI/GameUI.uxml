@@ -4,39 +4,105 @@
     xmlns:ui="UnityEngine.UIElements"
     xsi:noNamespaceSchemaLocation="../../UIElementsSchema/UIElements.xsd">
 
-    <!-- Top bar: Energy + Pause -->
-    <ui:VisualElement name="TopBar" style="flex-direction: row; justify-content: space-between; padding: 12px 20px; align-items: center;">
-        <ui:Label name="EnergyLabel" text="Énergie : 0" style="font-size: 22px; color: white; -unity-font-style: bold; text-shadow: 1px 1px 2px black;" />
-        <ui:Label name="EntityCountLabel" text="Entités : 0" style="font-size: 18px; color: rgb(200, 220, 255); -unity-font-style: bold; text-shadow: 1px 1px 2px black;" />
-        <ui:Button name="PauseButton" text="Pause" style="font-size: 18px; padding: 8px 20px; background-color: rgb(50, 50, 50); color: white; border-radius: 5px;" />
+    <!-- Top bar: Energy + Entity Count + Pause -->
+    <ui:VisualElement name="TopBar" style="flex-direction: row; justify-content: space-between; padding: 10px 20px; align-items: center;">
+        <ui:Label name="EnergyLabel" text="Énergie : —" style="font-size: 20px; color: white; -unity-font-style: bold; text-shadow: 1px 1px 2px black;" />
+        <ui:Label name="EntityCountLabel" text="Entités : 0" style="font-size: 18px; color: rgb(180, 220, 255); -unity-font-style: bold; text-shadow: 1px 1px 2px black;" />
+        <ui:Button name="PauseButton" text="Pause" style="font-size: 16px; padding: 6px 18px; background-color: rgb(50, 50, 50); color: white; border-radius: 5px;" />
     </ui:VisualElement>
 
-    <!-- Bottom-left control panel -->
-    <ui:VisualElement name="ControlPanel" style="position: absolute; bottom: 16px; left: 16px; padding: 14px 18px; background-color: rgba(10, 10, 15, 0.85); border-radius: 10px; min-width: 260px;">
-        
-        <!-- Speed Slider -->
-        <ui:Label text="Vitesse du jeu" style="font-size: 14px; color: rgb(180, 180, 180); margin-bottom: 4px;" />
-        <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 12px;">
-            <ui:Slider name="SpeedSlider" low-value="0" high-value="10" value="1" style="flex-grow: 1;" />
-            <ui:Label name="SpeedValueLabel" text="1.0x" style="font-size: 14px; color: white; min-width: 45px; -unity-text-align: middle-right; margin-left: 8px;" />
-        </ui:VisualElement>
+    <!-- Left panel: Game + Slime controls -->
+    <ui:VisualElement name="ControlPanel" style="position: absolute; top: 60px; left: 16px; padding: 12px 16px; background-color: rgba(10,10,15,0.88); border-radius: 10px; min-width: 270px; max-height: 90%; overflow: hidden;">
+        <ui:ScrollView name="ControlScroll" style="flex-grow: 1;">
 
-        <!-- Add Entities Button -->
-        <ui:Button name="AddEntitiesButton" text="+ 10000 Entités (GPU)" style="font-size: 16px; padding: 8px 14px; background-color: rgb(30, 100, 180); color: white; border-radius: 5px; margin-bottom: 8px;" />
+            <!-- ── Jeu ────────────────────────────── -->
+            <ui:Label text="⏩  Vitesse" style="font-size: 13px; color: rgb(140,200,255); -unity-font-style: bold; margin-bottom:3px; margin-top:4px;" />
+            <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 10px;">
+                <ui:Slider name="SpeedSlider" low-value="0" high-value="10" value="1" style="flex-grow: 1;" />
+                <ui:Label name="SpeedValueLabel" text="1.0x" style="font-size: 13px; color: white; min-width: 40px; -unity-text-align: middle-right; margin-left: 6px;" />
+            </ui:VisualElement>
 
-        <!-- Toggle Strategy Map -->
-        <ui:Button name="ToggleStrategyMapButton" text="Cacher Strategy Map" style="font-size: 16px; padding: 8px 14px; background-color: rgb(80, 50, 120); color: white; border-radius: 5px; margin-bottom: 8px;" />
+            <!-- ── Agents ─────────────────────────── -->
+            <ui:Label text="🧫  Agents" style="font-size: 13px; color: rgb(140,200,255); -unity-font-style: bold; margin-bottom:5px;" />
+            <ui:Button name="AddEntitiesButton" text="+ 10 000 Agents (GPU)" style="font-size: 14px; padding: 7px 10px; background-color: rgb(30,100,180); color: white; border-radius: 5px; margin-bottom: 8px;" />
 
-        <!-- Overlay Mode -->
-        <ui:Button name="OverlayModeButton" text="Mode Overlay" style="font-size: 16px; padding: 8px 14px; background-color: rgb(50, 80, 100); color: white; border-radius: 5px;" />
+            <!-- Steps per frame -->
+            <ui:Label text="Steps / frame" style="font-size: 12px; color: rgb(180,180,180); margin-bottom:2px;" />
+            <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 10px;">
+                <ui:SliderInt name="StepsPerFrameSlider" low-value="1" high-value="8" value="1" style="flex-grow:1;" />
+                <ui:Label name="StepsPerFrameLabel" text="1" style="font-size:13px; color:white; min-width:28px; -unity-text-align: middle-right; margin-left:6px;" />
+            </ui:VisualElement>
 
+            <!-- ── Trail ──────────────────────────── -->
+            <ui:Label text="🌊  Traînée" style="font-size: 13px; color: rgb(140,200,255); -unity-font-style: bold; margin-bottom:5px;" />
+
+            <ui:Label text="Trail Weight" style="font-size: 12px; color: rgb(180,180,180); margin-bottom:2px;" />
+            <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 8px;">
+                <ui:Slider name="TrailWeightSlider" low-value="0" high-value="50" value="5" style="flex-grow:1;" />
+                <ui:Label name="TrailWeightLabel" text="5.0" style="font-size:13px; color:white; min-width:38px; -unity-text-align: middle-right; margin-left:6px;" />
+            </ui:VisualElement>
+
+            <ui:Label text="Decay Rate" style="font-size: 12px; color: rgb(180,180,180); margin-bottom:2px;" />
+            <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 8px;">
+                <ui:Slider name="DecayRateSlider" low-value="0" high-value="5" value="1" style="flex-grow:1;" />
+                <ui:Label name="DecayRateLabel" text="1.0" style="font-size:13px; color:white; min-width:38px; -unity-text-align: middle-right; margin-left:6px;" />
+            </ui:VisualElement>
+
+            <ui:Label text="Diffuse Rate" style="font-size: 12px; color: rgb(180,180,180); margin-bottom:2px;" />
+            <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 10px;">
+                <ui:Slider name="DiffuseRateSlider" low-value="0" high-value="5" value="2" style="flex-grow:1;" />
+                <ui:Label name="DiffuseRateLabel" text="2.0" style="font-size:13px; color:white; min-width:38px; -unity-text-align: middle-right; margin-left:6px;" />
+            </ui:VisualElement>
+
+            <!-- ── Mouvement ───────────────────────── -->
+            <ui:Label text="🏃  Mouvement" style="font-size: 13px; color: rgb(140,200,255); -unity-font-style: bold; margin-bottom:5px;" />
+
+            <ui:Label text="Move Speed" style="font-size: 12px; color: rgb(180,180,180); margin-bottom:2px;" />
+            <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 8px;">
+                <ui:Slider name="MoveSpeedSlider" low-value="0" high-value="200" value="75" style="flex-grow:1;" />
+                <ui:Label name="MoveSpeedLabel" text="75" style="font-size:13px; color:white; min-width:38px; -unity-text-align: middle-right; margin-left:6px;" />
+            </ui:VisualElement>
+
+            <ui:Label text="Turn Speed" style="font-size: 12px; color: rgb(180,180,180); margin-bottom:2px;" />
+            <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 10px;">
+                <ui:Slider name="TurnSpeedSlider" low-value="0" high-value="100" value="10" style="flex-grow:1;" />
+                <ui:Label name="TurnSpeedLabel" text="10" style="font-size:13px; color:white; min-width:38px; -unity-text-align: middle-right; margin-left:6px;" />
+            </ui:VisualElement>
+
+            <!-- ── Capteurs ────────────────────────── -->
+            <ui:Label text="👁  Capteurs" style="font-size: 13px; color: rgb(140,200,255); -unity-font-style: bold; margin-bottom:5px;" />
+
+            <ui:Label text="Sensor Angle (°)" style="font-size: 12px; color: rgb(180,180,180); margin-bottom:2px;" />
+            <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 8px;">
+                <ui:Slider name="SensorAngleSlider" low-value="5" high-value="90" value="30" style="flex-grow:1;" />
+                <ui:Label name="SensorAngleLabel" text="30°" style="font-size:13px; color:white; min-width:38px; -unity-text-align: middle-right; margin-left:6px;" />
+            </ui:VisualElement>
+
+            <ui:Label text="Sensor Offset" style="font-size: 12px; color: rgb(180,180,180); margin-bottom:2px;" />
+            <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 8px;">
+                <ui:Slider name="SensorOffsetSlider" low-value="1" high-value="60" value="20" style="flex-grow:1;" />
+                <ui:Label name="SensorOffsetLabel" text="20" style="font-size:13px; color:white; min-width:38px; -unity-text-align: middle-right; margin-left:6px;" />
+            </ui:VisualElement>
+
+            <ui:Label text="Sensor Size" style="font-size: 12px; color: rgb(180,180,180); margin-bottom:2px;" />
+            <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 12px;">
+                <ui:SliderInt name="SensorSizeSlider" low-value="1" high-value="6" value="2" style="flex-grow:1;" />
+                <ui:Label name="SensorSizeLabel" text="2" style="font-size:13px; color:white; min-width:28px; -unity-text-align: middle-right; margin-left:6px;" />
+            </ui:VisualElement>
+
+            <!-- ── Map ────────────────────────────── -->
+            <ui:Label text="🗺  Carte" style="font-size: 13px; color: rgb(140,200,255); -unity-font-style: bold; margin-bottom:5px;" />
+            <ui:Button name="ToggleStrategyMapButton" text="Cacher Strategy Map" style="font-size: 14px; padding: 7px 10px; background-color: rgb(80,50,120); color: white; border-radius: 5px; margin-bottom: 6px;" />
+            <ui:Button name="OverlayModeButton" text="Mode Overlay" style="font-size: 14px; padding: 7px 10px; background-color: rgb(50,80,100); color: white; border-radius: 5px;" />
+
+        </ui:ScrollView>
     </ui:VisualElement>
 
     <!-- Bottom-right tech panel -->
-    <ui:VisualElement name="TechContainer" style="position: absolute; bottom: 16px; right: 16px; padding: 15px; background-color: rgba(0, 0, 0, 0.7); border-radius: 10px;">
+    <ui:VisualElement name="TechContainer" style="position: absolute; bottom: 16px; right: 16px; padding: 15px; background-color: rgba(0,0,0,0.7); border-radius: 10px;">
         <ui:Label name="TechNameLabel" text="Tech: Membrane Sélective" style="font-size: 18px; color: white; -unity-font-style: bold; margin-bottom: 5px;" />
-        <ui:Label name="TechCostLabel" text="Coût : 1500 Énergie" style="font-size: 14px; color: rgb(200, 200, 200); margin-bottom: 10px;" />
-        <ui:Button name="ResearchButton" text="Rechercher" style="font-size: 16px; padding: 8px 15px; background-color: rgb(0, 100, 200); color: white; border-radius: 5px;" />
+        <ui:Label name="TechCostLabel" text="Coût : 1500 Énergie" style="font-size: 14px; color: rgb(200,200,200); margin-bottom: 10px;" />
+        <ui:Button name="ResearchButton" text="Rechercher" style="font-size: 16px; padding: 8px 15px; background-color: rgb(0,100,200); color: white; border-radius: 5px;" />
     </ui:VisualElement>
 
 </ui:UXML>

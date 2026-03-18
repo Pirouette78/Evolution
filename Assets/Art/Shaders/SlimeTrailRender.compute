@@ -49,18 +49,15 @@ float scaleToRange01(uint state) {
     return state / 4294967295.0;
 }
 
-// Check if terrain is water
+// Check if terrain is walkable (binary walkability map: white = land, black = water)
 bool isWalkable(float2 pos) {
     if (pos.x < 0 || pos.x >= width || pos.y < 0 || pos.y >= height) return false;
-    
-    // If terrain collision is disabled, everything is walkable
     if (useTerrainCollision == 0) return true;
     
+    // Binary texture: 1.0 = land, 0.0 = water  
     float2 uv = float2(pos.x / width, pos.y / height);
     float4 col = TerrainWalkabilityMap.SampleLevel(sampler_TerrainWalkabilityMap, uv, 0);
-    
-    // DeepWater r~0.05, ShallowWater r~0.10. Land (Forest/Sand/Grass) r > 0.12.
-    return col.r > 0.12; 
+    return col.r > 0.5;
 }
 
 float sense(Agent agent, float sensorAngleOffset) {
