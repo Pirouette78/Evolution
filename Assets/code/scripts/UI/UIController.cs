@@ -11,7 +11,9 @@ public class UIController : MonoBehaviour
     private Label  entityCountLabel;
     private Button pauseButton;
 
-    private Toggle[] playerToggles = new Toggle[6];
+    private Button[] playerSelectButtons = new Button[6];
+    private Toggle toggleVisibility;
+    private int selectedPlayerIndex = 0;
 
     // ── Game controls ──────────────────────────────────────────────
     private Slider    speedSlider;
@@ -123,35 +125,40 @@ public class UIController : MonoBehaviour
             if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.StepsPerFrame = e.newValue;
         });
 
-        BindSlider(maxAgeSlider,       maxAgeLabel,       "F0", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.MaxAge       = v; });
-        BindSlider(trailWeightSlider,  trailWeightLabel,  "F1", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.TrailWeight  = v; });
-        BindSlider(decayRateSlider,    decayRateLabel,    "F1", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.DecayRate    = v; });
-        BindSlider(diffuseRateSlider,  diffuseRateLabel,  "F1", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.DiffuseRate  = v; });
-        BindSlider(moveSpeedSlider,    moveSpeedLabel,    "F0", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.MoveSpeed    = v; });
-        BindSlider(turnSpeedSlider,    turnSpeedLabel,    "F0", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.TurnSpeed    = v; });
-        BindSlider(sensorAngleSlider,  sensorAngleLabel,  "F0°",v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.SensorAngleDeg = v; });
-        BindSlider(sensorOffsetSlider, sensorOffsetLabel, "F0", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.SensorOffsetDst = v; });
+        BindSlider(maxAgeSlider,       maxAgeLabel,       "F0", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.speciesSettings[selectedPlayerIndex].maxAge = v; });
+        BindSlider(trailWeightSlider,  trailWeightLabel,  "F1", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.speciesSettings[selectedPlayerIndex].trailWeight = v; });
+        BindSlider(decayRateSlider,    decayRateLabel,    "F1", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.speciesSettings[selectedPlayerIndex].decayRate = v; });
+        BindSlider(diffuseRateSlider,  diffuseRateLabel,  "F1", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.speciesSettings[selectedPlayerIndex].diffuseRate = v; });
+        BindSlider(moveSpeedSlider,    moveSpeedLabel,    "F0", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.speciesSettings[selectedPlayerIndex].moveSpeed = v; });
+        BindSlider(turnSpeedSlider,    turnSpeedLabel,    "F0", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.speciesSettings[selectedPlayerIndex].turnSpeed = v; });
+        BindSlider(sensorAngleSlider,  sensorAngleLabel,  "F0°",v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.speciesSettings[selectedPlayerIndex].sensorAngleRad = v * Mathf.Deg2Rad; });
+        BindSlider(sensorOffsetSlider, sensorOffsetLabel, "F0", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.speciesSettings[selectedPlayerIndex].sensorOffsetDst = v; });
         sensorSizeSlider?.RegisterValueChangedCallback(e => {
             if (sensorSizeLabel  != null) sensorSizeLabel.text  = e.newValue.ToString();
-            if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.SensorSize = e.newValue;
+            if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.speciesSettings[selectedPlayerIndex].sensorSize = e.newValue;
         });
 
         // Maps and Toggles
-        playerToggles[0] = root.Q<Toggle>("ToggleP1");
-        playerToggles[1] = root.Q<Toggle>("ToggleP2");
-        playerToggles[2] = root.Q<Toggle>("ToggleP3");
-        playerToggles[3] = root.Q<Toggle>("ToggleP4");
-        playerToggles[4] = root.Q<Toggle>("ToggleP5");
-        playerToggles[5] = root.Q<Toggle>("ToggleP6");
+        playerSelectButtons[0] = root.Q<Button>("BtnSelectP1");
+        playerSelectButtons[1] = root.Q<Button>("BtnSelectP2");
+        playerSelectButtons[2] = root.Q<Button>("BtnSelectP3");
+        playerSelectButtons[3] = root.Q<Button>("BtnSelectP4");
+        playerSelectButtons[4] = root.Q<Button>("BtnSelectP5");
+        playerSelectButtons[5] = root.Q<Button>("BtnSelectP6");
+
+        toggleVisibility = root.Q<Toggle>("ToggleVisibility");
+        if (toggleVisibility != null) {
+            toggleVisibility.RegisterValueChangedCallback(e => {
+                if (SlimeMapRenderer.Instance != null) {
+                    SlimeMapRenderer.Instance.SetPlayerVisibility(selectedPlayerIndex, e.newValue);
+                }
+            });
+        }
 
         for (int i = 0; i < 6; i++) {
             int index = i;
-            if (playerToggles[i] != null) {
-                playerToggles[i].RegisterValueChangedCallback(e => {
-                    if (SlimeMapRenderer.Instance != null) {
-                        SlimeMapRenderer.Instance.SetPlayerVisibility(index, e.newValue);
-                    }
-                });
+            if (playerSelectButtons[i] != null) {
+                playerSelectButtons[i].clicked += () => SelectPlayer(index);
             }
         }
 
@@ -165,6 +172,64 @@ public class UIController : MonoBehaviour
             entityManager = World.DefaultGameObjectInjectionWorld.EntityManager;
         }
         UpdateTechUI();
+        
+        // Use a coroutine or deferred call to let SlimeMapRenderer initialize if this runs before it
+        StartCoroutine(InitSelectionDeferred());
+    }
+
+    private System.Collections.IEnumerator InitSelectionDeferred()
+    {
+        yield return null; // wait 1 frame
+        SelectPlayer(0);
+    }
+
+    private void SelectPlayer(int index)
+    {
+        selectedPlayerIndex = index;
+        if (SlimeMapRenderer.Instance != null) {
+            SlimeMapRenderer.Instance.SelectedPlayerIndex = index;
+
+            var settings = SlimeMapRenderer.Instance.speciesSettings[index];
+            maxAgeSlider?.SetValueWithoutNotify(settings.maxAge);
+            if (maxAgeLabel != null) maxAgeLabel.text = settings.maxAge.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+
+            trailWeightSlider?.SetValueWithoutNotify(settings.trailWeight);
+            if (trailWeightLabel != null) trailWeightLabel.text = settings.trailWeight.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+
+            decayRateSlider?.SetValueWithoutNotify(settings.decayRate);
+            if (decayRateLabel != null) decayRateLabel.text = settings.decayRate.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+
+            diffuseRateSlider?.SetValueWithoutNotify(settings.diffuseRate);
+            if (diffuseRateLabel != null) diffuseRateLabel.text = settings.diffuseRate.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+
+            moveSpeedSlider?.SetValueWithoutNotify(settings.moveSpeed);
+            if (moveSpeedLabel != null) moveSpeedLabel.text = settings.moveSpeed.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+
+            turnSpeedSlider?.SetValueWithoutNotify(settings.turnSpeed);
+            if (turnSpeedLabel != null) turnSpeedLabel.text = settings.turnSpeed.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+
+            sensorAngleSlider?.SetValueWithoutNotify(settings.sensorAngleRad * Mathf.Rad2Deg);
+            if (sensorAngleLabel != null) sensorAngleLabel.text = (settings.sensorAngleRad * Mathf.Rad2Deg).ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "°";
+
+            sensorOffsetSlider?.SetValueWithoutNotify(settings.sensorOffsetDst);
+            if (sensorOffsetLabel != null) sensorOffsetLabel.text = settings.sensorOffsetDst.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+
+            sensorSizeSlider?.SetValueWithoutNotify(settings.sensorSize);
+            if (sensorSizeLabel != null) sensorSizeLabel.text = settings.sensorSize.ToString();
+
+            if (toggleVisibility != null) {
+                toggleVisibility.SetValueWithoutNotify(SlimeMapRenderer.Instance.GetPlayerVisibility(index));
+            }
+        }
+
+        // Highlight selected button
+        for (int i = 0; i < 6; i++) {
+            if (playerSelectButtons[i] != null) {
+                playerSelectButtons[i].style.borderBottomWidth = (i == index) ? 3 : 0;
+                playerSelectButtons[i].style.borderBottomColor = Color.white;
+                playerSelectButtons[i].style.opacity = (i == index) ? 1.0f : 0.5f;
+            }
+        }
     }
 
     private void BindSlider(Slider slider, Label label, string fmt, System.Action<float> onChange)
@@ -188,7 +253,7 @@ public class UIController : MonoBehaviour
     // ── Add 10,000 GPU Agents ─────────────────────────────────────
     private void OnAddEntities()
     {
-        SlimeMapRenderer.Instance?.AddAgents(10000);
+        SlimeMapRenderer.Instance?.AddAgents(10000, selectedPlayerIndex);
     }
 
     // ── Game speed / pause ────────────────────────────────────────

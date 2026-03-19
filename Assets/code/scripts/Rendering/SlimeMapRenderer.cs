@@ -17,16 +17,8 @@ public class SlimeMapRenderer : MonoBehaviour
     [Header("Simulation Settings")]
     public int Width = 512;
     public int Height = 512;
-    [Range(0.1f, 200f)] public float MoveSpeed     = 75f;
-    [Range(0f, 100f)]   public float TurnSpeed     = 10f;
-    [Range(0f, 50f)]    public float TrailWeight   = 5f;
-    [Range(0f, 5f)]     public float DecayRate     = 1f;
-    [Range(0f, 5f)]     public float DiffuseRate   = 2f;
-    [Range(5f, 90f)]    public float SensorAngleDeg   = 30f;
-    [Range(1f, 60f)]    public float SensorOffsetDst  = 20f;
-    [Range(1, 6)]       public int   SensorSize        = 2;
     [Range(1, 8)]       public int   StepsPerFrame     = 1;
-    [Range(1f, 1000f)]  public float MaxAge            = 100f;
+    
     [Header("Initial Spawn")]
     public int InitialAgentCount = 5000;
 
@@ -41,6 +33,9 @@ public class SlimeMapRenderer : MonoBehaviour
     public bool IsReady              => isInitialized;
     public int  AgentCount           => currentAgentCount;
 
+    public int SelectedPlayerIndex = 0;
+    public SpeciesSettings[] speciesSettings = new SpeciesSettings[6];
+
     // ── Private ─────────────────────────────────────────────────────
     private ComputeBuffer agentBuffer;
     private int maxAgents = 600000;
@@ -53,6 +48,21 @@ public class SlimeMapRenderer : MonoBehaviour
     // Cached terrain data for CPU-side spawn validation
     private float[,] heightMapCache;
     private float waterThresholdCache;
+
+    [System.Serializable]
+    public struct SpeciesSettings
+    {
+        public float moveSpeed;
+        public float turnSpeed;
+        public float sensorAngleRad;
+        public float sensorOffsetDst;
+        public int   sensorSize;
+        public float maxAge;
+        public float trailWeight;
+        public float decayRate;
+        public float diffuseRate;
+    }
+    private ComputeBuffer speciesSettingsBuffer;
 
     struct TypeOfWorker
     {
@@ -83,6 +93,22 @@ public class SlimeMapRenderer : MonoBehaviour
 
         agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*5 + sizeof(int)*7);
         // struct size (48 bytes) = 5 floats (20) + 7 ints (28)
+        
+        speciesSettingsBuffer = new ComputeBuffer(6, 36);
+
+        for (int i = 0; i < 6; i++) {
+            speciesSettings[i] = new SpeciesSettings {
+                moveSpeed = 75f,
+                turnSpeed = 10f,
+                sensorAngleRad = 30f * Mathf.Deg2Rad,
+                sensorOffsetDst = 20f,
+                sensorSize = 2,
+                maxAge = 100f,
+                trailWeight = 5f,
+                decayRate = 1f,
+                diffuseRate = 2f
+            };
+        }
 
         if (DisplayTarget == null) DisplayTarget = GetComponent<MeshRenderer>();
     }
@@ -160,8 +186,13 @@ public class SlimeMapRenderer : MonoBehaviour
         SlimeShader.SetTexture(clearKernel,   "DiffusedTrailMap", DiffusedMap);
         SlimeShader.SetTexture(composeKernel, "DiffusedTrailMap", DiffusedMap);
         SlimeShader.SetTexture(composeKernel, "DisplayMap",       DisplayMap);
+        SlimeShader.SetTexture(composeKernel, "DisplayMap",       DisplayMap);
         SlimeShader.SetInt("width",  Width);
         SlimeShader.SetInt("height", Height);
+
+        SlimeShader.SetBuffer(updateKernel, "speciesSettings", speciesSettingsBuffer);
+        SlimeShader.SetBuffer(drawKernel, "speciesSettings", speciesSettingsBuffer);
+        SlimeShader.SetBuffer(diffuseKernel, "speciesSettings", speciesSettingsBuffer);
 
         // Fallback for TerrainWalkabilityMap in case terrain isn't ready when UpdateAgents runs
         SlimeShader.SetTexture(updateKernel, "TerrainWalkabilityMap", Texture2D.whiteTexture);
@@ -235,8 +266,15 @@ public class SlimeMapRenderer : MonoBehaviour
         }
     }
 
+    public bool GetPlayerVisibility(int index)
+    {
+        if (index >= 0 && index < 6)
+            return (playerVisibilityMask & (1 << index)) != 0;
+        return false;
+    }
+
     /// <summary>Append count new agents to the GPU buffer.</summary>
-    public void AddAgents(int count)
+    public void AddAgents(int count, int forceSpecies = -1)
     {
         if (!isInitialized) { Debug.LogWarning("[RENDERER] Not initialized."); return; }
         
@@ -249,7 +287,7 @@ public class SlimeMapRenderer : MonoBehaviour
         {
             Vector2 pos = GetSpawnPosition();
             float   angle = Random.value * Mathf.PI * 2f;
-            int     pid   = Random.Range(0, 6);
+            int     pid   = forceSpecies >= 0 ? forceSpecies : Random.Range(0, 6);
 
             newAgents[i] = new Agent
             {
@@ -303,16 +341,11 @@ public class SlimeMapRenderer : MonoBehaviour
         // Per-frame global uniforms
         SlimeShader.SetFloat("time",             Time.time);
         SlimeShader.SetFloat("deltaTime",        dt);
-        SlimeShader.SetFloat("moveSpeed",        MoveSpeed);
-        SlimeShader.SetFloat("turnSpeed",        TurnSpeed);
-        SlimeShader.SetFloat("trailWeight",      TrailWeight);
-        SlimeShader.SetFloat("decayRate",        DecayRate);
-        SlimeShader.SetFloat("diffuseRate",      DiffuseRate);
-        SlimeShader.SetFloat("sensorAngleRad",   SensorAngleDeg * Mathf.Deg2Rad);
-        SlimeShader.SetFloat("sensorOffsetDst",  SensorOffsetDst);
-        SlimeShader.SetInt  ("sensorSize",       SensorSize);
         SlimeShader.SetInt  ("numAgents",        currentAgentCount);
-        SlimeShader.SetFloat("maxAge",           MaxAge);
+        
+        // Push per-species settings
+        speciesSettingsBuffer.SetData(speciesSettings);
+
         SlimeShader.SetInt ("playerVisibilityMask", playerVisibilityMask);
 
         int agentGroups  = Mathf.CeilToInt(currentAgentCount / 16f);
@@ -345,6 +378,7 @@ public class SlimeMapRenderer : MonoBehaviour
     private void OnDestroy()
     {
         agentBuffer?.Release();
+        speciesSettingsBuffer?.Release();
         TrailMap?.Release();
         DiffusedMap?.Release();
         DisplayMap?.Release();

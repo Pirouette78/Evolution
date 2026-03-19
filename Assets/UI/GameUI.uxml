@@ -15,16 +15,18 @@
     <ui:VisualElement name="ControlPanel" style="position: absolute; top: 60px; left: 16px; padding: 12px 16px; background-color: rgba(10,10,15,0.88); border-radius: 10px; min-width: 270px; max-height: 90%; overflow: hidden;">
         <ui:ScrollView name="ControlScroll" style="flex-grow: 1;">
 
-            <!-- ── Affichage Joueurs ──────────────────────── -->
-            <ui:Label text="👁  Affichage Joueurs" style="font-size: 13px; color: rgb(140,200,255); -unity-font-style: bold; margin-bottom:5px; margin-top:4px;" />
-            <ui:VisualElement style="flex-direction: row; flex-wrap: wrap; margin-bottom: 10px;">
-                <ui:Toggle name="ToggleP1" label="P1" value="true" style="width: 40px; margin-right: 5px; color: white;" />
-                <ui:Toggle name="ToggleP2" label="P2" value="true" style="width: 40px; margin-right: 5px; color: white;" />
-                <ui:Toggle name="ToggleP3" label="P3" value="true" style="width: 40px; margin-right: 5px; color: white;" />
-                <ui:Toggle name="ToggleP4" label="P4" value="true" style="width: 40px; margin-right: 5px; color: white;" />
-                <ui:Toggle name="ToggleP5" label="P5" value="true" style="width: 40px; margin-right: 5px; color: white;" />
-                <ui:Toggle name="ToggleP6" label="P6" value="true" style="width: 40px; margin-right: 5px; color: white;" />
+            <!-- ── SÉLECTION JOUEUR ──────────────────────── -->
+            <ui:Label text="🎨  Sélection Joueur" style="font-size: 13px; color: rgb(140,200,255); -unity-font-style: bold; margin-bottom:5px; margin-top:4px;" />
+            <ui:VisualElement style="flex-direction: row; flex-wrap: wrap; margin-bottom: 5px;">
+                <ui:Button name="BtnSelectP1" text="P1" style="width: 35px; background-color: rgb(150, 0, 0); color: white;" />
+                <ui:Button name="BtnSelectP2" text="P2" style="width: 35px; background-color: rgb(0, 150, 0); color: white;" />
+                <ui:Button name="BtnSelectP3" text="P3" style="width: 35px; background-color: rgb(0, 0, 150); color: white;" />
+                <ui:Button name="BtnSelectP4" text="P4" style="width: 35px; background-color: rgb(0, 150, 150); color: white;" />
+                <ui:Button name="BtnSelectP5" text="P5" style="width: 35px; background-color: rgb(150, 0, 150); color: white;" />
+                <ui:Button name="BtnSelectP6" text="P6" style="width: 35px; background-color: rgb(150, 150, 0); color: white;" />
             </ui:VisualElement>
+            
+            <ui:Toggle name="ToggleVisibility" label="Afficher ce joueur" value="true" style="color: white; margin-bottom: 10px;" />
 
             <!-- ── Jeu ────────────────────────────── -->
             <ui:Label text="⏩  Vitesse" style="font-size: 13px; color: rgb(140,200,255); -unity-font-style: bold; margin-bottom:3px;" />
