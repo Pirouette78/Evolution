@@ -26,6 +26,13 @@
             <ui:Label text="🧫  Agents" style="font-size: 13px; color: rgb(140,200,255); -unity-font-style: bold; margin-bottom:5px;" />
             <ui:Button name="AddEntitiesButton" text="+ 10 000 Agents (GPU)" style="font-size: 14px; padding: 7px 10px; background-color: rgb(30,100,180); color: white; border-radius: 5px; margin-bottom: 8px;" />
 
+            <!-- Max Age -->
+            <ui:Label text="Max Age" style="font-size: 12px; color: rgb(180,180,180); margin-bottom:2px;" />
+            <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 10px;">
+                <ui:Slider name="MaxAgeSlider" low-value="1" high-value="1000" value="100" style="flex-grow:1;" />
+                <ui:Label name="MaxAgeLabel" text="100" style="font-size:13px; color:white; min-width:38px; -unity-text-align: middle-right; margin-left:6px;" />
+            </ui:VisualElement>
+
             <!-- Steps per frame -->
             <ui:Label text="Steps / frame" style="font-size: 12px; color: rgb(180,180,180); margin-bottom:2px;" />
             <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 10px;">

@@ -26,6 +26,7 @@ public class SlimeMapRenderer : MonoBehaviour
     [Range(1f, 60f)]    public float SensorOffsetDst  = 20f;
     [Range(1, 6)]       public int   SensorSize        = 2;
     [Range(1, 8)]       public int   StepsPerFrame     = 1;
+    [Range(1f, 1000f)]  public float MaxAge            = 100f;
     [Header("Initial Spawn")]
     public int InitialAgentCount = 5000;
 
@@ -51,13 +52,26 @@ public class SlimeMapRenderer : MonoBehaviour
     private float[,] heightMapCache;
     private float waterThresholdCache;
 
-    // ── Struct must match the compute shader exactly (32 bytes) ─────
+    struct TypeOfWorker
+    {
+        public int fighter;
+        public int worker;
+        public int builder;
+        public int queen;
+        public int scout;
+        public int foodCollector;
+    }
+
+    // ── Struct must match the compute shader exactly (64 bytes) ─────
     struct Agent
     {
         public Vector2 position;   // 8
         public float   angle;      // 4
         public Vector4 speciesMask;// 16
         public int     speciesIndex;// 4
+        public float   age;         // 4
+        public float   hunger;      // 4
+        public TypeOfWorker typeOfWorker;// 24
     }
 
     // ================== Unity lifecycle ============================
@@ -67,9 +81,8 @@ public class SlimeMapRenderer : MonoBehaviour
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
 
-        agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*7 + sizeof(int));
-        // sizeof(float)*7 = pos(2) + angle(1) + mask(4) = 7 floats = 28 bytes
-        // + sizeof(int) = 4 bytes  → total = 32 bytes ✓
+        agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*9 + sizeof(int)*7);
+        // struct size (64 bytes) = 9 floats (36) + 7 ints (28)
 
         if (DisplayTarget == null) DisplayTarget = GetComponent<MeshRenderer>();
     }
@@ -217,7 +230,10 @@ public class SlimeMapRenderer : MonoBehaviour
                 position    = pos,
                 angle       = angle,
                 speciesMask = mask,
-                speciesIndex= pid
+                speciesIndex= pid,
+                age         = 0f,
+                hunger      = 0f,
+                typeOfWorker= new TypeOfWorker()
             };
         }
 
@@ -271,6 +287,7 @@ public class SlimeMapRenderer : MonoBehaviour
         SlimeShader.SetFloat("sensorOffsetDst",  SensorOffsetDst);
         SlimeShader.SetInt  ("sensorSize",       SensorSize);
         SlimeShader.SetInt  ("numAgents",        currentAgentCount);
+        SlimeShader.SetFloat("maxAge",           MaxAge);
 
         int agentGroups  = Mathf.CeilToInt(currentAgentCount / 16f);
         int texGroupsX   = Mathf.CeilToInt(Width  / 8f);

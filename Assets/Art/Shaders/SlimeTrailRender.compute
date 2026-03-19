@@ -3,11 +3,23 @@
 #pragma kernel Diffuse
 #pragma kernel ResetMap
 
+struct TypeOfWorker {
+    int    fighter;
+    int    worker;
+    int    builder;
+    int    queen;
+    int    scout;
+    int    foodCollector;
+};
+
 struct Agent {
     float2 position;
-    float angle;
+    float  angle;
     float4 speciesMask;
-    int speciesIndex;
+    int    speciesIndex;
+    float  age;         // Time alive in seconds
+    float  hunger;
+    TypeOfWorker    typeOfWorker;
 };
 
 RWStructuredBuffer<Agent> agents;
@@ -33,6 +45,7 @@ int useTerrainCollision;
 float sensorAngleRad = 0.5235; // ~30 degrees
 float sensorOffsetDst = 20.0;
 int sensorSize = 2;
+float maxAge = 100.0;
 
 // Hash function www.cs.ubc.ca/~rbridson/docs/schechter-sca08-turbulence.pdf
 uint hash(uint state) {
@@ -90,6 +103,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
     if (id.x >= numAgents) return;
 
     Agent agent = agents[id.x];
+    if (agent.age > maxAge) return;
 
     // Simple hash-based random using agent id and time
     uint random = hash(id.x + (uint)(time * 100000.0));
@@ -132,6 +146,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
     }
 
     agent.position = newPos;
+    agent.age += deltaTime; // Increment age by simulation time
     agents[id.x] = agent; // write back ENTIRE struct
 }
 
@@ -141,6 +156,7 @@ void DrawMap (uint3 id : SV_DispatchThreadID)
     if (id.x >= numAgents) return;
 
     Agent agent = agents[id.x];
+    if (agent.age > maxAge) return;
     int2 cellCoords = int2((int)agent.position.x, (int)agent.position.y);
     
     if (cellCoords.x >= 0 && cellCoords.x < width && cellCoords.y >= 0 && cellCoords.y < height) {

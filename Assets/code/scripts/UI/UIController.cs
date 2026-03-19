@@ -15,6 +15,8 @@ public class UIController : MonoBehaviour
     private Slider    speedSlider;
     private Label     speedValueLabel;
     private Button    addEntitiesButton;
+    private Slider    maxAgeSlider;
+    private Label     maxAgeLabel;
     private SliderInt stepsPerFrameSlider;
     private Label     stepsPerFrameLabel;
 
@@ -74,6 +76,8 @@ public class UIController : MonoBehaviour
         speedSlider        = root.Q<Slider>   ("SpeedSlider");
         speedValueLabel    = root.Q<Label>    ("SpeedValueLabel");
         addEntitiesButton  = root.Q<Button>   ("AddEntitiesButton");
+        maxAgeSlider       = root.Q<Slider>   ("MaxAgeSlider");
+        maxAgeLabel        = root.Q<Label>    ("MaxAgeLabel");
         stepsPerFrameSlider= root.Q<SliderInt>("StepsPerFrameSlider");
         stepsPerFrameLabel = root.Q<Label>    ("StepsPerFrameLabel");
 
@@ -117,6 +121,7 @@ public class UIController : MonoBehaviour
             if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.StepsPerFrame = e.newValue;
         });
 
+        BindSlider(maxAgeSlider,       maxAgeLabel,       "F0", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.MaxAge       = v; });
         BindSlider(trailWeightSlider,  trailWeightLabel,  "F1", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.TrailWeight  = v; });
         BindSlider(decayRateSlider,    decayRateLabel,    "F1", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.DecayRate    = v; });
         BindSlider(diffuseRateSlider,  diffuseRateLabel,  "F1", v => { if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.DiffuseRate  = v; });
