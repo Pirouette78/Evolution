@@ -351,10 +351,20 @@ public class UIController : MonoBehaviour
         uiUpdateCounter = 0;
 
         // GPU agent count
-        if (entityCountLabel != null)
+        if (SlimeMapRenderer.Instance != null)
         {
-            int n = SlimeMapRenderer.Instance != null ? SlimeMapRenderer.Instance.AgentCount : 0;
-            entityCountLabel.text = $"Agents : {n:N0}";
+            uint totalAlive = 0;
+            for (int i = 0; i < 6; i++) {
+                uint alive = SlimeMapRenderer.Instance.AliveSpeciesCounts[i];
+                totalAlive += alive;
+                
+                if (playerSelectButtons[i] != null) {
+                    playerSelectButtons[i].text = $"P{i+1}\n<size=9>{alive:N0}</size>";
+                }
+            }
+            if (entityCountLabel != null) {
+                entityCountLabel.text = $"Agents (Vivants) : {totalAlive:N0}";
+            }
         }
 
         if (energyLabel != null) energyLabel.text = "Énergie : —";

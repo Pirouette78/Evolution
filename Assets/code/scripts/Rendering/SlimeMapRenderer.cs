@@ -35,15 +35,17 @@ public class SlimeMapRenderer : MonoBehaviour
 
     public int SelectedPlayerIndex = 0;
     public SpeciesSettings[] speciesSettings = new SpeciesSettings[6];
+    public uint[] AliveSpeciesCounts = new uint[6];
 
     // ── Private ─────────────────────────────────────────────────────
     private ComputeBuffer agentBuffer;
     private int maxAgents = 600000;
     private int currentAgentCount = 0;
     private bool isInitialized = false;
+    private bool initialSpawnDone = false;
     private int playerVisibilityMask = 63; // 111111 in binary (all 6 visible by default)
 
-    private int updateKernel, drawKernel, diffuseKernel, clearKernel, composeKernel;
+    private int updateKernel, drawKernel, diffuseKernel, clearKernel, composeKernel, clearCountsKernel, countAliveKernel;
 
     // Cached terrain data for CPU-side spawn validation
     private float[,] heightMapCache;
@@ -61,8 +63,14 @@ public class SlimeMapRenderer : MonoBehaviour
         public float trailWeight;
         public float decayRate;
         public float diffuseRate;
+
+        // Padding to 48 bytes (multiple of 16-byte boundary)
+        public float pad0;
+        public float pad1;
+        public float pad2;
     }
     private ComputeBuffer speciesSettingsBuffer;
+    private ComputeBuffer speciesCountsBuffer;
 
     struct TypeOfWorker
     {
@@ -93,8 +101,9 @@ public class SlimeMapRenderer : MonoBehaviour
 
         agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*5 + sizeof(int)*7);
         // struct size (48 bytes) = 5 floats (20) + 7 ints (28)
-        
-        speciesSettingsBuffer = new ComputeBuffer(6, 36);
+        // C# size corresponds to exactly 48 bytes via padding
+        speciesSettingsBuffer = new ComputeBuffer(6, 48);
+        speciesCountsBuffer   = new ComputeBuffer(6, sizeof(uint));
 
         for (int i = 0; i < 6; i++) {
             speciesSettings[i] = new SpeciesSettings {
@@ -176,6 +185,8 @@ public class SlimeMapRenderer : MonoBehaviour
         diffuseKernel = SlimeShader.FindKernel("Diffuse");
         clearKernel   = SlimeShader.FindKernel("ResetMap");
         composeKernel = SlimeShader.FindKernel("ComposeDisplay");
+        clearCountsKernel = SlimeShader.FindKernel("ClearCounts");
+        countAliveKernel  = SlimeShader.FindKernel("CountAlive");
 
         // Bind textures (persistent across frames)
         SlimeShader.SetTexture(updateKernel,  "TrailMap",         TrailMap);
@@ -193,6 +204,9 @@ public class SlimeMapRenderer : MonoBehaviour
         SlimeShader.SetBuffer(updateKernel, "speciesSettings", speciesSettingsBuffer);
         SlimeShader.SetBuffer(drawKernel, "speciesSettings", speciesSettingsBuffer);
         SlimeShader.SetBuffer(diffuseKernel, "speciesSettings", speciesSettingsBuffer);
+        SlimeShader.SetBuffer(countAliveKernel, "speciesSettings", speciesSettingsBuffer);
+        SlimeShader.SetBuffer(clearCountsKernel, "speciesCounts", speciesCountsBuffer);
+        SlimeShader.SetBuffer(countAliveKernel, "speciesCounts", speciesCountsBuffer);
 
         // Fallback for TerrainWalkabilityMap in case terrain isn't ready when UpdateAgents runs
         SlimeShader.SetTexture(updateKernel, "TerrainWalkabilityMap", Texture2D.whiteTexture);
@@ -233,6 +247,7 @@ public class SlimeMapRenderer : MonoBehaviour
             Debug.LogWarning("[RENDERER] Terrain not found after 10s — spawning without terrain check.");
 
         AddAgents(InitialAgentCount);
+        initialSpawnDone = true;
     }
 
     private void CacheTerrainData(TerrainMapRenderer terrain)
@@ -324,53 +339,90 @@ public class SlimeMapRenderer : MonoBehaviour
 
     // ================== Simulation loop ============================
 
+    private int updateFrameBugTracer = 0;
+    private int countFrameAccum = 0;
     private void Update()
     {
-        if (!isInitialized || currentAgentCount == 0) return;
+        try {
+            updateFrameBugTracer++;
+            if (updateFrameBugTracer < 5) Debug.Log($"[RENDERER] Update Frame {updateFrameBugTracer}");
 
-        // Re-bind terrain every frame in case it became available after initialization
-        if (TerrainMapRenderer.Instance != null &&
-            TerrainMapRenderer.Instance.GetTexture() != null &&
-            heightMapCache == null)
-        {
-            CacheTerrainData(TerrainMapRenderer.Instance);
+            if (!isInitialized || !initialSpawnDone) return;
+
+            // Re-bind terrain every frame in case it became available after initialization
+            if (TerrainMapRenderer.Instance != null &&
+                TerrainMapRenderer.Instance.GetTexture() != null &&
+                heightMapCache == null)
+            {
+                CacheTerrainData(TerrainMapRenderer.Instance);
+            }
+
+            float dt = Time.deltaTime;
+
+            // Per-frame global uniforms
+            SlimeShader.SetFloat("time",             Time.time);
+            SlimeShader.SetFloat("deltaTime",        dt);
+            SlimeShader.SetInt  ("numAgents",        currentAgentCount);
+            
+            // Push per-species settings
+            speciesSettingsBuffer.SetData(speciesSettings);
+
+            SlimeShader.SetInt ("playerVisibilityMask", playerVisibilityMask);
+
+            int agentGroups  = Mathf.CeilToInt(currentAgentCount / 16f);
+            int texGroupsX   = Mathf.CeilToInt(Width  / 8f);
+            int texGroupsY   = Mathf.CeilToInt(Height / 8f);
+
+            // Rebind persistent resources every frame (guards against shader hot-reload in editor)
+            SlimeShader.SetBuffer(updateKernel,  "speciesSettings", speciesSettingsBuffer);
+            SlimeShader.SetBuffer(drawKernel,    "speciesSettings", speciesSettingsBuffer);
+            SlimeShader.SetBuffer(diffuseKernel, "speciesSettings", speciesSettingsBuffer);
+            SlimeShader.SetTexture(composeKernel, "DiffusedTrailMap", DiffusedMap);
+
+            for (int step = 0; step < StepsPerFrame; step++)
+            {
+                // 1. Move agents
+                SlimeShader.SetBuffer(updateKernel, "agents", agentBuffer);
+                SlimeShader.Dispatch(updateKernel, agentGroups, 1, 1);
+
+                // 2. Draw agent positions into trail map
+                SlimeShader.SetBuffer(drawKernel, "agents", agentBuffer);
+                SlimeShader.Dispatch(drawKernel, agentGroups, 1, 1);
+
+                // 3. Diffuse + decay
+                SlimeShader.Dispatch(diffuseKernel, texGroupsX, texGroupsY, 1);
+
+                // 4. Copy diffused result back as the new trail source
+                Graphics.CopyTexture(DiffusedMap, TrailMap);
+            }
+
+            // Count living agents (throttled — GPU readback stalls the pipeline)
+            countFrameAccum++;
+            if (countFrameAccum >= 15)
+            {
+                countFrameAccum = 0;
+                int countGroups = Mathf.CeilToInt(currentAgentCount / 64f);
+                SlimeShader.SetBuffer(clearCountsKernel, "speciesCounts", speciesCountsBuffer);
+                SlimeShader.Dispatch(clearCountsKernel, 1, 1, 1);
+                SlimeShader.SetBuffer(countAliveKernel, "agents", agentBuffer);
+                SlimeShader.SetBuffer(countAliveKernel, "speciesSettings", speciesSettingsBuffer);
+                SlimeShader.SetBuffer(countAliveKernel, "speciesCounts", speciesCountsBuffer);
+                SlimeShader.Dispatch(countAliveKernel, countGroups, 1, 1);
+                speciesCountsBuffer.GetData(AliveSpeciesCounts);
+
+                if (updateFrameBugTracer < 5) {
+                    uint totalAlive = 0;
+                    for (int i=0; i<6; i++) totalAlive += AliveSpeciesCounts[i];
+                    Debug.Log($"[RENDERER] alive={totalAlive}/{currentAgentCount}, P0={AliveSpeciesCounts[0]}");
+                }
+            }
+
+            // 5. Compose the final display map
+            SlimeShader.Dispatch(composeKernel, texGroupsX, texGroupsY, 1);
+            
+        } catch (System.Exception e) {
+            Debug.LogError($"[RENDERER] Update crash: {e}");
         }
-
-        float dt = Time.deltaTime;
-
-        // Per-frame global uniforms
-        SlimeShader.SetFloat("time",             Time.time);
-        SlimeShader.SetFloat("deltaTime",        dt);
-        SlimeShader.SetInt  ("numAgents",        currentAgentCount);
-        
-        // Push per-species settings
-        speciesSettingsBuffer.SetData(speciesSettings);
-
-        SlimeShader.SetInt ("playerVisibilityMask", playerVisibilityMask);
-
-        int agentGroups  = Mathf.CeilToInt(currentAgentCount / 16f);
-        int texGroupsX   = Mathf.CeilToInt(Width  / 8f);
-        int texGroupsY   = Mathf.CeilToInt(Height / 8f);
-
-        for (int step = 0; step < StepsPerFrame; step++)
-        {
-            // 1. Move agents
-            SlimeShader.SetBuffer(updateKernel, "agents", agentBuffer);
-            SlimeShader.Dispatch(updateKernel, agentGroups, 1, 1);
-
-            // 2. Draw agent positions into trail map
-            SlimeShader.SetBuffer(drawKernel, "agents", agentBuffer);
-            SlimeShader.Dispatch(drawKernel, agentGroups, 1, 1);
-
-            // 3. Diffuse + decay
-            SlimeShader.Dispatch(diffuseKernel, texGroupsX, texGroupsY, 1);
-
-            // 4. Copy diffused result back as the new trail source
-            Graphics.CopyTexture(DiffusedMap, TrailMap);
-        }
-
-        // 5. Compose the final display map
-        SlimeShader.Dispatch(composeKernel, texGroupsX, texGroupsY, 1);
     }
 
     // ================== Cleanup ====================================
@@ -379,6 +431,7 @@ public class SlimeMapRenderer : MonoBehaviour
     {
         agentBuffer?.Release();
         speciesSettingsBuffer?.Release();
+        speciesCountsBuffer?.Release();
         TrailMap?.Release();
         DiffusedMap?.Release();
         DisplayMap?.Release();

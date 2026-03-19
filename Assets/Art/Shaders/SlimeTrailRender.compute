@@ -2,6 +2,11 @@
 #pragma kernel DrawMap
 #pragma kernel Diffuse
 #pragma kernel ResetMap
+#pragma kernel ComposeDisplay
+#pragma kernel ClearCounts
+#pragma kernel CountAlive
+
+// FORCING RECOMPILE
 
 struct TypeOfWorker {
     int    fighter;
@@ -43,9 +48,15 @@ struct SpeciesSettings {
     float trailWeight;
     float decayRate;
     float diffuseRate;
+    
+    // Padding to 48 bytes (multiple of 16)
+    float pad0;
+    float pad1;
+    float pad2;
 };
 
 StructuredBuffer<SpeciesSettings> speciesSettings;
+RWStructuredBuffer<uint> speciesCounts;
 
 float deltaTime;
 float time;
@@ -108,8 +119,13 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
     if (id.x >= numAgents) return;
 
     Agent agent = agents[id.x];
+    if (agent.age < 0) return; // permanently dead
     SpeciesSettings settings = speciesSettings[agent.speciesIndex];
-    if (agent.age > settings.maxAge) return;
+    if (agent.age > settings.maxAge) {
+        agent.age = -1; // mark as permanently dead
+        agents[id.x] = agent;
+        return;
+    }
 
     // Simple hash-based random using agent id and time
     uint random = hash(id.x + (uint)(time * 100000.0));
@@ -162,6 +178,7 @@ void DrawMap (uint3 id : SV_DispatchThreadID)
     if (id.x >= numAgents) return;
 
     Agent agent = agents[id.x];
+    if (agent.age < 0) return; // permanently dead
     SpeciesSettings settings = speciesSettings[agent.speciesIndex];
     if (agent.age > settings.maxAge) return;
     int3 cellCoords = int3((int)agent.position.x, (int)agent.position.y, agent.speciesIndex);
@@ -197,6 +214,25 @@ void Diffuse (uint3 id : SV_DispatchThreadID)
     }
 }
 
+[numthreads(6, 1, 1)]
+void ClearCounts(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < 6)
+        speciesCounts[id.x] = 0;
+}
+[numthreads(64, 1, 1)]
+void CountAlive(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)numAgents) return;
+    
+    Agent agent = agents[id.x];
+    if (agent.age < 0) return; // permanently dead
+    SpeciesSettings settings = speciesSettings[agent.speciesIndex];
+    if (agent.age <= settings.maxAge) {
+        InterlockedAdd(speciesCounts[agent.speciesIndex], 1);
+    }
+}
+
 [numthreads(8,8,1)]
 void ResetMap (uint3 id : SV_DispatchThreadID)
 {
@@ -206,8 +242,6 @@ void ResetMap (uint3 id : SV_DispatchThreadID)
         DiffusedTrailMap[int3(id.xy, slice)] = 0.0;
     }
 }
-
-#pragma kernel ComposeDisplay
 
 static float4 palette[6] = {
     float4(1, 0, 0, 1),
