@@ -11,6 +11,8 @@ public class UIController : MonoBehaviour
     private Label  entityCountLabel;
     private Button pauseButton;
 
+    private Toggle[] playerToggles = new Toggle[6];
+
     // ── Game controls ──────────────────────────────────────────────
     private Slider    speedSlider;
     private Label     speedValueLabel;
@@ -134,12 +136,34 @@ public class UIController : MonoBehaviour
             if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.SensorSize = e.newValue;
         });
 
+        // Maps and Toggles
+        playerToggles[0] = root.Q<Toggle>("ToggleP1");
+        playerToggles[1] = root.Q<Toggle>("ToggleP2");
+        playerToggles[2] = root.Q<Toggle>("ToggleP3");
+        playerToggles[3] = root.Q<Toggle>("ToggleP4");
+        playerToggles[4] = root.Q<Toggle>("ToggleP5");
+        playerToggles[5] = root.Q<Toggle>("ToggleP6");
+
+        for (int i = 0; i < 6; i++) {
+            int index = i;
+            if (playerToggles[i] != null) {
+                playerToggles[i].RegisterValueChangedCallback(e => {
+                    if (SlimeMapRenderer.Instance != null) {
+                        SlimeMapRenderer.Instance.SetPlayerVisibility(index, e.newValue);
+                    }
+                });
+            }
+        }
+
         // Scene refs
         strategyLayerGO = GameObject.Find("StrategyLayer");
         opaqueShader    = Shader.Find("Unlit/Texture");
         additiveShader  = Shader.Find("Custom/UnlitAdditive");
 
-        entityManager = World.DefaultGameObjectInjectionWorld.EntityManager;
+        if (World.DefaultGameObjectInjectionWorld != null)
+        {
+            entityManager = World.DefaultGameObjectInjectionWorld.EntityManager;
+        }
         UpdateTechUI();
     }
 
@@ -170,7 +194,7 @@ public class UIController : MonoBehaviour
     // ── Game speed / pause ────────────────────────────────────────
     private void SetGameTimeScale(float scale)
     {
-        if (entityManager == default) return;
+        if (entityManager == default || World.DefaultGameObjectInjectionWorld == null) return;
         var q = entityManager.CreateEntityQuery(typeof(GameTime));
         if (q.IsEmpty) return;
         var e  = q.GetSingletonEntity();

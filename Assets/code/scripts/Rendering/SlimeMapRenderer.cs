@@ -36,6 +36,7 @@ public class SlimeMapRenderer : MonoBehaviour
     // ── Public state ────────────────────────────────────────────────
     public RenderTexture TrailMap    { get; private set; }
     public RenderTexture DiffusedMap { get; private set; }
+    public RenderTexture DisplayMap  { get; private set; }
     public ComputeBuffer AgentBuffer => agentBuffer;
     public bool IsReady              => isInitialized;
     public int  AgentCount           => currentAgentCount;
@@ -45,8 +46,9 @@ public class SlimeMapRenderer : MonoBehaviour
     private int maxAgents = 600000;
     private int currentAgentCount = 0;
     private bool isInitialized = false;
+    private int playerVisibilityMask = 63; // 111111 in binary (all 6 visible by default)
 
-    private int updateKernel, drawKernel, diffuseKernel, clearKernel;
+    private int updateKernel, drawKernel, diffuseKernel, clearKernel, composeKernel;
 
     // Cached terrain data for CPU-side spawn validation
     private float[,] heightMapCache;
@@ -62,12 +64,10 @@ public class SlimeMapRenderer : MonoBehaviour
         public int foodCollector;
     }
 
-    // ── Struct must match the compute shader exactly (64 bytes) ─────
     struct Agent
     {
         public Vector2 position;   // 8
         public float   angle;      // 4
-        public Vector4 speciesMask;// 16
         public int     speciesIndex;// 4
         public float   age;         // 4
         public float   hunger;      // 4
@@ -81,8 +81,8 @@ public class SlimeMapRenderer : MonoBehaviour
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
 
-        agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*9 + sizeof(int)*7);
-        // struct size (64 bytes) = 9 floats (36) + 7 ints (28)
+        agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*5 + sizeof(int)*7);
+        // struct size (48 bytes) = 5 floats (20) + 7 ints (28)
 
         if (DisplayTarget == null) DisplayTarget = GetComponent<MeshRenderer>();
     }
@@ -118,13 +118,26 @@ public class SlimeMapRenderer : MonoBehaviour
 
     private void InitTextures()
     {
-        TrailMap = CreateRT("TrailMap");
-        DiffusedMap = CreateRT("DiffusedMap");
+        TrailMap = CreateRTArray("TrailMap");
+        DiffusedMap = CreateRTArray("DiffusedMap");
 
-        RenderTexture CreateRT(string name)
+        DisplayMap = new RenderTexture(Width, Height, 0, RenderTextureFormat.ARGBFloat)
+        { 
+            enableRandomWrite = true, 
+            name = "DisplayMap",
+            filterMode = FilterMode.Bilinear // Apply bilinear filtering for smooth rendering
+        };
+        DisplayMap.Create();
+
+        RenderTexture CreateRTArray(string name)
         {
-            var rt = new RenderTexture(Width, Height, 0, RenderTextureFormat.ARGBFloat)
-            { enableRandomWrite = true, name = name };
+            var rt = new RenderTexture(Width, Height, 0, UnityEngine.Experimental.Rendering.GraphicsFormat.R16_SFloat)
+            { 
+                dimension = UnityEngine.Rendering.TextureDimension.Tex2DArray,
+                volumeDepth = 6,
+                enableRandomWrite = true, 
+                name = name
+            };
             rt.Create();
             return rt;
         }
@@ -136,6 +149,7 @@ public class SlimeMapRenderer : MonoBehaviour
         drawKernel    = SlimeShader.FindKernel("DrawMap");
         diffuseKernel = SlimeShader.FindKernel("Diffuse");
         clearKernel   = SlimeShader.FindKernel("ResetMap");
+        composeKernel = SlimeShader.FindKernel("ComposeDisplay");
 
         // Bind textures (persistent across frames)
         SlimeShader.SetTexture(updateKernel,  "TrailMap",         TrailMap);
@@ -144,8 +158,14 @@ public class SlimeMapRenderer : MonoBehaviour
         SlimeShader.SetTexture(diffuseKernel, "DiffusedTrailMap", DiffusedMap);
         SlimeShader.SetTexture(clearKernel,   "TrailMap",         TrailMap);
         SlimeShader.SetTexture(clearKernel,   "DiffusedTrailMap", DiffusedMap);
+        SlimeShader.SetTexture(composeKernel, "DiffusedTrailMap", DiffusedMap);
+        SlimeShader.SetTexture(composeKernel, "DisplayMap",       DisplayMap);
         SlimeShader.SetInt("width",  Width);
         SlimeShader.SetInt("height", Height);
+
+        // Fallback for TerrainWalkabilityMap in case terrain isn't ready when UpdateAgents runs
+        SlimeShader.SetTexture(updateKernel, "TerrainWalkabilityMap", Texture2D.whiteTexture);
+        SlimeShader.SetInt("useTerrainCollision", 0);
 
         // Clear to black
         int gx = Mathf.CeilToInt(Width  / 8f);
@@ -155,9 +175,9 @@ public class SlimeMapRenderer : MonoBehaviour
         // Bind output to display quad
         if (DisplayTarget != null)
         {
-            DisplayTarget.sharedMaterial.mainTexture = DiffusedMap;
+            DisplayTarget.sharedMaterial.mainTexture = DisplayMap;
             if (DisplayTarget.sharedMaterial.HasProperty("_BaseMap"))
-                DisplayTarget.sharedMaterial.SetTexture("_BaseMap", DiffusedMap);
+                DisplayTarget.sharedMaterial.SetTexture("_BaseMap", DisplayMap);
         }
     }
 
@@ -206,6 +226,15 @@ public class SlimeMapRenderer : MonoBehaviour
 
     // ================== Public API =================================
 
+    public void SetPlayerVisibility(int index, bool isVisible)
+    {
+        if (index >= 0 && index < 6)
+        {
+            if (isVisible) playerVisibilityMask |= (1 << index);
+            else           playerVisibilityMask &= ~(1 << index);
+        }
+    }
+
     /// <summary>Append count new agents to the GPU buffer.</summary>
     public void AddAgents(int count)
     {
@@ -220,16 +249,12 @@ public class SlimeMapRenderer : MonoBehaviour
         {
             Vector2 pos = GetSpawnPosition();
             float   angle = Random.value * Mathf.PI * 2f;
-            int     pid   = Random.Range(0, 3);
-
-            Vector4 mask = Vector4.zero;
-            mask[pid] = 1f;
+            int     pid   = Random.Range(0, 6);
 
             newAgents[i] = new Agent
             {
                 position    = pos,
                 angle       = angle,
-                speciesMask = mask,
                 speciesIndex= pid,
                 age         = 0f,
                 hunger      = 0f,
@@ -288,6 +313,7 @@ public class SlimeMapRenderer : MonoBehaviour
         SlimeShader.SetInt  ("sensorSize",       SensorSize);
         SlimeShader.SetInt  ("numAgents",        currentAgentCount);
         SlimeShader.SetFloat("maxAge",           MaxAge);
+        SlimeShader.SetInt ("playerVisibilityMask", playerVisibilityMask);
 
         int agentGroups  = Mathf.CeilToInt(currentAgentCount / 16f);
         int texGroupsX   = Mathf.CeilToInt(Width  / 8f);
@@ -307,8 +333,11 @@ public class SlimeMapRenderer : MonoBehaviour
             SlimeShader.Dispatch(diffuseKernel, texGroupsX, texGroupsY, 1);
 
             // 4. Copy diffused result back as the new trail source
-            Graphics.Blit(DiffusedMap, TrailMap);
+            Graphics.CopyTexture(DiffusedMap, TrailMap);
         }
+
+        // 5. Compose the final display map
+        SlimeShader.Dispatch(composeKernel, texGroupsX, texGroupsY, 1);
     }
 
     // ================== Cleanup ====================================
@@ -318,5 +347,6 @@ public class SlimeMapRenderer : MonoBehaviour
         agentBuffer?.Release();
         TrailMap?.Release();
         DiffusedMap?.Release();
+        DisplayMap?.Release();
     }
 }

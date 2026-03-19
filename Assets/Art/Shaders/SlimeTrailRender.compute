@@ -15,7 +15,6 @@ struct TypeOfWorker {
 struct Agent {
     float2 position;
     float  angle;
-    float4 speciesMask;
     int    speciesIndex;
     float  age;         // Time alive in seconds
     float  hunger;
@@ -25,8 +24,9 @@ struct Agent {
 RWStructuredBuffer<Agent> agents;
 uint numAgents;
 
-RWTexture2D<float4> TrailMap;
-RWTexture2D<float4> DiffusedTrailMap;
+RWTexture2DArray<float> TrailMap;
+RWTexture2DArray<float> DiffusedTrailMap;
+RWTexture2D<float4> DisplayMap;
 Texture2D<float4> TerrainWalkabilityMap; // Used to block movement
 SamplerState sampler_TerrainWalkabilityMap;
 
@@ -46,6 +46,7 @@ float sensorAngleRad = 0.5235; // ~30 degrees
 float sensorOffsetDst = 20.0;
 int sensorSize = 2;
 float maxAge = 100.0;
+int playerVisibilityMask;
 
 // Hash function www.cs.ubc.ca/~rbridson/docs/schechter-sca08-turbulence.pdf
 uint hash(uint state) {
@@ -84,14 +85,12 @@ float sense(Agent agent, float sensorAngleOffset) {
     if (!isWalkable(sensorPos)) return -100.0; // strong penalty for walls
 
     float sum = 0;
-    // Seek same species (or other species, could be modified later)
-    float4 senseWeight = agent.speciesMask;
 
     for (int offsetX = -sensorSize; offsetX <= sensorSize; offsetX++) {
         for (int offsetY = -sensorSize; offsetY <= sensorSize; offsetY++) {
             int sampleX = min(width - 1, max(0, sensorCentreX + offsetX));
             int sampleY = min(height - 1, max(0, sensorCentreY + offsetY));
-            sum += dot(senseWeight, TrailMap[int2(sampleX, sampleY)]);
+            sum += TrailMap[int3(sampleX, sampleY, agent.speciesIndex)];
         }
     }
     return sum;
@@ -157,10 +156,10 @@ void DrawMap (uint3 id : SV_DispatchThreadID)
 
     Agent agent = agents[id.x];
     if (agent.age > maxAge) return;
-    int2 cellCoords = int2((int)agent.position.x, (int)agent.position.y);
+    int3 cellCoords = int3((int)agent.position.x, (int)agent.position.y, agent.speciesIndex);
     
     if (cellCoords.x >= 0 && cellCoords.x < width && cellCoords.y >= 0 && cellCoords.y < height) {
-        TrailMap[cellCoords] = saturate(TrailMap[cellCoords] + agent.speciesMask * trailWeight * deltaTime);
+        TrailMap[cellCoords] = saturate(TrailMap[cellCoords] + trailWeight * deltaTime);
     }
 }
 
@@ -169,28 +168,85 @@ void Diffuse (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)width || id.y >= (uint)height) return;
 
-    float4 sum = 0;
-    float4 originalCol = TrailMap[id.xy];
-    
-    for (int offsetX = -1; offsetX <= 1; offsetX ++) {
-        for (int offsetY = -1; offsetY <= 1; offsetY ++) {
-            int sampleX = min(width-1, max(0, (int)id.x + offsetX));
-            int sampleY = min(height-1, max(0, (int)id.y + offsetY));
-            sum += TrailMap[int2(sampleX,sampleY)];
+    for (int slice = 0; slice < 6; slice++) {
+        float sum = 0;
+        float originalCol = TrailMap[int3(id.xy, slice)];
+        
+        for (int offsetX = -1; offsetX <= 1; offsetX ++) {
+            for (int offsetY = -1; offsetY <= 1; offsetY ++) {
+                int sampleX = min(width-1, max(0, (int)id.x + offsetX));
+                int sampleY = min(height-1, max(0, (int)id.y + offsetY));
+                sum += TrailMap[int3(sampleX, sampleY, slice)];
+            }
         }
-    }
 
-    float4 blurredCol = sum / 9.0;
-    float diffuseWeight = saturate(diffuseRate * deltaTime);
-    blurredCol = originalCol * (1 - diffuseWeight) + blurredCol * diffuseWeight;
-    
-    DiffusedTrailMap[id.xy] = blurredCol * saturate(1 - decayRate * deltaTime);
+        float blurredCol = sum / 9.0;
+        float diffuseWeight = saturate(diffuseRate * deltaTime);
+        blurredCol = originalCol * (1 - diffuseWeight) + blurredCol * diffuseWeight;
+        
+        DiffusedTrailMap[int3(id.xy, slice)] = blurredCol * saturate(1 - decayRate * deltaTime);
+    }
 }
 
 [numthreads(8,8,1)]
 void ResetMap (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)width || id.y >= (uint)height) return;
-    TrailMap[id.xy] = float4(0, 0, 0, 1);
-    DiffusedTrailMap[id.xy] = float4(0, 0, 0, 1);
+    for (int slice = 0; slice < 6; slice++) {
+        TrailMap[int3(id.xy, slice)] = 0.0;
+        DiffusedTrailMap[int3(id.xy, slice)] = 0.0;
+    }
+}
+
+#pragma kernel ComposeDisplay
+
+static float4 palette[6] = {
+    float4(1, 0, 0, 1),
+    float4(0, 1, 0, 1),
+    float4(0, 0, 1, 1),
+    float4(0, 1, 1, 1),
+    float4(1, 0, 1, 1),
+    float4(1, 1, 0, 1)
+};
+
+[numthreads(8,8,1)]
+void ComposeDisplay (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)width || id.y >= (uint)height) return;
+    
+    float4 finalColor = float4(0, 0, 0, 1);
+    float totalDensity = 0.0;
+    
+    // First, we find the blended color instead of a hard max to make colors "bleed" (baver)
+    // We apply a 3x3 box blur to soften the density fields before composition
+    for (int i = 0; i < 6; i++) {
+        if ((playerVisibilityMask & (1 << i)) == 0) continue;
+        
+        float blurredDensity = 0.0;
+        
+        //keep this code
+        /*for (int offsetX = -1; offsetX <= 1; offsetX++) {
+            for (int offsetY = -1; offsetY <= 1; offsetY++) {
+                int sampleX = min(width - 1, max(0, (int)id.x + offsetX));
+                int sampleY = min(height - 1, max(0, (int)id.y + offsetY));
+                blurredDensity += DiffusedTrailMap[int3(sampleX, sampleY, i)];
+            }
+        }
+        blurredDensity /= 9.0;*/
+        blurredDensity = DiffusedTrailMap[int3((int)id.x, (int)id.y , i)];
+        
+        // For a more bleeding effect, we can use a weighted sum or a smoothmax.
+        // We accumulate the pure color multiplied by blurred density
+        finalColor.rgb += palette[i].rgb * blurredDensity;
+        totalDensity += blurredDensity;
+    }
+    
+    // Normalize or cap the color if totalDensity > 0
+    if (totalDensity > 0.01) {
+        // Alternatively we can intensify it slightly but keep the mixing smooth
+        // A saturated value looks better than a completely flat mix.
+        DisplayMap[id.xy] = float4(finalColor.rgb, 1.0);
+    } else {
+        DisplayMap[id.xy] = float4(0, 0, 0, 1);
+    }
 }
