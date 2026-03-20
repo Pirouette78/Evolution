@@ -8,6 +8,14 @@ using System.Collections;
 /// </summary>
 public enum SpeciesType { Plante, Animal, Champignon, Insecte, Bacterie, Algue, GlobuleRouge, GlobuleBlanc, Virus, Plaquette }
 
+[System.Serializable]
+public struct WaypointData
+{
+    public Vector2 position;     // pixel space (0..map size)
+    public int     type;         // 0 = Source, 1 = Destination
+    public int     speciesIndex; // owner species slot
+}
+
 public class SlimeMapRenderer : MonoBehaviour
 {
     public static SlimeMapRenderer Instance { get; private set; }
@@ -73,10 +81,16 @@ public class SlimeMapRenderer : MonoBehaviour
         public float energyConsumptionRate; // energy drained per second (Bacterie)
         public float energyReward;          // energy released via trail (GlobuleRouge)
         public float startingEnergy;        // initial agent.hunger value at spawn
-        public float pad0;                  // padding to 64 bytes
+        public float arrivalRadius;         // distance to consider "arrived" at waypoint (was pad0)
+        public float loadingTime;           // time to wait at Source waypoint
+        public float unloadingTime;         // time to wait at Destination waypoint
+        public float pad1;                  // padding → 76 bytes total
     }
     private ComputeBuffer speciesSettingsBuffer;
     private ComputeBuffer speciesCountsBuffer;
+    private ComputeBuffer waypointBuffer;
+    private Texture2DArray flowFieldMap;
+    private bool flowFieldMapIsOwned = false;
 
     struct TypeOfWorker
     {
@@ -108,7 +122,7 @@ public class SlimeMapRenderer : MonoBehaviour
         agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*5 + sizeof(int)*7);
         // struct size (48 bytes) = 5 floats (20) + 7 ints (28)
         // C# size corresponds to exactly 48 bytes via padding
-        speciesSettingsBuffer = new ComputeBuffer(6, 64);
+        speciesSettingsBuffer = new ComputeBuffer(6, 76);
         speciesCountsBuffer   = new ComputeBuffer(6, sizeof(uint));
 
         for (int i = 0; i < 6; i++) {
@@ -215,6 +229,24 @@ public class SlimeMapRenderer : MonoBehaviour
         SlimeShader.SetBuffer(clearCountsKernel, "speciesCounts", speciesCountsBuffer);
         SlimeShader.SetBuffer(countAliveKernel, "speciesCounts", speciesCountsBuffer);
 
+        // Waypoints buffer (max 16 × 16 bytes)
+        waypointBuffer = new ComputeBuffer(16, 16);
+        waypointBuffer.SetData(new WaypointData[16]);
+        SlimeShader.SetBuffer(updateKernel, "waypoints", waypointBuffer);
+        SlimeShader.SetInt("numWaypoints", 0);
+
+        // Flow field texture array (16 slices, one per waypoint, RG = direction)
+        flowFieldMap = new Texture2DArray(Width, Height, 16, TextureFormat.RGHalf, false)
+        {
+            filterMode = FilterMode.Point,
+            wrapMode   = TextureWrapMode.Clamp
+        };
+        Color[] emptySlice = new Color[Width * Height];
+        for (int s = 0; s < 16; s++) flowFieldMap.SetPixels(emptySlice, s);
+        flowFieldMap.Apply();
+        flowFieldMapIsOwned = true;
+        SlimeShader.SetTexture(updateKernel, "FlowFieldMap", flowFieldMap);
+
         // Fallback for TerrainWalkabilityMap in case terrain isn't ready when UpdateAgents runs
         SlimeShader.SetTexture(updateKernel, "TerrainWalkabilityMap", Texture2D.whiteTexture);
         SlimeShader.SetInt("useTerrainCollision", 0);
@@ -305,7 +337,7 @@ public class SlimeMapRenderer : MonoBehaviour
             case SpeciesType.Insecte:    return new SpeciesSettings { moveSpeed=150, turnSpeed=25, sensorAngleRad=20*Mathf.Deg2Rad, sensorOffsetDst=30, sensorSize=2, maxAge=40,  trailWeight=2,  decayRate=2f,   diffuseRate=0.5f, warDamageRate=3f   };
             case SpeciesType.Bacterie:   return new SpeciesSettings { moveSpeed=50,  turnSpeed=20, sensorAngleRad=45*Mathf.Deg2Rad, sensorOffsetDst=15, sensorSize=2, maxAge=30,  trailWeight=6,  decayRate=3f,   diffuseRate=4f,   warDamageRate=4f,   behaviorType=1, energyConsumptionRate=5f, startingEnergy=100f };
             case SpeciesType.Algue:        return new SpeciesSettings { moveSpeed=10,  turnSpeed=2,  sensorAngleRad=90*Mathf.Deg2Rad, sensorOffsetDst=5,  sensorSize=5, maxAge=500, trailWeight=15, decayRate=0.2f, diffuseRate=6f,   warDamageRate=0.1f, behaviorType=0 };
-            case SpeciesType.GlobuleRouge: return new SpeciesSettings { moveSpeed=30,  turnSpeed=3,  sensorAngleRad=30*Mathf.Deg2Rad, sensorOffsetDst=15, sensorSize=3, maxAge=400, trailWeight=12, decayRate=0.3f, diffuseRate=4f,   warDamageRate=0.1f, behaviorType=2, energyReward=5f };
+            case SpeciesType.GlobuleRouge: return new SpeciesSettings { moveSpeed=60,  turnSpeed=20, sensorAngleRad=30*Mathf.Deg2Rad, sensorOffsetDst=15, sensorSize=2, maxAge=400, trailWeight=8, decayRate=0.3f, diffuseRate=3f, warDamageRate=0.1f, behaviorType=2, energyReward=5f, arrivalRadius=20f, loadingTime=2f, unloadingTime=1f };
             case SpeciesType.GlobuleBlanc: return new SpeciesSettings { moveSpeed=120, turnSpeed=20, sensorAngleRad=30*Mathf.Deg2Rad, sensorOffsetDst=25, sensorSize=2, maxAge=60,  trailWeight=1,  decayRate=3f,   diffuseRate=0.5f, warDamageRate=3f,   behaviorType=3 };
             case SpeciesType.Virus:        return new SpeciesSettings { moveSpeed=80,  turnSpeed=30, sensorAngleRad=20*Mathf.Deg2Rad, sensorOffsetDst=20, sensorSize=2, maxAge=20,  trailWeight=1,  decayRate=5f,   diffuseRate=0.3f, warDamageRate=5f,   behaviorType=4 };
             case SpeciesType.Plaquette:    return new SpeciesSettings { moveSpeed=25,  turnSpeed=5,  sensorAngleRad=45*Mathf.Deg2Rad, sensorOffsetDst=8,  sensorSize=4, maxAge=300, trailWeight=20, decayRate=0.1f, diffuseRate=6f,   warDamageRate=0f,   behaviorType=0 };
@@ -337,6 +369,52 @@ public class SlimeMapRenderer : MonoBehaviour
     {
         if (a < 0 || a >= 6 || b < 0 || b >= 6) return false;
         return (speciesSettings[a].warMask & (1 << b)) != 0;
+    }
+
+    public void SetWaypoints(WaypointData[] data)
+    {
+        if (waypointBuffer == null) return;
+        int count = Mathf.Min(data.Length, 16);
+        WaypointData[] padded = new WaypointData[16];
+        System.Array.Copy(data, padded, count);
+        waypointBuffer.SetData(padded);
+        SlimeShader.SetInt("numWaypoints", count);
+    }
+
+    public void SetFlowFields(Texture2DArray tex)
+    {
+        if (flowFieldMapIsOwned && flowFieldMap != null) Destroy(flowFieldMap);
+        flowFieldMap = tex;
+        flowFieldMapIsOwned = false;
+        SlimeShader.SetTexture(updateKernel, "FlowFieldMap", flowFieldMap);
+    }
+
+    public void AddAgentsAt(int count, int speciesIndex, Vector2 position)
+    {
+        if (!isInitialized) return;
+        count = Mathf.Min(count, maxAgents - currentAgentCount);
+        if (count <= 0) return;
+
+        Agent[] newAgents = new Agent[count];
+        for (int i = 0; i < count; i++)
+        {
+            float r     = Random.value * 5f;
+            float theta = Random.value * Mathf.PI * 2f;
+            Vector2 pos = position + new Vector2(Mathf.Cos(theta) * r, Mathf.Sin(theta) * r);
+            pos.x = Mathf.Clamp(pos.x, 1f, Width  - 2f);
+            pos.y = Mathf.Clamp(pos.y, 1f, Height - 2f);
+            newAgents[i] = new Agent
+            {
+                position     = pos,
+                angle        = Random.value * Mathf.PI * 2f,
+                speciesIndex = speciesIndex,
+                age          = 0f,
+                hunger       = speciesSettings[speciesIndex].startingEnergy,
+                typeOfWorker = new TypeOfWorker()
+            };
+        }
+        agentBuffer.SetData(newAgents, 0, currentAgentCount, count);
+        currentAgentCount += count;
     }
 
     /// <summary>Append count new agents to the GPU buffer.</summary>
@@ -429,6 +507,8 @@ public class SlimeMapRenderer : MonoBehaviour
             SlimeShader.SetBuffer(drawKernel,    "speciesSettings", speciesSettingsBuffer);
             SlimeShader.SetBuffer(diffuseKernel, "speciesSettings", speciesSettingsBuffer);
             SlimeShader.SetTexture(composeKernel, "DiffusedTrailMap", DiffusedMap);
+            SlimeShader.SetBuffer(updateKernel, "waypoints", waypointBuffer);
+            SlimeShader.SetTexture(updateKernel, "FlowFieldMap", flowFieldMap);
 
             for (int step = 0; step < StepsPerFrame; step++)
             {
@@ -483,6 +563,8 @@ public class SlimeMapRenderer : MonoBehaviour
         agentBuffer?.Release();
         speciesSettingsBuffer?.Release();
         speciesCountsBuffer?.Release();
+        waypointBuffer?.Release();
+        if (flowFieldMapIsOwned && flowFieldMap != null) Destroy(flowFieldMap);
         TrailMap?.Release();
         DiffusedMap?.Release();
         DisplayMap?.Release();

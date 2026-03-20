@@ -15,6 +15,7 @@ public class UIController : MonoBehaviour
     private Button[] typeButtons = new Button[10];
     private Button[] warButtons  = new Button[6];
     private Toggle toggleVisibility;
+    private Toggle toggleSpeciesOverlay;
     private int selectedPlayerIndex = 0;
 
     private static readonly string[] typeButtonNames = {
@@ -44,6 +45,15 @@ public class UIController : MonoBehaviour
     private Slider    sensorAngleSlider;  private Label sensorAngleLabel;
     private Slider    sensorOffsetSlider; private Label sensorOffsetLabel;
     private SliderInt sensorSizeSlider;   private Label sensorSizeLabel;
+
+    // ── Construction ───────────────────────────────────────────────
+    private Button        btnConstruction;
+    private VisualElement constructionPanel;
+    private bool          constructionPanelOpen = false;
+    private VisualElement placementBanner;
+    private Label         placementBannerText;
+    private Button        btnCancelPlacement;
+    private bool          wasInOverlayBeforePlacement = false;
 
     // ── Map ────────────────────────────────────────────────────────
     private Button toggleStrategyMapButton;
@@ -162,6 +172,15 @@ public class UIController : MonoBehaviour
             });
         }
 
+        toggleSpeciesOverlay = root.Q<Toggle>("ToggleSpeciesOverlay");
+        if (toggleSpeciesOverlay != null) {
+            toggleSpeciesOverlay.RegisterValueChangedCallback(e => {
+                if (WaypointOverlayRenderer.Instance != null) {
+                    WaypointOverlayRenderer.Instance.ShowSpeciesOverlay[selectedPlayerIndex] = e.newValue;
+                }
+            });
+        }
+
         for (int i = 0; i < 6; i++) {
             int index = i;
             if (playerSelectButtons[i] != null) {
@@ -187,6 +206,19 @@ public class UIController : MonoBehaviour
             }
         }
 
+        // Construction panel
+        btnConstruction = root.Q<Button>("BtnConstruction");
+        if (btnConstruction != null) btnConstruction.clicked += ToggleConstructionPanel;
+
+        placementBanner     = root.Q<VisualElement>("PlacementBanner");
+        placementBannerText = root.Q<Label>("PlacementBannerText");
+        btnCancelPlacement  = root.Q<Button>("BtnCancelPlacement");
+        if (btnCancelPlacement != null)
+            btnCancelPlacement.clicked += () => BuildingPlacementController.Instance?.CancelPlacement();
+
+        // Events are subscribed lazily the first time the panel is opened
+        // (BuildingPlacementController auto-creates itself on AfterSceneLoad, after OnEnable)
+
         // Scene refs
         strategyLayerGO = GameObject.Find("StrategyLayer");
         opaqueShader    = Shader.Find("Unlit/Texture");
@@ -211,6 +243,14 @@ public class UIController : MonoBehaviour
     private void SelectPlayer(int index)
     {
         selectedPlayerIndex = index;
+
+        // Close construction panel when switching player (it's species-specific)
+        if (constructionPanelOpen)
+        {
+            constructionPanel?.RemoveFromHierarchy();
+            constructionPanel     = null;
+            constructionPanelOpen = false;
+        }
         if (SlimeMapRenderer.Instance != null) {
             SlimeMapRenderer.Instance.SelectedPlayerIndex = index;
 
@@ -244,6 +284,10 @@ public class UIController : MonoBehaviour
 
             if (toggleVisibility != null) {
                 toggleVisibility.SetValueWithoutNotify(SlimeMapRenderer.Instance.GetPlayerVisibility(index));
+            }
+
+            if (toggleSpeciesOverlay != null && WaypointOverlayRenderer.Instance != null) {
+                toggleSpeciesOverlay.SetValueWithoutNotify(WaypointOverlayRenderer.Instance.ShowSpeciesOverlay[index]);
             }
         }
 
@@ -304,6 +348,149 @@ public class UIController : MonoBehaviour
             typeButtons[i].style.borderBottomColor = Color.white;
             typeButtons[i].style.opacity = (i == (int)current) ? 1.0f : 0.6f;
         }
+    }
+
+    // ── Construction panel ─────────────────────────────────────────
+
+    private bool placementEventsSubscribed = false;
+
+    private void EnsurePlacementEventsSubscribed()
+    {
+        if (placementEventsSubscribed) return;
+        var bpc = BuildingPlacementController.Instance;
+        if (bpc == null) return;
+        bpc.OnPlacementCancelled += OnPlacementEnded;
+        bpc.OnPlacementConfirmed += _ => OnPlacementEnded();
+        placementEventsSubscribed = true;
+    }
+
+    private void ToggleConstructionPanel()
+    {
+        EnsurePlacementEventsSubscribed();
+
+        if (constructionPanelOpen)
+        {
+            constructionPanel?.RemoveFromHierarchy();
+            constructionPanel     = null;
+            constructionPanelOpen = false;
+            return;
+        }
+
+        var root = uiDocument.rootVisualElement;
+        SpeciesType speciesType = SlimeMapRenderer.Instance != null
+            ? SlimeMapRenderer.Instance.speciesTypes[selectedPlayerIndex]
+            : SpeciesType.Plante;
+
+        BuildingPlacementController.BuildingInfo[] buildings =
+            BuildingPlacementController.GetBuildings(speciesType);
+
+        if (buildings.Length == 0)
+        {
+            // No buildings available for this species type — show brief message
+            constructionPanel = new VisualElement();
+            constructionPanel.style.position         = Position.Absolute;
+            constructionPanel.style.top              = 120;
+            constructionPanel.style.left             = 295;
+            constructionPanel.style.backgroundColor  = new StyleColor(new Color(0.05f, 0.05f, 0.08f, 0.95f));
+            constructionPanel.style.paddingTop        = 10;
+            constructionPanel.style.paddingBottom     = 10;
+            constructionPanel.style.paddingLeft       = 14;
+            constructionPanel.style.paddingRight      = 14;
+            constructionPanel.style.borderTopLeftRadius     = new StyleLength(8);
+            constructionPanel.style.borderTopRightRadius    = new StyleLength(8);
+            constructionPanel.style.borderBottomLeftRadius  = new StyleLength(8);
+            constructionPanel.style.borderBottomRightRadius = new StyleLength(8);
+            var msg = new Label("Aucun bâtiment disponible\npour cette espèce.");
+            msg.style.color     = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
+            msg.style.fontSize  = 12;
+            constructionPanel.Add(msg);
+            root.Add(constructionPanel);
+            constructionPanelOpen = true;
+            return;
+        }
+
+        constructionPanel = new VisualElement();
+        constructionPanel.style.position         = Position.Absolute;
+        constructionPanel.style.top              = 120;
+        constructionPanel.style.left             = 295;
+        constructionPanel.style.minWidth         = 180;
+        constructionPanel.style.backgroundColor  = new StyleColor(new Color(0.05f, 0.08f, 0.05f, 0.95f));
+        constructionPanel.style.paddingTop        = 10;
+        constructionPanel.style.paddingBottom     = 10;
+        constructionPanel.style.paddingLeft       = 12;
+        constructionPanel.style.paddingRight      = 12;
+        constructionPanel.style.borderTopLeftRadius     = new StyleLength(8);
+        constructionPanel.style.borderTopRightRadius    = new StyleLength(8);
+        constructionPanel.style.borderBottomLeftRadius  = new StyleLength(8);
+        constructionPanel.style.borderBottomRightRadius = new StyleLength(8);
+
+        var title = new Label($"Bâtiments — P{selectedPlayerIndex + 1}");
+        title.style.color         = new StyleColor(new Color(0.55f, 0.78f, 1f));
+        title.style.fontSize      = 13;
+        title.style.unityFontStyleAndWeight = UnityEngine.FontStyle.Bold;
+        title.style.marginBottom  = 6;
+        constructionPanel.Add(title);
+
+        foreach (var info in buildings)
+        {
+            var btn   = new Button();
+            btn.text  = info.WaypointType == 0
+                ? $"🟢  {info.Name}"
+                : $"🟠  {info.Name}";
+            btn.style.fontSize       = 13;
+            btn.style.paddingTop     = 6;
+            btn.style.paddingBottom  = 6;
+            btn.style.paddingLeft    = 10;
+            btn.style.paddingRight   = 10;
+            btn.style.marginBottom   = 4;
+            btn.style.borderTopLeftRadius     = new StyleLength(4);
+            btn.style.borderTopRightRadius    = new StyleLength(4);
+            btn.style.borderBottomLeftRadius  = new StyleLength(4);
+            btn.style.borderBottomRightRadius = new StyleLength(4);
+            var bg = info.WaypointType == 0
+                ? new Color(0.15f, 0.4f, 0.15f)
+                : new Color(0.45f, 0.25f, 0.05f);
+            btn.style.backgroundColor = new StyleColor(bg);
+            btn.style.color           = new StyleColor(Color.white);
+
+            var capturedInfo    = info;
+            int capturedSpecies = selectedPlayerIndex;
+            btn.clicked += () =>
+            {
+                BuildingPlacementController.Instance?.StartPlacement(
+                    capturedInfo.WaypointType, capturedSpecies, capturedInfo.Name);
+
+                // Close panel, show banner, dim left panel
+                constructionPanel?.RemoveFromHierarchy();
+                constructionPanel     = null;
+                constructionPanelOpen = false;
+
+                if (placementBannerText != null)
+                    placementBannerText.text =
+                        $"Placer : {capturedInfo.Name}  (P{capturedSpecies + 1})  |  Clic gauche pour confirmer";
+
+                if (placementBanner != null) placementBanner.style.display = DisplayStyle.Flex;
+
+                // Masquer le panneau gauche et passer en overlay pour voir la carte terrain
+                var cp = uiDocument.rootVisualElement.Q<VisualElement>("ControlPanel");
+                if (cp != null) cp.style.display = DisplayStyle.None;
+                wasInOverlayBeforePlacement = overlayMode;
+                if (!overlayMode) OnToggleOverlay();
+            };
+            constructionPanel.Add(btn);
+        }
+
+        root.Add(constructionPanel);
+        constructionPanelOpen = true;
+    }
+
+    private void OnPlacementEnded()
+    {
+        if (placementBanner != null) placementBanner.style.display = DisplayStyle.None;
+        var panel = uiDocument?.rootVisualElement?.Q<VisualElement>("ControlPanel");
+        if (panel != null) { panel.style.display = DisplayStyle.Flex; panel.style.opacity = 1f; }
+        // Restaurer l'état overlay d'avant le placement
+        if (!wasInOverlayBeforePlacement && overlayMode) OnToggleOverlay();
     }
 
     private void BindSlider(Slider slider, Label label, string fmt, System.Action<float> onChange)

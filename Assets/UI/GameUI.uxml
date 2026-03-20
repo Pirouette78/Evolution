@@ -26,7 +26,8 @@
                 <ui:Button name="BtnSelectP6" text="P6" style="width: 35px; background-color: rgb(150, 150, 0); color: white;" />
             </ui:VisualElement>
             
-            <ui:Toggle name="ToggleVisibility" label="Afficher ce joueur" value="true" style="color: white; margin-bottom: 8px;" />
+            <ui:Toggle name="ToggleVisibility" label="Afficher ce joueur" value="true" style="color: white; margin-bottom: 4px;" />
+            <ui:Toggle name="ToggleSpeciesOverlay" label="Afficher POIs" value="true" style="color: rgb(200,200,100); margin-bottom: 8px;" />
 
             <!-- ── Type d'espèce ──────────────────── -->
             <ui:Label text="Type d'espèce" style="font-size: 13px; color: rgb(140,200,255); -unity-font-style: bold; margin-bottom: 4px;" />
@@ -53,6 +54,9 @@
                 <ui:Button name="BtnWar4" text="P5" style="width: 35px; font-size: 11px; padding: 3px 2px; margin: 1px; background-color: rgb(80,0,80);  color: white; border-radius: 4px;" />
                 <ui:Button name="BtnWar5" text="P6" style="width: 35px; font-size: 11px; padding: 3px 2px; margin: 1px; background-color: rgb(80,80,0);  color: white; border-radius: 4px;" />
             </ui:VisualElement>
+
+            <!-- ── Construction ─────────────────────── -->
+            <ui:Button name="BtnConstruction" text="🏗  Construction" style="font-size:13px; padding:6px 10px; background-color:rgb(60,90,40); color:white; border-radius:5px; margin-top:4px; margin-bottom:8px;" />
 
             <!-- ── Jeu ────────────────────────────── -->
             <ui:Label text="⏩  Vitesse" style="font-size: 13px; color: rgb(140,200,255); -unity-font-style: bold; margin-bottom:3px;" />
@@ -142,6 +146,12 @@
             <ui:Button name="OverlayModeButton" text="Mode Overlay" style="font-size: 14px; padding: 7px 10px; background-color: rgb(50,80,100); color: white; border-radius: 5px;" />
 
         </ui:ScrollView>
+    </ui:VisualElement>
+
+    <!-- Placement banner (hidden by default, shown during building placement mode) -->
+    <ui:VisualElement name="PlacementBanner" style="position:absolute; top:0; left:0; right:0; height:50px; background-color:rgba(0,0,0,0.88); align-items:center; justify-content:center; display:none; flex-direction:row;">
+        <ui:Label name="PlacementBannerText" text="" style="font-size:16px; color:rgb(255,220,80); -unity-font-style:bold; margin-right:20px;" />
+        <ui:Button name="BtnCancelPlacement" text="Annuler  (Echap)" style="font-size:13px; padding:5px 14px; background-color:rgb(120,40,40); color:white; border-radius:4px;" />
     </ui:VisualElement>
 
     <!-- Bottom-right tech panel -->

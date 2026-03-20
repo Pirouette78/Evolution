@@ -6,7 +6,7 @@
 #pragma kernel ClearCounts
 #pragma kernel CountAlive
 
-// FORCING RECOMPILE
+// FORCING RECOMPILE 2
 
 struct TypeOfWorker {
     int    fighter;
@@ -48,18 +48,32 @@ struct SpeciesSettings {
     float trailWeight;
     float decayRate;
     float diffuseRate;
-    
+
     float warDamageRate;        // damage rate from enemy trails
     int   warMask;              // bitmask of enemy species
     int   behaviorType;         // 0=default,1=Bacterie,2=GlobRouge,3=GlobBlanc,4=Virus,5=Plaquette
     float energyConsumptionRate;// energy drained per second (Bacterie)
     float energyReward;         // energy released via trail (GlobuleRouge)
     float startingEnergy;       // initial agent.hunger value at spawn
-    float pad0;                 // padding to 64 bytes
+    float arrivalRadius;        // distance "arrived" at waypoint (was pad0)
+    float loadingTime;          // time to wait at Source
+    float unloadingTime;        // time to wait at Destination
+    float pad1;                 // padding → 76 bytes
+};
+
+struct Waypoint {
+    float2 position;    // pixel space (0..512)
+    int    type;        // 0=Source, 1=Destination
+    int    speciesIndex;// owner species (-1 = shared)
 };
 
 StructuredBuffer<SpeciesSettings> speciesSettings;
 RWStructuredBuffer<uint> speciesCounts;
+
+StructuredBuffer<Waypoint> waypoints;
+int numWaypoints;
+
+Texture2DArray<float2> FlowFieldMap;
 
 float deltaTime;
 float time;
@@ -134,6 +148,21 @@ float senseSpecies(Agent agent, float sensorAngleOffset, SpeciesSettings setting
     return sum;
 }
 
+// Navigate toward a waypoint using its flow field slice.
+// Returns true if the agent has arrived (distance < arrivalRadius).
+bool navigateViaFlowField(inout Agent agent, SpeciesSettings settings, int waypointIdx)
+{
+    float2 flowDir = FlowFieldMap.Load(int4((int)agent.position.x, (int)agent.position.y, waypointIdx, 0)).rg;
+    if (dot(flowDir, flowDir) > 0.0001)
+    {
+        float targetAngle = atan2(flowDir.y, flowDir.x);
+        float angleDiff   = fmod(targetAngle - agent.angle + 3.14159 * 3.0, 6.28318) - 3.14159;
+        agent.angle += clamp(angleDiff, -settings.turnSpeed * deltaTime, settings.turnSpeed * deltaTime);
+    }
+    float2 toWp = waypoints[waypointIdx].position - agent.position;
+    return (length(toWp) < settings.arrivalRadius);
+}
+
 [numthreads(16,1,1)]
 void UpdateAgents (uint3 id : SV_DispatchThreadID)
 {
@@ -143,76 +172,169 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
     if (agent.age < 0) return; // permanently dead
     SpeciesSettings settings = speciesSettings[agent.speciesIndex];
     if (agent.age > settings.maxAge) {
-        agent.age = -1; // mark as permanently dead
+        agent.age = -1;
         agents[id.x] = agent;
         return;
     }
 
-    // Simple hash-based random using agent id and time
     uint random = hash(id.x + (uint)(time * 100000.0));
     float randomSteer = scaleToRange01(random);
 
-    // Gently steer based on trail
-    float weightForward = sense(agent, 0, settings);
-    float weightLeft    = sense(agent, settings.sensorAngleRad, settings);
-    float weightRight   = sense(agent, -settings.sensorAngleRad, settings);
+    bool useNavigation = (settings.behaviorType == 2);
+    bool stayPut = false;
 
-    // GlobuleBlanc (behaviorType 3): override sensing to track target species
-    if (settings.behaviorType == 3 && settings.warMask != 0) {
-        weightForward = 0; weightLeft = 0; weightRight = 0;
-        for (int ts = 0; ts < 6; ts++) {
-            if ((settings.warMask & (1 << ts)) == 0) continue;
-            weightForward += senseSpecies(agent, 0,                        settings, ts);
-            weightLeft    += senseSpecies(agent,  settings.sensorAngleRad, settings, ts);
-            weightRight   += senseSpecies(agent, -settings.sensorAngleRad, settings, ts);
+    if (useNavigation)
+    {
+        int navState   = agent.typeOfWorker.fighter;
+        int targetIdx  = agent.typeOfWorker.worker;
+
+        // navState 0: find nearest Source waypoint for this species
+        if (navState == 0)
+        {
+            int   bestIdx  = -1;
+            float bestDist = 1e9;
+            for (int w = 0; w < numWaypoints; w++)
+            {
+                if (waypoints[w].type != 0) continue;           // Source only
+                if (waypoints[w].speciesIndex != agent.speciesIndex) continue;
+                float d = length(waypoints[w].position - agent.position);
+                if (d < bestDist) { bestDist = d; bestIdx = w; }
+            }
+            if (bestIdx >= 0)
+            {
+                targetIdx = bestIdx;
+                navState  = 1;
+            }
+            // else: no Source found, stay random this frame
+        }
+
+        // navState 1: navigate toward Source via flow field
+        if (navState == 1 && targetIdx >= 0)
+        {
+            bool arrived = navigateViaFlowField(agent, settings, targetIdx);
+            if (arrived)
+            {
+                navState = 2;
+                agent.hunger = settings.loadingTime;
+            }
+        }
+
+        // navState 2: loading at Source (stay put, count down timer)
+        else if (navState == 2)
+        {
+            stayPut = true;
+            agent.hunger -= deltaTime;
+            if (agent.hunger <= 0)
+            {
+                // Find nearest Destination waypoint
+                int   bestIdx  = -1;
+                float bestDist = 1e9;
+                for (int w = 0; w < numWaypoints; w++)
+                {
+                    if (waypoints[w].type != 1) continue;       // Destination only
+                    if (waypoints[w].speciesIndex != agent.speciesIndex) continue;
+                    float d = length(waypoints[w].position - agent.position);
+                    if (d < bestDist) { bestDist = d; bestIdx = w; }
+                }
+                if (bestIdx >= 0)
+                {
+                    targetIdx = bestIdx;
+                    navState  = 3;
+                }
+                else
+                {
+                    navState = 0; // no destination, restart
+                }
+            }
+        }
+
+        // navState 3: navigate toward Destination via flow field
+        else if (navState == 3 && targetIdx >= 0)
+        {
+            bool arrived = navigateViaFlowField(agent, settings, targetIdx);
+            if (arrived)
+            {
+                navState = 4;
+                agent.hunger = settings.unloadingTime;
+            }
+        }
+
+        // navState 4: unloading at Destination (stay put, count down timer)
+        else if (navState == 4)
+        {
+            stayPut = true;
+            agent.hunger -= deltaTime;
+            if (agent.hunger <= 0) navState = 0;
+        }
+
+        agent.typeOfWorker.fighter = navState;
+        agent.typeOfWorker.worker  = targetIdx;
+    }
+    else
+    {
+        // Default slime sensing
+        float weightForward = sense(agent, 0, settings);
+        float weightLeft    = sense(agent, settings.sensorAngleRad, settings);
+        float weightRight   = sense(agent, -settings.sensorAngleRad, settings);
+
+        // GlobuleBlanc (behaviorType 3): override sensing to track target species
+        if (settings.behaviorType == 3 && settings.warMask != 0) {
+            weightForward = 0; weightLeft = 0; weightRight = 0;
+            for (int ts = 0; ts < 6; ts++) {
+                if ((settings.warMask & (1 << ts)) == 0) continue;
+                weightForward += senseSpecies(agent, 0,                        settings, ts);
+                weightLeft    += senseSpecies(agent,  settings.sensorAngleRad, settings, ts);
+                weightRight   += senseSpecies(agent, -settings.sensorAngleRad, settings, ts);
+            }
+        }
+
+        if (weightForward >= weightLeft && weightForward >= weightRight) {
+            // go straight
+        } else if (weightRight > weightLeft) {
+            agent.angle -= randomSteer * settings.turnSpeed * deltaTime;
+        } else if (weightLeft > weightRight) {
+            agent.angle += randomSteer * settings.turnSpeed * deltaTime;
+        } else {
+            agent.angle += (randomSteer - 0.5) * 2.0 * settings.turnSpeed * deltaTime;
         }
     }
 
-    if (weightForward >= weightLeft && weightForward >= weightRight) {
-        // go straight
-    } else if (weightRight > weightLeft) {
-        agent.angle -= randomSteer * settings.turnSpeed * deltaTime;
-    } else if (weightLeft > weightRight) {
-        agent.angle += randomSteer * settings.turnSpeed * deltaTime;
-    } else {
-        agent.angle += (randomSteer - 0.5) * 2.0 * settings.turnSpeed * deltaTime;
-    }
-
-    // Move forward
-    float2 dir    = float2(cos(agent.angle), sin(agent.angle));
-    float2 newPos = agent.position + dir * settings.moveSpeed * deltaTime;
-
-    // Bounce off edge  
-    if (newPos.x < 1 || newPos.x >= (float)width  - 1 ||
-        newPos.y < 1 || newPos.y >= (float)height - 1)
+    // Move forward (skip for loading/unloading states)
+    float2 newPos = agent.position;
+    if (!stayPut)
     {
-        // Reflect: pick a random new angle pointing inward
-        uint r2 = hash(random + 1u);
-        agent.angle = scaleToRange01(r2) * 6.2831;
-        newPos = agent.position; // stay put this frame
-    }
-    // Bounce off water (only when terrain collision is active)
-    else if (useTerrainCollision != 0 && !isWalkable(newPos))
-    {
-        uint r2 = hash(random + 2u);
-        agent.angle = scaleToRange01(r2) * 6.2831;
-        newPos = agent.position;
+        float2 dir = float2(cos(agent.angle), sin(agent.angle));
+        newPos = agent.position + dir * settings.moveSpeed * deltaTime;
+
+        if (newPos.x < 1 || newPos.x >= (float)width  - 1 ||
+            newPos.y < 1 || newPos.y >= (float)height - 1)
+        {
+            uint r2 = hash(random + 1u);
+            agent.angle = scaleToRange01(r2) * 6.2831;
+            newPos = agent.position;
+        }
+        else if (useTerrainCollision != 0 && !isWalkable(newPos))
+        {
+            uint r2 = hash(random + 2u);
+            agent.angle = scaleToRange01(r2) * 6.2831;
+            newPos = agent.position;
+        }
     }
 
     agent.position = newPos;
-    agent.age += deltaTime; // Increment age by simulation time
+    agent.age += deltaTime;
 
     // Bacterie (behaviorType 1): energy consumption + absorption from RBC trails
     if (settings.behaviorType == 1) {
         agent.hunger -= settings.energyConsumptionRate * deltaTime;
         for (int ts = 0; ts < 6; ts++) {
             SpeciesSettings other = speciesSettings[ts];
-            if (other.behaviorType != 2) continue; // only absorb from GlobuleRouge
+            if (other.behaviorType != 2) continue;
             float rbc = TrailMap[int3((int)agent.position.x, (int)agent.position.y, ts)];
             if (rbc > 0.05) agent.hunger = min(agent.hunger + other.energyReward * rbc * deltaTime, settings.startingEnergy);
         }
         if (agent.hunger <= 0) {
-            agent.age = -1; // starved to death
+            agent.age = -1;
             agents[id.x] = agent;
             return;
         }
@@ -228,7 +350,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
         }
     }
 
-    agents[id.x] = agent; // write back ENTIRE struct
+    agents[id.x] = agent;
 }
 
 [numthreads(16,1,1)]
