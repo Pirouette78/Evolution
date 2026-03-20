@@ -69,7 +69,7 @@ public class WaypointOverlayRenderer : MonoBehaviour
 
     private void OnGUI()
     {
-        if (WaypointManager.Instance == null || Camera.main == null) return;
+        if (WaypointManager.Instance == null || SlimeMapRenderer.Instance == null) return;
 
         WaypointData[] waypoints = WaypointManager.Instance.GetWaypoints();
         if (waypoints == null || waypoints.Length == 0) return;
@@ -85,13 +85,13 @@ public class WaypointOverlayRenderer : MonoBehaviour
             string name = WaypointManager.Instance.GetWaypointName(i);
             if (!poiImages.TryGetValue(name, out Texture2D tex) || tex == null) continue;
 
-            Vector3 worldPos  = MapToWorld(wp.position);
-            Vector3 screenPos = Camera.main.WorldToScreenPoint(worldPos);
-            if (screenPos.z < 0f) continue;
+            // Passe par l'espace monde pour suivre les mouvements de caméra
+            Vector3 worldPos = MapToWorld(wp.position);
+            Vector3 vp       = Camera.main.WorldToViewportPoint(worldPos);
+            if (vp.z < 0f) continue;
 
-            // GUI coords : Y inversé par rapport aux screen coords
-            float guiX = screenPos.x - size * 0.5f;
-            float guiY = Screen.height - screenPos.y - size * 0.5f;
+            float guiX = vp.x * Screen.width  - size * 0.5f;
+            float guiY = (1f - vp.y) * Screen.height - size * 0.5f;
             GUI.DrawTexture(new Rect(guiX, guiY, size, size), tex, ScaleMode.ScaleToFit, true);
         }
     }

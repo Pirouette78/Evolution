@@ -182,12 +182,14 @@ public class BuildingPlacementController : MonoBehaviour
         if (smr == null || Camera.main == null) return null;
 
         Vector2 screenPos = mouse.position.ReadValue();
-        Vector3 vp = Camera.main.ScreenToViewportPoint(new Vector3(screenPos.x, screenPos.y, 0));
+        // Profondeur : distance caméra → plan z=0 de la carte
+        float depth = -Camera.main.transform.position.z;
+        Vector3 worldPos = Camera.main.ScreenToWorldPoint(new Vector3(screenPos.x, screenPos.y, depth));
 
-        if (vp.x < 0f || vp.x > 1f || vp.y < 0f || vp.y > 1f) return null;
+        int px = (int)worldPos.x;
+        int py = (int)worldPos.y;
 
-        int px = Mathf.Clamp((int)(vp.x * smr.Width),  0, smr.Width  - 1);
-        int py = Mathf.Clamp((int)(vp.y * smr.Height), 0, smr.Height - 1);
+        if (px < 0 || px >= smr.Width || py < 0 || py >= smr.Height) return null;
 
         var terrain = TerrainMapRenderer.Instance;
         walkable = (terrain != null && terrain.WalkabilityGrid != null)
