@@ -37,8 +37,9 @@ public class WaypointManager : MonoBehaviour
     public HiveData[] InitialHives = new HiveData[0];
 
     // ── Runtime lists ────────────────────────────────────────────────
-    private readonly List<WaypointData> waypointList = new List<WaypointData>();
-    private readonly List<HiveData>     hiveList     = new List<HiveData>();
+    private readonly List<WaypointData> waypointList  = new List<WaypointData>();
+    private readonly List<string>       waypointNames = new List<string>();
+    private readonly List<HiveData>     hiveList      = new List<HiveData>();
 
     // Shared flow field texture (16 slices, reused across recomputations)
     private Texture2DArray flowFieldTexture;
@@ -111,7 +112,7 @@ public class WaypointManager : MonoBehaviour
     /// Add a waypoint at runtime. If it's a Source (type=0), optionally auto-creates a hive.
     /// Recomputes only the new flow field slice — incremental update.
     /// </summary>
-    public void AddWaypoint(WaypointData wp, bool autoHive = true)
+    public void AddWaypoint(WaypointData wp, string buildingName = "", bool autoHive = true)
     {
         if (waypointList.Count >= 16)
         {
@@ -120,6 +121,7 @@ public class WaypointManager : MonoBehaviour
         }
 
         waypointList.Add(wp);
+        waypointNames.Add(buildingName);
         int newIndex = waypointList.Count - 1;
 
         if (!flowFieldReady)
@@ -148,6 +150,9 @@ public class WaypointManager : MonoBehaviour
     }
 
     public WaypointData[] GetWaypoints() => waypointList.ToArray();
+
+    public string GetWaypointName(int index)
+        => (index >= 0 && index < waypointNames.Count) ? waypointNames[index] : "";
 
     // ── Flow field computation ───────────────────────────────────────
 

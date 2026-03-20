@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -19,6 +20,9 @@ public class WaypointOverlayRenderer : MonoBehaviour
 
     public bool[] ShowSpeciesOverlay = new bool[6] { true, true, true, true, true, true };
 
+    // Images POI : nom du bâtiment → texture chargée depuis Resources/POI/
+    private readonly Dictionary<string, Texture2D> poiImages = new Dictionary<string, Texture2D>();
+
     // Palette matches the compute shader palette
     private static readonly Color[] Palette = new Color[]
     {
@@ -36,6 +40,7 @@ public class WaypointOverlayRenderer : MonoBehaviour
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
+        LoadPoiImages();
 
         // Create an unlit, blended material for GL drawing
         var shader = Shader.Find("Hidden/Internal-Colored");
@@ -49,6 +54,46 @@ public class WaypointOverlayRenderer : MonoBehaviour
         glMaterial.SetInt("_Cull",     (int)UnityEngine.Rendering.CullMode.Off);
         glMaterial.SetInt("_ZWrite",   0);
         glMaterial.SetInt("_ZTest",    (int)UnityEngine.Rendering.CompareFunction.Always);
+    }
+
+    private void LoadPoiImages()
+    {
+        var entries = new[] { ("Poumon", "POI/poumon"), ("Rate", "POI/rate") };
+        foreach (var (name, path) in entries)
+        {
+            var tex = Resources.Load<Texture2D>(path);
+            if (tex != null) poiImages[name] = tex;
+            else Debug.LogWarning($"[POI] Texture introuvable : Resources/{path}");
+        }
+    }
+
+    private void OnGUI()
+    {
+        if (WaypointManager.Instance == null || Camera.main == null) return;
+
+        WaypointData[] waypoints = WaypointManager.Instance.GetWaypoints();
+        if (waypoints == null || waypoints.Length == 0) return;
+
+        float size = 48f;
+
+        for (int i = 0; i < waypoints.Length; i++)
+        {
+            var wp = waypoints[i];
+            if (wp.speciesIndex < 0 || wp.speciesIndex >= 6) continue;
+            if (!ShowSpeciesOverlay[wp.speciesIndex]) continue;
+
+            string name = WaypointManager.Instance.GetWaypointName(i);
+            if (!poiImages.TryGetValue(name, out Texture2D tex) || tex == null) continue;
+
+            Vector3 worldPos  = MapToWorld(wp.position);
+            Vector3 screenPos = Camera.main.WorldToScreenPoint(worldPos);
+            if (screenPos.z < 0f) continue;
+
+            // GUI coords : Y inversé par rapport aux screen coords
+            float guiX = screenPos.x - size * 0.5f;
+            float guiY = Screen.height - screenPos.y - size * 0.5f;
+            GUI.DrawTexture(new Rect(guiX, guiY, size, size), tex, ScaleMode.ScaleToFit, true);
+        }
     }
 
     private void OnRenderObject()

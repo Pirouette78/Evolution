@@ -35,8 +35,8 @@ public class BuildingPlacementController : MonoBehaviour
     private static readonly Dictionary<SpeciesType, BuildingInfo[]> BuildingsBySpecies =
         new Dictionary<SpeciesType, BuildingInfo[]>
     {
-        { SpeciesType.GlobuleRouge,  new[] { new BuildingInfo("Poumon",            0), new BuildingInfo("Organe",         1) } },
-        { SpeciesType.GlobuleBlanc,  new[] { new BuildingInfo("Ganglion",          0), new BuildingInfo("Zone Cible",     1) } },
+        { SpeciesType.GlobuleRouge,  new[] { new BuildingInfo("Poumon",            0), new BuildingInfo("Rate",           1) } },
+        { SpeciesType.GlobuleBlanc,  new[] { new BuildingInfo("Rate",              0) } },
         { SpeciesType.Bacterie,      new[] { new BuildingInfo("Source Nutriments", 0), new BuildingInfo("Zone Infection", 1) } },
         { SpeciesType.Virus,         new[] { new BuildingInfo("Nœud Viral",        0), new BuildingInfo("Cellule Hôte",   1) } },
         { SpeciesType.Plaquette,     new[] { new BuildingInfo("Moelle",            0), new BuildingInfo("Lésion",         1) } },
@@ -120,7 +120,7 @@ public class BuildingPlacementController : MonoBehaviour
                 type         = pendingWaypointType,
                 speciesIndex = pendingSpeciesIndex
             };
-            WaypointManager.Instance?.AddWaypoint(wp);
+            WaypointManager.Instance?.AddWaypoint(wp, PendingBuildingName);
             IsPlacing = false;
             OnPlacementConfirmed?.Invoke(wp);
         }
