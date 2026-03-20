@@ -12,12 +12,15 @@ public class UIController : MonoBehaviour
     private Button pauseButton;
 
     private Button[] playerSelectButtons = new Button[6];
-    private Button[] typeButtons = new Button[6];
+    private Button[] typeButtons = new Button[10];
     private Button[] warButtons  = new Button[6];
     private Toggle toggleVisibility;
     private int selectedPlayerIndex = 0;
 
-    private static readonly string[] typeButtonNames = { "BtnTypePlante","BtnTypeAnimal","BtnTypeChampignon","BtnTypeInsecte","BtnTypeBacterie","BtnTypeAlgue" };
+    private static readonly string[] typeButtonNames = {
+        "BtnTypePlante","BtnTypeAnimal","BtnTypeChampignon","BtnTypeInsecte","BtnTypeBacterie","BtnTypeAlgue",
+        "BtnTypeGlobuleRouge","BtnTypeGlobuleBlanc","BtnTypeVirus","BtnTypePlaquette"
+    };
 
     // ── Game controls ──────────────────────────────────────────────
     private Slider    speedSlider;
@@ -166,8 +169,8 @@ public class UIController : MonoBehaviour
             }
         }
 
-        // Species type buttons
-        for (int i = 0; i < 6; i++) {
+        // Species type buttons (10 types)
+        for (int i = 0; i < 10; i++) {
             typeButtons[i] = root.Q<Button>(typeButtonNames[i]);
             int typeIndex = i;
             if (typeButtons[i] != null) {
@@ -295,7 +298,7 @@ public class UIController : MonoBehaviour
     {
         if (SlimeMapRenderer.Instance == null) return;
         SpeciesType current = SlimeMapRenderer.Instance.speciesTypes[selectedPlayerIndex];
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < 10; i++) {
             if (typeButtons[i] == null) continue;
             typeButtons[i].style.borderBottomWidth = (i == (int)current) ? 3 : 0;
             typeButtons[i].style.borderBottomColor = Color.white;

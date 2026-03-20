@@ -6,7 +6,7 @@ using System.Collections;
 /// UpdateAgents → DrawMap → Diffuse every frame entirely on the GPU.
 /// No ECS dependency for movement.
 /// </summary>
-public enum SpeciesType { Plante, Animal, Champignon, Insecte, Bacterie, Algue }
+public enum SpeciesType { Plante, Animal, Champignon, Insecte, Bacterie, Algue, GlobuleRouge, GlobuleBlanc, Virus, Plaquette }
 
 public class SlimeMapRenderer : MonoBehaviour
 {
@@ -67,9 +67,13 @@ public class SlimeMapRenderer : MonoBehaviour
         public float decayRate;
         public float diffuseRate;
 
-            public float warDamageRate; // damage rate from enemy trails (was pad0)
-        public int   warMask;       // bitmask of enemy species (was pad1)
-        public float pad2;
+        public float warDamageRate;         // damage rate from enemy trails
+        public int   warMask;               // bitmask of enemy species
+        public int   behaviorType;          // 0=default,1=Bacterie,2=GlobRouge,3=GlobBlanc,4=Virus,5=Plaquette
+        public float energyConsumptionRate; // energy drained per second (Bacterie)
+        public float energyReward;          // energy released via trail (GlobuleRouge)
+        public float startingEnergy;        // initial agent.hunger value at spawn
+        public float pad0;                  // padding to 64 bytes
     }
     private ComputeBuffer speciesSettingsBuffer;
     private ComputeBuffer speciesCountsBuffer;
@@ -104,7 +108,7 @@ public class SlimeMapRenderer : MonoBehaviour
         agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*5 + sizeof(int)*7);
         // struct size (48 bytes) = 5 floats (20) + 7 ints (28)
         // C# size corresponds to exactly 48 bytes via padding
-        speciesSettingsBuffer = new ComputeBuffer(6, 48);
+        speciesSettingsBuffer = new ComputeBuffer(6, 64);
         speciesCountsBuffer   = new ComputeBuffer(6, sizeof(uint));
 
         for (int i = 0; i < 6; i++) {
@@ -299,9 +303,13 @@ public class SlimeMapRenderer : MonoBehaviour
             case SpeciesType.Animal:     return new SpeciesSettings { moveSpeed=100, turnSpeed=15, sensorAngleRad=30*Mathf.Deg2Rad, sensorOffsetDst=25, sensorSize=2, maxAge=80,  trailWeight=3,  decayRate=1.5f, diffuseRate=1f,   warDamageRate=2f   };
             case SpeciesType.Champignon: return new SpeciesSettings { moveSpeed=15,  turnSpeed=3,  sensorAngleRad=60*Mathf.Deg2Rad, sensorOffsetDst=8,  sensorSize=4, maxAge=300, trailWeight=10, decayRate=0.3f, diffuseRate=5f,   warDamageRate=0.3f };
             case SpeciesType.Insecte:    return new SpeciesSettings { moveSpeed=150, turnSpeed=25, sensorAngleRad=20*Mathf.Deg2Rad, sensorOffsetDst=30, sensorSize=2, maxAge=40,  trailWeight=2,  decayRate=2f,   diffuseRate=0.5f, warDamageRate=3f   };
-            case SpeciesType.Bacterie:   return new SpeciesSettings { moveSpeed=50,  turnSpeed=20, sensorAngleRad=45*Mathf.Deg2Rad, sensorOffsetDst=15, sensorSize=2, maxAge=30,  trailWeight=6,  decayRate=3f,   diffuseRate=4f,   warDamageRate=4f   };
-            case SpeciesType.Algue:      return new SpeciesSettings { moveSpeed=10,  turnSpeed=2,  sensorAngleRad=90*Mathf.Deg2Rad, sensorOffsetDst=5,  sensorSize=5, maxAge=500, trailWeight=15, decayRate=0.2f, diffuseRate=6f,   warDamageRate=0.1f };
-            default:                     return new SpeciesSettings { moveSpeed=75,  turnSpeed=10, sensorAngleRad=30*Mathf.Deg2Rad, sensorOffsetDst=20, sensorSize=2, maxAge=100, trailWeight=5,  decayRate=1f,   diffuseRate=2f,   warDamageRate=1f   };
+            case SpeciesType.Bacterie:   return new SpeciesSettings { moveSpeed=50,  turnSpeed=20, sensorAngleRad=45*Mathf.Deg2Rad, sensorOffsetDst=15, sensorSize=2, maxAge=30,  trailWeight=6,  decayRate=3f,   diffuseRate=4f,   warDamageRate=4f,   behaviorType=1, energyConsumptionRate=5f, startingEnergy=100f };
+            case SpeciesType.Algue:        return new SpeciesSettings { moveSpeed=10,  turnSpeed=2,  sensorAngleRad=90*Mathf.Deg2Rad, sensorOffsetDst=5,  sensorSize=5, maxAge=500, trailWeight=15, decayRate=0.2f, diffuseRate=6f,   warDamageRate=0.1f, behaviorType=0 };
+            case SpeciesType.GlobuleRouge: return new SpeciesSettings { moveSpeed=30,  turnSpeed=3,  sensorAngleRad=30*Mathf.Deg2Rad, sensorOffsetDst=15, sensorSize=3, maxAge=400, trailWeight=12, decayRate=0.3f, diffuseRate=4f,   warDamageRate=0.1f, behaviorType=2, energyReward=5f };
+            case SpeciesType.GlobuleBlanc: return new SpeciesSettings { moveSpeed=120, turnSpeed=20, sensorAngleRad=30*Mathf.Deg2Rad, sensorOffsetDst=25, sensorSize=2, maxAge=60,  trailWeight=1,  decayRate=3f,   diffuseRate=0.5f, warDamageRate=3f,   behaviorType=3 };
+            case SpeciesType.Virus:        return new SpeciesSettings { moveSpeed=80,  turnSpeed=30, sensorAngleRad=20*Mathf.Deg2Rad, sensorOffsetDst=20, sensorSize=2, maxAge=20,  trailWeight=1,  decayRate=5f,   diffuseRate=0.3f, warDamageRate=5f,   behaviorType=4 };
+            case SpeciesType.Plaquette:    return new SpeciesSettings { moveSpeed=25,  turnSpeed=5,  sensorAngleRad=45*Mathf.Deg2Rad, sensorOffsetDst=8,  sensorSize=4, maxAge=300, trailWeight=20, decayRate=0.1f, diffuseRate=6f,   warDamageRate=0f,   behaviorType=0 };
+            default:                       return new SpeciesSettings { moveSpeed=75,  turnSpeed=10, sensorAngleRad=30*Mathf.Deg2Rad, sensorOffsetDst=20, sensorSize=2, maxAge=100, trailWeight=5,  decayRate=1f,   diffuseRate=2f,   warDamageRate=1f,   behaviorType=0 };
         }
     }
 
@@ -353,7 +361,7 @@ public class SlimeMapRenderer : MonoBehaviour
                 angle       = angle,
                 speciesIndex= pid,
                 age         = 0f,
-                hunger      = 0f,
+                hunger      = speciesSettings[pid].startingEnergy,
                 typeOfWorker= new TypeOfWorker()
             };
         }

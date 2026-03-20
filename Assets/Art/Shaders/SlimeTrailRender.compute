@@ -49,9 +49,13 @@ struct SpeciesSettings {
     float decayRate;
     float diffuseRate;
     
-    float warDamageRate;  // damage rate from enemy trails (was pad0)
-    int   warMask;        // bitmask of enemy species (was pad1)
-    float pad2;
+    float warDamageRate;        // damage rate from enemy trails
+    int   warMask;              // bitmask of enemy species
+    int   behaviorType;         // 0=default,1=Bacterie,2=GlobRouge,3=GlobBlanc,4=Virus,5=Plaquette
+    float energyConsumptionRate;// energy drained per second (Bacterie)
+    float energyReward;         // energy released via trail (GlobuleRouge)
+    float startingEnergy;       // initial agent.hunger value at spawn
+    float pad0;                 // padding to 64 bytes
 };
 
 StructuredBuffer<SpeciesSettings> speciesSettings;
@@ -112,6 +116,24 @@ float sense(Agent agent, float sensorAngleOffset, SpeciesSettings settings) {
     return sum;
 }
 
+// Like sense() but reads from a specific species slice (for GlobuleBlanc targeting)
+float senseSpecies(Agent agent, float sensorAngleOffset, SpeciesSettings settings, int targetSlice) {
+    float sensorAngle = agent.angle + sensorAngleOffset;
+    float2 sensorDir = float2(cos(sensorAngle), sin(sensorAngle));
+    float2 sensorPos = agent.position + sensorDir * settings.sensorOffsetDst;
+    int sensorCentreX = (int)sensorPos.x;
+    int sensorCentreY = (int)sensorPos.y;
+    float sum = 0;
+    for (int offsetX = -settings.sensorSize; offsetX <= settings.sensorSize; offsetX++) {
+        for (int offsetY = -settings.sensorSize; offsetY <= settings.sensorSize; offsetY++) {
+            int sampleX = min(width - 1, max(0, sensorCentreX + offsetX));
+            int sampleY = min(height - 1, max(0, sensorCentreY + offsetY));
+            sum += TrailMap[int3(sampleX, sampleY, targetSlice)];
+        }
+    }
+    return sum;
+}
+
 [numthreads(16,1,1)]
 void UpdateAgents (uint3 id : SV_DispatchThreadID)
 {
@@ -134,6 +156,17 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
     float weightForward = sense(agent, 0, settings);
     float weightLeft    = sense(agent, settings.sensorAngleRad, settings);
     float weightRight   = sense(agent, -settings.sensorAngleRad, settings);
+
+    // GlobuleBlanc (behaviorType 3): override sensing to track target species
+    if (settings.behaviorType == 3 && settings.warMask != 0) {
+        weightForward = 0; weightLeft = 0; weightRight = 0;
+        for (int ts = 0; ts < 6; ts++) {
+            if ((settings.warMask & (1 << ts)) == 0) continue;
+            weightForward += senseSpecies(agent, 0,                        settings, ts);
+            weightLeft    += senseSpecies(agent,  settings.sensorAngleRad, settings, ts);
+            weightRight   += senseSpecies(agent, -settings.sensorAngleRad, settings, ts);
+        }
+    }
 
     if (weightForward >= weightLeft && weightForward >= weightRight) {
         // go straight
@@ -168,6 +201,22 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
 
     agent.position = newPos;
     agent.age += deltaTime; // Increment age by simulation time
+
+    // Bacterie (behaviorType 1): energy consumption + absorption from RBC trails
+    if (settings.behaviorType == 1) {
+        agent.hunger -= settings.energyConsumptionRate * deltaTime;
+        for (int ts = 0; ts < 6; ts++) {
+            SpeciesSettings other = speciesSettings[ts];
+            if (other.behaviorType != 2) continue; // only absorb from GlobuleRouge
+            float rbc = TrailMap[int3((int)agent.position.x, (int)agent.position.y, ts)];
+            if (rbc > 0.05) agent.hunger = min(agent.hunger + other.energyReward * rbc * deltaTime, settings.startingEnergy);
+        }
+        if (agent.hunger <= 0) {
+            agent.age = -1; // starved to death
+            agents[id.x] = agent;
+            return;
+        }
+    }
 
     // War: enemy trail presence accelerates aging
     if (settings.warMask != 0) {
