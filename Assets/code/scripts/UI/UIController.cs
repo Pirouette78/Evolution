@@ -12,8 +12,12 @@ public class UIController : MonoBehaviour
     private Button pauseButton;
 
     private Button[] playerSelectButtons = new Button[6];
+    private Button[] typeButtons = new Button[6];
+    private Button[] warButtons  = new Button[6];
     private Toggle toggleVisibility;
     private int selectedPlayerIndex = 0;
+
+    private static readonly string[] typeButtonNames = { "BtnTypePlante","BtnTypeAnimal","BtnTypeChampignon","BtnTypeInsecte","BtnTypeBacterie","BtnTypeAlgue" };
 
     // ── Game controls ──────────────────────────────────────────────
     private Slider    speedSlider;
@@ -162,6 +166,24 @@ public class UIController : MonoBehaviour
             }
         }
 
+        // Species type buttons
+        for (int i = 0; i < 6; i++) {
+            typeButtons[i] = root.Q<Button>(typeButtonNames[i]);
+            int typeIndex = i;
+            if (typeButtons[i] != null) {
+                typeButtons[i].clicked += () => OnSetSpeciesType((SpeciesType)typeIndex);
+            }
+        }
+
+        // War buttons
+        for (int i = 0; i < 6; i++) {
+            warButtons[i] = root.Q<Button>($"BtnWar{i}");
+            int enemyIndex = i;
+            if (warButtons[i] != null) {
+                warButtons[i].clicked += () => OnToggleWar(enemyIndex);
+            }
+        }
+
         // Scene refs
         strategyLayerGO = GameObject.Find("StrategyLayer");
         opaqueShader    = Shader.Find("Unlit/Texture");
@@ -229,6 +251,55 @@ public class UIController : MonoBehaviour
                 playerSelectButtons[i].style.borderBottomColor = Color.white;
                 playerSelectButtons[i].style.opacity = (i == index) ? 1.0f : 0.5f;
             }
+        }
+
+        RefreshWarButtons();
+        RefreshTypeButtons();
+    }
+
+    private void OnSetSpeciesType(SpeciesType type)
+    {
+        if (SlimeMapRenderer.Instance == null) return;
+        SlimeMapRenderer.Instance.SetSpeciesType(selectedPlayerIndex, type);
+        // Refresh sliders to match new preset values
+        SelectPlayer(selectedPlayerIndex);
+    }
+
+    private void OnToggleWar(int enemyIndex)
+    {
+        if (SlimeMapRenderer.Instance == null || enemyIndex == selectedPlayerIndex) return;
+        bool current = SlimeMapRenderer.Instance.IsAtWar(selectedPlayerIndex, enemyIndex);
+        SlimeMapRenderer.Instance.SetWar(selectedPlayerIndex, enemyIndex, !current);
+        RefreshWarButtons();
+    }
+
+    private void RefreshWarButtons()
+    {
+        if (SlimeMapRenderer.Instance == null) return;
+        for (int i = 0; i < 6; i++) {
+            if (warButtons[i] == null) continue;
+            if (i == selectedPlayerIndex) {
+                warButtons[i].SetEnabled(false);
+                warButtons[i].style.opacity = 0.2f;
+            } else {
+                warButtons[i].SetEnabled(true);
+                bool atWar = SlimeMapRenderer.Instance.IsAtWar(selectedPlayerIndex, i);
+                warButtons[i].style.opacity = atWar ? 1.0f : 0.4f;
+                warButtons[i].style.borderBottomWidth = atWar ? 3 : 0;
+                warButtons[i].style.borderBottomColor = Color.red;
+            }
+        }
+    }
+
+    private void RefreshTypeButtons()
+    {
+        if (SlimeMapRenderer.Instance == null) return;
+        SpeciesType current = SlimeMapRenderer.Instance.speciesTypes[selectedPlayerIndex];
+        for (int i = 0; i < 6; i++) {
+            if (typeButtons[i] == null) continue;
+            typeButtons[i].style.borderBottomWidth = (i == (int)current) ? 3 : 0;
+            typeButtons[i].style.borderBottomColor = Color.white;
+            typeButtons[i].style.opacity = (i == (int)current) ? 1.0f : 0.6f;
         }
     }
 

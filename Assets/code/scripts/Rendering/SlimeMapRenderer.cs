@@ -6,6 +6,8 @@ using System.Collections;
 /// UpdateAgents → DrawMap → Diffuse every frame entirely on the GPU.
 /// No ECS dependency for movement.
 /// </summary>
+public enum SpeciesType { Plante, Animal, Champignon, Insecte, Bacterie, Algue }
+
 public class SlimeMapRenderer : MonoBehaviour
 {
     public static SlimeMapRenderer Instance { get; private set; }
@@ -36,6 +38,7 @@ public class SlimeMapRenderer : MonoBehaviour
     public int SelectedPlayerIndex = 0;
     public SpeciesSettings[] speciesSettings = new SpeciesSettings[6];
     public uint[] AliveSpeciesCounts = new uint[6];
+    public SpeciesType[] speciesTypes = new SpeciesType[6];
 
     // ── Private ─────────────────────────────────────────────────────
     private ComputeBuffer agentBuffer;
@@ -64,9 +67,8 @@ public class SlimeMapRenderer : MonoBehaviour
         public float decayRate;
         public float diffuseRate;
 
-        // Padding to 48 bytes (multiple of 16-byte boundary)
-        public float pad0;
-        public float pad1;
+            public float warDamageRate; // damage rate from enemy trails (was pad0)
+        public int   warMask;       // bitmask of enemy species (was pad1)
         public float pad2;
     }
     private ComputeBuffer speciesSettingsBuffer;
@@ -115,7 +117,8 @@ public class SlimeMapRenderer : MonoBehaviour
                 maxAge = 100f,
                 trailWeight = 5f,
                 decayRate = 1f,
-                diffuseRate = 2f
+                diffuseRate = 2f,
+                warDamageRate = 1f
             };
         }
 
@@ -286,6 +289,46 @@ public class SlimeMapRenderer : MonoBehaviour
         if (index >= 0 && index < 6)
             return (playerVisibilityMask & (1 << index)) != 0;
         return false;
+    }
+
+    public static SpeciesSettings GetPreset(SpeciesType type)
+    {
+        switch (type)
+        {
+            case SpeciesType.Plante:     return new SpeciesSettings { moveSpeed=20,  turnSpeed=5,  sensorAngleRad=45*Mathf.Deg2Rad, sensorOffsetDst=10, sensorSize=3, maxAge=200, trailWeight=8,  decayRate=0.5f, diffuseRate=3f,   warDamageRate=0.5f };
+            case SpeciesType.Animal:     return new SpeciesSettings { moveSpeed=100, turnSpeed=15, sensorAngleRad=30*Mathf.Deg2Rad, sensorOffsetDst=25, sensorSize=2, maxAge=80,  trailWeight=3,  decayRate=1.5f, diffuseRate=1f,   warDamageRate=2f   };
+            case SpeciesType.Champignon: return new SpeciesSettings { moveSpeed=15,  turnSpeed=3,  sensorAngleRad=60*Mathf.Deg2Rad, sensorOffsetDst=8,  sensorSize=4, maxAge=300, trailWeight=10, decayRate=0.3f, diffuseRate=5f,   warDamageRate=0.3f };
+            case SpeciesType.Insecte:    return new SpeciesSettings { moveSpeed=150, turnSpeed=25, sensorAngleRad=20*Mathf.Deg2Rad, sensorOffsetDst=30, sensorSize=2, maxAge=40,  trailWeight=2,  decayRate=2f,   diffuseRate=0.5f, warDamageRate=3f   };
+            case SpeciesType.Bacterie:   return new SpeciesSettings { moveSpeed=50,  turnSpeed=20, sensorAngleRad=45*Mathf.Deg2Rad, sensorOffsetDst=15, sensorSize=2, maxAge=30,  trailWeight=6,  decayRate=3f,   diffuseRate=4f,   warDamageRate=4f   };
+            case SpeciesType.Algue:      return new SpeciesSettings { moveSpeed=10,  turnSpeed=2,  sensorAngleRad=90*Mathf.Deg2Rad, sensorOffsetDst=5,  sensorSize=5, maxAge=500, trailWeight=15, decayRate=0.2f, diffuseRate=6f,   warDamageRate=0.1f };
+            default:                     return new SpeciesSettings { moveSpeed=75,  turnSpeed=10, sensorAngleRad=30*Mathf.Deg2Rad, sensorOffsetDst=20, sensorSize=2, maxAge=100, trailWeight=5,  decayRate=1f,   diffuseRate=2f,   warDamageRate=1f   };
+        }
+    }
+
+    public void SetSpeciesType(int index, SpeciesType type)
+    {
+        if (index < 0 || index >= 6) return;
+        speciesTypes[index] = type;
+        var preset = GetPreset(type);
+        preset.warMask = speciesSettings[index].warMask; // preserve existing war state
+        speciesSettings[index] = preset;
+    }
+
+    public void SetWar(int a, int b, bool atWar)
+    {
+        if (a < 0 || a >= 6 || b < 0 || b >= 6 || a == b) return;
+        var sa = speciesSettings[a];
+        var sb = speciesSettings[b];
+        if (atWar) { sa.warMask |= (1 << b); sb.warMask |= (1 << a); }
+        else        { sa.warMask &= ~(1 << b); sb.warMask &= ~(1 << a); }
+        speciesSettings[a] = sa;
+        speciesSettings[b] = sb;
+    }
+
+    public bool IsAtWar(int a, int b)
+    {
+        if (a < 0 || a >= 6 || b < 0 || b >= 6) return false;
+        return (speciesSettings[a].warMask & (1 << b)) != 0;
     }
 
     /// <summary>Append count new agents to the GPU buffer.</summary>

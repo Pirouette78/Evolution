@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/unityProjects/Evolution/Assets -name *.json -type f)",
+      "Bash(find /c/unityProjects/Evolution/Assets/Code -name *.cs -type f)",
+      "Bash(xargs grep:*)",
+      "Bash(find /c/unityProjects/Evolution -name TechTree.json -o -name *.json -path */Data/*)"
+    ]
+  }
+}

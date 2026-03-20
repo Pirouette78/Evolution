@@ -49,9 +49,8 @@ struct SpeciesSettings {
     float decayRate;
     float diffuseRate;
     
-    // Padding to 48 bytes (multiple of 16)
-    float pad0;
-    float pad1;
+    float warDamageRate;  // damage rate from enemy trails (was pad0)
+    int   warMask;        // bitmask of enemy species (was pad1)
     float pad2;
 };
 
@@ -169,6 +168,17 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
 
     agent.position = newPos;
     agent.age += deltaTime; // Increment age by simulation time
+
+    // War: enemy trail presence accelerates aging
+    if (settings.warMask != 0) {
+        for (int e = 0; e < 6; e++) {
+            if ((settings.warMask & (1 << e)) != 0) {
+                float enemyTrail = TrailMap[int3((int)agent.position.x, (int)agent.position.y, e)];
+                agent.age += enemyTrail * settings.warDamageRate * deltaTime;
+            }
+        }
+    }
+
     agents[id.x] = agent; // write back ENTIRE struct
 }
 
