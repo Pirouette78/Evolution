@@ -125,26 +125,36 @@ public class WaypointOverlayRenderer : MonoBehaviour
             DrawCircle(worldPos, radius, col, 12);
         }
 
-        // Draw animated dashed lines between Source and Destination of same species
+        // Draw animated dashed lines along the smoothed path (or direct line as fallback)
         float dashOffset = Time.time % 1f;
         for (int s = 0; s < 6; s++)
         {
             if (!ShowSpeciesOverlay[s]) continue;
 
-            // Collect sources and destinations for this species
-            Vector2? src = null, dst = null;
-            for (int i = 0; i < waypoints.Length; i++)
-            {
-                if (waypoints[i].speciesIndex != s) continue;
-                if (waypoints[i].type == 0 && src == null) src = waypoints[i].position;
-                if (waypoints[i].type == 1 && dst == null) dst = waypoints[i].position;
-            }
-
-            if (src == null || dst == null) continue;
-
             Color lineCol = Palette[s];
             lineCol.a = 0.7f;
-            DrawDashedLine(MapToWorld(src.Value), MapToWorld(dst.Value), lineCol, dashOffset, 0.05f);
+
+            Vector2[] smoothPath = WaypointManager.Instance.GetSmoothedPath(s);
+            if (smoothPath != null && smoothPath.Length >= 2)
+            {
+                // Dessine le chemin lissé segment par segment
+                for (int p = 0; p < smoothPath.Length - 1; p++)
+                    DrawDashedLine(MapToWorld(smoothPath[p]), MapToWorld(smoothPath[p + 1]),
+                                   lineCol, dashOffset, 0.4f);
+            }
+            else
+            {
+                // Fallback : ligne droite Source → Destination
+                Vector2? src = null, dst = null;
+                for (int i = 0; i < waypoints.Length; i++)
+                {
+                    if (waypoints[i].speciesIndex != s) continue;
+                    if (waypoints[i].type == 0 && src == null) src = waypoints[i].position;
+                    if (waypoints[i].type == 1 && dst == null) dst = waypoints[i].position;
+                }
+                if (src == null || dst == null) continue;
+                DrawDashedLine(MapToWorld(src.Value), MapToWorld(dst.Value), lineCol, dashOffset, 0.05f);
+            }
         }
 
         GL.PopMatrix();

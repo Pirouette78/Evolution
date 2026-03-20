@@ -75,6 +75,9 @@ int numWaypoints;
 
 Texture2DArray<float2> FlowFieldMap;
 
+StructuredBuffer<float2> smoothedPaths;    // flat 6×64 : espèce s → [s*64 .. s*64+count-1]
+StructuredBuffer<int2>   smoothedPathMeta; // [speciesIdx] = (startIndex, count), count=0 = pas de chemin
+
 float deltaTime;
 float time;
 
@@ -163,6 +166,39 @@ bool navigateViaFlowField(inout Agent agent, SpeciesSettings settings, int waypo
     return (length(toWp) < settings.arrivalRadius);
 }
 
+// Navigate agent along a pre-computed string-pulled path (smoothedPaths buffer).
+// pathIdx = index courant dans le chemin de l'espèce (typeOfWorker.builder).
+// Retourne true quand l'agent atteint le dernier waypoint (la Destination).
+bool navigateViaSmoothedPath(inout Agent agent, SpeciesSettings settings, inout int pathIdx)
+{
+    int2 meta  = smoothedPathMeta[agent.speciesIndex];
+    int  start = meta.x;
+    int  count = meta.y;
+    if (count == 0) return false; // pas de chemin, l'appelant doit utiliser le flow field
+
+    pathIdx = clamp(pathIdx, 0, count - 1);
+    float2 target   = smoothedPaths[start + pathIdx];
+    float2 toTarget = target - agent.position;
+    float  dist     = length(toTarget);
+
+    // Orienter vers le waypoint courant
+    if (dist > 0.001)
+    {
+        float targetAngle = atan2(toTarget.y, toTarget.x);
+        float angleDiff   = fmod(targetAngle - agent.angle + 3.14159 * 3.0, 6.28318) - 3.14159;
+        agent.angle      += clamp(angleDiff, -settings.turnSpeed * deltaTime,
+                                              settings.turnSpeed * deltaTime);
+    }
+
+    // Avancer vers le prochain waypoint si assez proche
+    if (dist < settings.arrivalRadius)
+    {
+        pathIdx++;
+        if (pathIdx >= count) { pathIdx = count - 1; return true; } // atteint la Destination
+    }
+    return false;
+}
+
 [numthreads(16,1,1)]
 void UpdateAgents (uint3 id : SV_DispatchThreadID)
 {
@@ -240,6 +276,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
                 {
                     targetIdx = bestIdx;
                     navState  = 3;
+                    agent.typeOfWorker.builder = 0; // reset smooth path index
                 }
                 else
                 {
@@ -248,10 +285,20 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
             }
         }
 
-        // navState 3: navigate toward Destination via flow field
+        // navState 3: navigate toward Destination via smoothed path (ou flow field en fallback)
         else if (navState == 3 && targetIdx >= 0)
         {
-            bool arrived = navigateViaFlowField(agent, settings, targetIdx);
+            bool arrived = false;
+            if (smoothedPathMeta[agent.speciesIndex].y > 0)
+            {
+                int pathIdx = agent.typeOfWorker.builder;
+                arrived = navigateViaSmoothedPath(agent, settings, pathIdx);
+                agent.typeOfWorker.builder = pathIdx;
+            }
+            else
+            {
+                arrived = navigateViaFlowField(agent, settings, targetIdx); // fallback
+            }
             if (arrived)
             {
                 navState = 4;

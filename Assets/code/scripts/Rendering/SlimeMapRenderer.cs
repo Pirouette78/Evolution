@@ -89,6 +89,8 @@ public class SlimeMapRenderer : MonoBehaviour
     private ComputeBuffer speciesSettingsBuffer;
     private ComputeBuffer speciesCountsBuffer;
     private ComputeBuffer waypointBuffer;
+    private ComputeBuffer smoothedPathBuffer;
+    private ComputeBuffer smoothedPathMetaBuffer;
     private Texture2DArray flowFieldMap;
     private bool flowFieldMapIsOwned = false;
 
@@ -234,6 +236,15 @@ public class SlimeMapRenderer : MonoBehaviour
         waypointBuffer.SetData(new WaypointData[16]);
         SlimeShader.SetBuffer(updateKernel, "waypoints", waypointBuffer);
         SlimeShader.SetInt("numWaypoints", 0);
+
+        // Smooth path buffers (string pulling)
+        smoothedPathBuffer = new ComputeBuffer(6 * 64, sizeof(float) * 2); // float2 × 384
+        smoothedPathBuffer.SetData(new Vector2[6 * 64]);
+        SlimeShader.SetBuffer(updateKernel, "smoothedPaths", smoothedPathBuffer);
+
+        smoothedPathMetaBuffer = new ComputeBuffer(6, sizeof(int) * 2); // int2 × 6
+        smoothedPathMetaBuffer.SetData(new Vector2Int[6]);
+        SlimeShader.SetBuffer(updateKernel, "smoothedPathMeta", smoothedPathMetaBuffer);
 
         // Flow field texture array (16 slices, one per waypoint, RG = direction)
         flowFieldMap = new Texture2DArray(Width, Height, 16, TextureFormat.RGHalf, false)
@@ -389,6 +400,15 @@ public class SlimeMapRenderer : MonoBehaviour
         SlimeShader.SetTexture(updateKernel, "FlowFieldMap", flowFieldMap);
     }
 
+    public void SetSmoothedPaths(Vector2[] flatPaths, int[] starts, int[] counts)
+    {
+        if (smoothedPathBuffer == null || smoothedPathMetaBuffer == null) return;
+        smoothedPathBuffer.SetData(flatPaths);
+        var meta = new Vector2Int[6];
+        for (int i = 0; i < 6; i++) meta[i] = new Vector2Int(starts[i], counts[i]);
+        smoothedPathMetaBuffer.SetData(meta);
+    }
+
     public void AddAgentsAt(int count, int speciesIndex, Vector2 position)
     {
         if (!isInitialized) return;
@@ -509,6 +529,8 @@ public class SlimeMapRenderer : MonoBehaviour
             SlimeShader.SetTexture(composeKernel, "DiffusedTrailMap", DiffusedMap);
             SlimeShader.SetBuffer(updateKernel, "waypoints", waypointBuffer);
             SlimeShader.SetTexture(updateKernel, "FlowFieldMap", flowFieldMap);
+            SlimeShader.SetBuffer(updateKernel, "smoothedPaths",    smoothedPathBuffer);
+            SlimeShader.SetBuffer(updateKernel, "smoothedPathMeta", smoothedPathMetaBuffer);
 
             for (int step = 0; step < StepsPerFrame; step++)
             {
@@ -564,6 +586,8 @@ public class SlimeMapRenderer : MonoBehaviour
         speciesSettingsBuffer?.Release();
         speciesCountsBuffer?.Release();
         waypointBuffer?.Release();
+        smoothedPathBuffer?.Release();
+        smoothedPathMetaBuffer?.Release();
         if (flowFieldMapIsOwned && flowFieldMap != null) Destroy(flowFieldMap);
         TrailMap?.Release();
         DiffusedMap?.Release();

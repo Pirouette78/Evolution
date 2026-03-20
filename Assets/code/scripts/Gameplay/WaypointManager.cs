@@ -45,6 +45,10 @@ public class WaypointManager : MonoBehaviour
     private Texture2DArray flowFieldTexture;
     private bool           flowFieldReady = false;
 
+    // Smoothed paths (string pulling) — one per species slot 0-5
+    private Vector2[][] smoothPaths = new Vector2[6][];
+    private const int   MaxSmoothedWaypoints = 64;
+
     private void Awake()
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
@@ -201,13 +205,21 @@ public class WaypointManager : MonoBehaviour
     {
         SlimeMapRenderer.Instance.SetFlowFields(flowFieldTexture);
         SlimeMapRenderer.Instance.SetWaypoints(waypointList.ToArray());
+        ComputeSmoothedPaths();
     }
+
+    public Vector2[] GetSmoothedPath(int speciesIndex)
+        => (speciesIndex >= 0 && speciesIndex < 6) ? smoothPaths[speciesIndex] : null;
 
     // ── BFS ─────────────────────────────────────────────────────────
 
     private static Color[] BFSFlowField(bool[,] walkable, int W, int H, int targetX, int targetY)
+        => BFSFlowField(walkable, W, H, targetX, targetY, out _);
+
+    private static Color[] BFSFlowField(bool[,] walkable, int W, int H,
+        int targetX, int targetY, out int[] parent)
     {
-        int[] parent = new int[W * H];
+        parent = new int[W * H];
         for (int i = 0; i < parent.Length; i++) parent[i] = -1;
 
         int targetIdx = targetY * W + targetX;
@@ -252,6 +264,115 @@ public class WaypointManager : MonoBehaviour
             }
         }
         return slice;
+    }
+
+    // ── String Pulling ───────────────────────────────────────────────
+
+    /// <summary>Trace le chemin brut de source vers destination via le tableau parent[] du BFS.</summary>
+    private static List<Vector2Int> ExtractRawPath(int[] parent, int W, int srcIdx, int dstIdx)
+    {
+        var path  = new List<Vector2Int>();
+        int cur   = srcIdx;
+        int limit = parent.Length;
+        while (cur != dstIdx && limit-- > 0)
+        {
+            if (parent[cur] == -1) return null; // source inaccessible
+            path.Add(new Vector2Int(cur % W, cur / W));
+            cur = parent[cur];
+        }
+        path.Add(new Vector2Int(cur % W, cur / W)); // ajoute la destination
+        return path;
+    }
+
+    /// <summary>Bresenham — retourne true si la ligne droite entre deux pixels est entièrement praticable.</summary>
+    private static bool HasLineOfSight(bool[,] walkable, int W, int H,
+        int x0, int y0, int x1, int y1)
+    {
+        int dx = Mathf.Abs(x1 - x0), dy = Mathf.Abs(y1 - y0);
+        int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+        int err = dx - dy, x = x0, y = y0;
+        while (true)
+        {
+            if (x < 0 || x >= W || y < 0 || y >= H || !walkable[x, y]) return false;
+            if (x == x1 && y == y1) return true;
+            int e2 = 2 * err;
+            if (e2 > -dy) { err -= dy; x += sx; }
+            if (e2 <  dx) { err += dx; y += sy; }
+        }
+    }
+
+    /// <summary>Réduit rawPath en supprimant les points intermédiaires visibles en ligne droite.</summary>
+    private static List<Vector2Int> StringPull(List<Vector2Int> raw, bool[,] walkable, int W, int H)
+    {
+        if (raw == null || raw.Count <= 2) return raw;
+        var result = new List<Vector2Int> { raw[0] };
+        int anchor = 0;
+        for (int i = 2; i < raw.Count; i++)
+        {
+            var a = raw[anchor]; var b = raw[i];
+            if (!HasLineOfSight(walkable, W, H, a.x, a.y, b.x, b.y))
+            {
+                result.Add(raw[i - 1]);
+                anchor = i - 1;
+            }
+        }
+        result.Add(raw[raw.Count - 1]);
+        return result;
+    }
+
+    /// <summary>Pour chaque espèce ayant une Source et une Destination, calcule le chemin lissé et l'envoie au GPU.</summary>
+    private void ComputeSmoothedPaths()
+    {
+        var terrain = TerrainMapRenderer.Instance;
+        if (terrain == null) return;
+        int W = terrain.Width, H = terrain.Height;
+        bool[,] walkable = terrain.WalkabilityGrid;
+
+        var flatBuffer = new Vector2[6 * MaxSmoothedWaypoints];
+        var starts     = new int[6];
+        var counts     = new int[6];
+
+        for (int s = 0; s < 6; s++)
+        {
+            smoothPaths[s] = null;
+            starts[s]      = s * MaxSmoothedWaypoints;
+            counts[s]      = 0;
+
+            int srcWp = -1, dstWp = -1;
+            for (int w = 0; w < waypointList.Count; w++)
+            {
+                if (waypointList[w].speciesIndex != s) continue;
+                if (waypointList[w].type == 0 && srcWp == -1) srcWp = w;
+                if (waypointList[w].type == 1 && dstWp == -1) dstWp = w;
+            }
+            if (srcWp < 0 || dstWp < 0) continue;
+
+            Vector2 srcPos = waypointList[srcWp].position;
+            Vector2 dstPos = waypointList[dstWp].position;
+            int srcX = Mathf.Clamp((int)srcPos.x, 0, W - 1);
+            int srcY = Mathf.Clamp((int)srcPos.y, 0, H - 1);
+            int dstX = Mathf.Clamp((int)dstPos.x, 0, W - 1);
+            int dstY = Mathf.Clamp((int)dstPos.y, 0, H - 1);
+
+            // BFS depuis la destination (le flow field est enraciné à la cible)
+            BFSFlowField(walkable, W, H, dstX, dstY, out int[] parent);
+
+            var raw      = ExtractRawPath(parent, W, srcY * W + srcX, dstY * W + dstX);
+            var smoothed = StringPull(raw, walkable, W, H);
+            if (smoothed == null || smoothed.Count == 0) continue;
+
+            int count = Mathf.Min(smoothed.Count, MaxSmoothedWaypoints);
+            smoothPaths[s] = new Vector2[count];
+            for (int i = 0; i < count; i++)
+            {
+                var v = new Vector2(smoothed[i].x, smoothed[i].y);
+                smoothPaths[s][i]               = v;
+                flatBuffer[starts[s] + i] = v;
+            }
+            counts[s] = count;
+        }
+
+        SlimeMapRenderer.Instance.SetSmoothedPaths(flatBuffer, starts, counts);
     }
 
     private void OnDestroy()
