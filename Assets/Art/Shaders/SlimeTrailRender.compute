@@ -75,7 +75,7 @@ int numWaypoints;
 
 Texture2DArray<float2> FlowFieldMap;
 
-StructuredBuffer<float2> smoothedPaths;    // flat 6×64 : espèce s → [s*64 .. s*64+count-1]
+StructuredBuffer<float2> smoothedPaths;    // flat 16×64 : waypoint w → [w*64 .. w*64+count-1]
 StructuredBuffer<int2>   smoothedPathMeta; // [speciesIdx] = (startIndex, count), count=0 = pas de chemin
 
 float deltaTime;
@@ -84,6 +84,7 @@ float time;
 int useTerrainCollision;
 
 int playerVisibilityMask;
+int numActiveSlots;
 
 // Hash function www.cs.ubc.ca/~rbridson/docs/schechter-sca08-turbulence.pdf
 uint hash(uint state) {
@@ -356,7 +357,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
         // GlobuleBlanc (behaviorType 3): override sensing to track target species
         if (settings.behaviorType == 3 && settings.warMask != 0) {
             weightForward = 0; weightLeft = 0; weightRight = 0;
-            for (int ts = 0; ts < 6; ts++) {
+            for (int ts = 0; ts < numActiveSlots; ts++) {
                 if ((settings.warMask & (1 << ts)) == 0) continue;
                 weightForward += senseSpecies(agent, 0,                        settings, ts);
                 weightLeft    += senseSpecies(agent,  settings.sensorAngleRad, settings, ts);
@@ -403,7 +404,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
     // Bacterie (behaviorType 1): energy consumption + absorption from RBC trails
     if (settings.behaviorType == 1) {
         agent.hunger -= settings.energyConsumptionRate * deltaTime;
-        for (int ts = 0; ts < 6; ts++) {
+        for (int ts = 0; ts < numActiveSlots; ts++) {
             SpeciesSettings other = speciesSettings[ts];
             if (other.behaviorType != 2) continue;
             float rbc = TrailMap[int3((int)agent.position.x, (int)agent.position.y, ts)];
@@ -418,7 +419,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
 
     // War: enemy trail presence accelerates aging
     if (settings.warMask != 0) {
-        for (int e = 0; e < 6; e++) {
+        for (int e = 0; e < numActiveSlots; e++) {
             if ((settings.warMask & (1 << e)) != 0) {
                 float enemyTrail = TrailMap[int3((int)agent.position.x, (int)agent.position.y, e)];
                 agent.age += enemyTrail * settings.warDamageRate * deltaTime;
@@ -450,7 +451,7 @@ void Diffuse (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)width || id.y >= (uint)height) return;
 
-    for (int slice = 0; slice < 6; slice++) {
+    for (int slice = 0; slice < numActiveSlots; slice++) {
         SpeciesSettings settings = speciesSettings[slice];
         float sum = 0;
         float originalCol = TrailMap[int3(id.xy, slice)];
@@ -471,10 +472,10 @@ void Diffuse (uint3 id : SV_DispatchThreadID)
     }
 }
 
-[numthreads(6, 1, 1)]
+[numthreads(16, 1, 1)]
 void ClearCounts(uint3 id : SV_DispatchThreadID)
 {
-    if (id.x < 6)
+    if (id.x < 16)
         speciesCounts[id.x] = 0;
 }
 [numthreads(64, 1, 1)]
@@ -494,20 +495,13 @@ void CountAlive(uint3 id : SV_DispatchThreadID)
 void ResetMap (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)width || id.y >= (uint)height) return;
-    for (int slice = 0; slice < 6; slice++) {
+    for (int slice = 0; slice < 16; slice++) {
         TrailMap[int3(id.xy, slice)] = 0.0;
         DiffusedTrailMap[int3(id.xy, slice)] = 0.0;
     }
 }
 
-static float4 palette[6] = {
-    float4(1, 0, 0, 1),
-    float4(0, 1, 0, 1),
-    float4(0, 0, 1, 1),
-    float4(0, 1, 1, 1),
-    float4(1, 0, 1, 1),
-    float4(1, 1, 0, 1)
-};
+StructuredBuffer<float4> slotColors; // couleur par slot GPU — définie dans PlayerLibrary
 
 [numthreads(8,8,1)]
 void ComposeDisplay (uint3 id : SV_DispatchThreadID)
@@ -519,25 +513,12 @@ void ComposeDisplay (uint3 id : SV_DispatchThreadID)
     
     // First, we find the blended color instead of a hard max to make colors "bleed" (baver)
     // We apply a 3x3 box blur to soften the density fields before composition
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < numActiveSlots; i++) {
         if ((playerVisibilityMask & (1 << i)) == 0) continue;
-        
-        float blurredDensity = 0.0;
-        
-        //keep this code
-        /*for (int offsetX = -1; offsetX <= 1; offsetX++) {
-            for (int offsetY = -1; offsetY <= 1; offsetY++) {
-                int sampleX = min(width - 1, max(0, (int)id.x + offsetX));
-                int sampleY = min(height - 1, max(0, (int)id.y + offsetY));
-                blurredDensity += DiffusedTrailMap[int3(sampleX, sampleY, i)];
-            }
-        }
-        blurredDensity /= 9.0;*/
-        blurredDensity = DiffusedTrailMap[int3((int)id.x, (int)id.y , i)];
-        
-        // For a more bleeding effect, we can use a weighted sum or a smoothmax.
-        // We accumulate the pure color multiplied by blurred density
-        finalColor.rgb += palette[i].rgb * blurredDensity;
+
+        float blurredDensity = DiffusedTrailMap[int3((int)id.x, (int)id.y, i)];
+
+        finalColor.rgb += slotColors[i].rgb * blurredDensity;
         totalDensity += blurredDensity;
     }
     

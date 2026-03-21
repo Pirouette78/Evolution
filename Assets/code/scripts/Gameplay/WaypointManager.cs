@@ -191,6 +191,18 @@ public class WaypointManager : MonoBehaviour
                 maxPopulation   = def != null ? def.maxPopulation   : 5000,
                 definition      = def
             });
+
+            // Si le bâtiment a une espèce liée, créer automatiquement un waypoint Destination pour elle
+            if (def != null && !string.IsNullOrEmpty(def.linkedSpeciesId))
+            {
+                string playerId   = PlayerLibrary.Instance?.GetPlayerIdForSlot(slot);
+                int    linkedSlot = (!string.IsNullOrEmpty(playerId) && PlayerLibrary.Instance != null)
+                    ? PlayerLibrary.Instance.GetSlotIndex(playerId, def.linkedSpeciesId)
+                    : -1;
+                if (linkedSlot >= 0)
+                    AddWaypoint(new WaypointData { position = wp.position, type = 1, speciesIndex = linkedSlot },
+                                buildingName, autoHive: false);
+            }
         }
 
         Debug.Log($"[WAYPOINTS] Added waypoint #{newIndex} type={wp.type} species={wp.speciesIndex} at {wp.position}");

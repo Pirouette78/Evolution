@@ -13,5 +13,6 @@
   "diffuseRate": 0.5,
   "warDamageRate": 3.0,
   "behaviorType": "GlobuleBlanc",
+  "behaviorTypeInt": 3,
   "startingEnergy": 0.0
 }

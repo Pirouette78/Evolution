@@ -31,6 +31,12 @@ public class BuildingDefinition
     /// </summary>
     public int speciesSlot;
 
+    /// <summary>
+    /// Espèce liée : si renseignée, placer ce bâtiment crée AUSSI un waypoint Destination
+    /// pour cette espèce au même endroit (ex: "globulerouge" pour la Rate).
+    /// </summary>
+    public string linkedSpeciesId;
+
     /// <summary>0 = Source (génère des agents ici), 1 = Destination (point d'arrivée).</summary>
     public int waypointType;
 

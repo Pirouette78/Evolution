@@ -33,10 +33,7 @@ public class BuildingLibrary : MonoBehaviour
 
         LoadFromStreamingAssets();
         if (byId.Count == 0)
-        {
-            Debug.LogWarning("[BuildingLibrary] Aucun fichier JSON trouvé — définitions built-in utilisées.");
-            LoadBuiltIn();
-        }
+            Debug.LogError("[BuildingLibrary] Aucun fichier JSON trouvé dans StreamingAssets/Buildings/. Créez au moins un fichier .json de bâtiment.");
 
         Debug.Log($"[BuildingLibrary] {byId.Count} bâtiment(s) : {string.Join(", ", byId.Keys)}");
     }
@@ -66,9 +63,11 @@ public class BuildingLibrary : MonoBehaviour
 
         foreach (var def in byId.Values)
         {
-            // Correspondance via waypointSpeciesId (nouveau) ou speciesSlot résolu (héritage)
+            // Correspondance via waypointSpeciesId, linkedSpeciesId (nouveau), ou speciesSlot résolu (héritage)
             bool match = (!string.IsNullOrEmpty(def.waypointSpeciesId) &&
                           def.waypointSpeciesId.ToLowerInvariant() == sid)
+                      || (!string.IsNullOrEmpty(def.linkedSpeciesId) &&
+                          def.linkedSpeciesId.ToLowerInvariant() == sid)
                       || (string.IsNullOrEmpty(def.waypointSpeciesId) &&
                           SpeciesLibrary.Instance != null &&
                           SpeciesLibrary.Instance.GetSlot(sid) == def.speciesSlot);
@@ -126,61 +125,6 @@ public class BuildingLibrary : MonoBehaviour
         {
             Debug.LogError($"[BuildingLibrary] Erreur lecture {path} : {e.Message}");
         }
-    }
-
-    // ── Fallback built-in ────────────────────────────────────────────
-
-    private void LoadBuiltIn()
-    {
-        Register(new BuildingDefinition
-        {
-            id = "poumon", displayName = "Poumon", poiImagePath = "POI/poumon",
-            waypointSpeciesId = "globulerouge", waypointType = 0,
-            spawnsPerSecond = 2f, maxPopulation = 5000,
-            consumes = new ResourceAmount[0],
-            produces = new[] { new ResourceAmount { resource = "oxygen", amount = 5f } }
-        });
-        Register(new BuildingDefinition
-        {
-            id = "rate_reception", displayName = "Rate", poiImagePath = "POI/rate",
-            waypointSpeciesId = "globulerouge", waypointType = 1
-        });
-        Register(new BuildingDefinition
-        {
-            id = "rate", displayName = "Rate", poiImagePath = "POI/rate",
-            waypointSpeciesId = "globuleblanc", waypointType = 0,
-            spawnsPerSecond = 1f, maxPopulation = 2000,
-            consumes = new[] { new ResourceAmount { resource = "oxygen", amount = 2f } },
-            produces = new ResourceAmount[0],
-            scalesWithResource = "oxygen", resourceRequiredPerSecond = 2f
-        });
-        Register(new BuildingDefinition
-        {
-            id = "source_nutriments", displayName = "Source Nutriments", waypointSpeciesId = "bacterie", waypointType = 0,
-            spawnsPerSecond = 3f, maxPopulation = 8000
-        });
-        Register(new BuildingDefinition
-        {
-            id = "zone_infection", displayName = "Zone Infection", waypointSpeciesId = "bacterie", waypointType = 1
-        });
-        Register(new BuildingDefinition
-        {
-            id = "noeud_viral", displayName = "Nœud Viral", waypointSpeciesId = "virus", waypointType = 0,
-            spawnsPerSecond = 5f, maxPopulation = 10000
-        });
-        Register(new BuildingDefinition
-        {
-            id = "cellule_hote", displayName = "Cellule Hôte", waypointSpeciesId = "virus", waypointType = 1
-        });
-        Register(new BuildingDefinition
-        {
-            id = "moelle", displayName = "Moelle", waypointSpeciesId = "plaquette", waypointType = 0,
-            spawnsPerSecond = 1f, maxPopulation = 3000
-        });
-        Register(new BuildingDefinition
-        {
-            id = "lesion", displayName = "Lésion", waypointSpeciesId = "plaquette", waypointType = 1
-        });
     }
 
     private void Register(BuildingDefinition def)

@@ -13,6 +13,7 @@
   "diffuseRate": 4.0,
   "warDamageRate": 4.0,
   "behaviorType": "Bacterie",
+  "behaviorTypeInt": 1,
   "energyConsumptionRate": 5.0,
   "startingEnergy": 100.0
 }

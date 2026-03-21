@@ -12,5 +12,6 @@
   "decayRate": 5.0,
   "diffuseRate": 0.3,
   "warDamageRate": 5.0,
-  "behaviorType": "Virus"
+  "behaviorType": "Virus",
+  "behaviorTypeInt": 4
 }

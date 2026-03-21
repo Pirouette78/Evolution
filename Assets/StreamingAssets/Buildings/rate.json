@@ -3,6 +3,7 @@
   "displayName": "Rate",
   "poiImagePath": "POI/rate",
   "waypointSpeciesId": "globuleblanc",
+  "linkedSpeciesId": "globulerouge",
   "waypointType": 0,
   "spawnsPerSecond": 1.0,
   "maxPopulation": 2000,

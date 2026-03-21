@@ -13,6 +13,7 @@
   "diffuseRate": 3.0,
   "warDamageRate": 0.1,
   "behaviorType": "GlobuleRouge",
+  "behaviorTypeInt": 2,
   "energyReward": 5.0,
   "arrivalRadius": 20.0,
   "loadingTime": 2.0,

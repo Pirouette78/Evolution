@@ -12,5 +12,6 @@
   "decayRate": 0.1,
   "diffuseRate": 6.0,
   "warDamageRate": 0.0,
-  "behaviorType": "Plaquette"
+  "behaviorType": "Plaquette",
+  "behaviorTypeInt": 5
 }

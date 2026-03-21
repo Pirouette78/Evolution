@@ -25,7 +25,8 @@
                 <ui:Button name="BtnSelectP5" text="P5" style="width: 35px; background-color: rgb(150, 0, 150); color: white;" />
                 <ui:Button name="BtnSelectP6" text="P6" style="width: 35px; background-color: rgb(150, 150, 0); color: white;" />
             </ui:VisualElement>
-            
+            <ui:Label name="SpeciesCountLabel" text="" style="font-size: 11px; color: rgb(180,220,180); margin-bottom: 4px;" />
+
             <ui:Toggle name="ToggleVisibility" label="Afficher ce joueur" value="true" style="color: white; margin-bottom: 4px;" />
             <ui:Toggle name="ToggleSpeciesOverlay" label="Afficher POIs" value="true" style="color: rgb(200,200,100); margin-bottom: 8px;" />
 

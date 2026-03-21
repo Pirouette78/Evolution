@@ -36,8 +36,15 @@ public class SpeciesDefinition
     public float warDamageRate;
 
     // ── Comportement ──────────────────────────────────────────────────
-    /// <summary>"Default", "Bacterie", "GlobuleRouge", "GlobuleBlanc", "Virus", "Plaquette"</summary>
+    /// <summary>Libellé libre, pour documentation JSON uniquement (ex: "GlobuleRouge").</summary>
     public string behaviorType;
+
+    /// <summary>
+    /// Code GPU du comportement, défini directement dans le JSON de l'espèce.
+    /// 0=défaut, 1=Bacterie, 2=GlobuleRouge, 3=GlobuleBlanc, 4=Virus, 5=Plaquette, …
+    /// Ajouter un nouveau comportement = ajouter un case dans UpdateAgents.compute + choisir un entier libre ici.
+    /// </summary>
+    public int behaviorTypeInt;
 
     public float energyConsumptionRate;
     public float energyReward;
@@ -50,15 +57,7 @@ public class SpeciesDefinition
 
     // ── Conversion ───────────────────────────────────────────────────
 
-    public int BehaviorTypeInt => (behaviorType?.ToLowerInvariant()) switch
-    {
-        "bacterie"     => 1,
-        "globulerouge" => 2,
-        "globuleblanc" => 3,
-        "virus"        => 4,
-        "plaquette"    => 5,
-        _              => 0
-    };
+    public int BehaviorTypeInt => behaviorTypeInt;
 
     /// <summary>Construit le struct GPU correspondant.</summary>
     public SlimeMapRenderer.SpeciesSettings ToSpeciesSettings() => new SlimeMapRenderer.SpeciesSettings

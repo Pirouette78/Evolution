@@ -51,12 +51,19 @@ public class BuildingPlacementController : MonoBehaviour
     private int pendingSpeciesIndex;
     private int placementStartFrame = -1; // skip the frame the button was clicked
 
-    // Palette matches SlimeTrailRender.compute
-    private static readonly Color[] SpeciesPalette =
+    // Couleur de prévisualisation : issue de PlayerLibrary/SlimeMapRenderer (slot GPU)
+    private static Color GetSlotColor(int slotIndex)
     {
-        new Color(1f, 0f, 0f), new Color(0f, 1f, 0f), new Color(0f, 0f, 1f),
-        new Color(0f, 1f, 1f), new Color(1f, 0f, 1f), new Color(1f, 1f, 0f),
-    };
+        var smr = SlimeMapRenderer.Instance;
+        if (smr != null && slotIndex >= 0 && slotIndex < smr.slotColors.Length)
+        {
+            var c = smr.slotColors[slotIndex];
+            return new Color(c.x, c.y, c.z, 0.85f);
+        }
+        // Fallback HSV
+        float hue = (slotIndex % 16) / 16f;
+        return Color.HSVToRGB(hue, 1f, 1f);
+    }
 
     // GL preview
     private Material glMaterial;
@@ -128,7 +135,7 @@ public class BuildingPlacementController : MonoBehaviour
 
         Vector3 worldPos = PixelToWorld(currentMousePixel.Value);
         Color   col      = mouseIsWalkable
-            ? SpeciesPalette[Mathf.Clamp(pendingSpeciesIndex, 0, 5)]
+            ? GetSlotColor(pendingSpeciesIndex)
             : new Color(1f, 0.15f, 0.15f, 0.85f);
 
         float pulse  = 1f + 0.15f * Mathf.Sin(Time.time * 6f);

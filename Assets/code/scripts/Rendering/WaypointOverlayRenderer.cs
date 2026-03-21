@@ -18,21 +18,10 @@ public class WaypointOverlayRenderer : MonoBehaviour
         DontDestroyOnLoad(go);
     }
 
-    public bool[] ShowSpeciesOverlay = new bool[6] { true, true, true, true, true, true };
+    public bool[] ShowSpeciesOverlay = new bool[16];
 
     // Images POI : id du bâtiment (JSON) → texture chargée depuis Resources/
     private readonly Dictionary<string, Texture2D> poiImages = new Dictionary<string, Texture2D>();
-
-    // Palette matches the compute shader palette
-    private static readonly Color[] Palette = new Color[]
-    {
-        new Color(1f, 0f, 0f, 1f),
-        new Color(0f, 1f, 0f, 1f),
-        new Color(0f, 0f, 1f, 1f),
-        new Color(0f, 1f, 1f, 1f),
-        new Color(1f, 0f, 1f, 1f),
-        new Color(1f, 1f, 0f, 1f),
-    };
 
     private Material glMaterial;
 
@@ -40,6 +29,9 @@ public class WaypointOverlayRenderer : MonoBehaviour
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
+
+        for (int i = 0; i < 16; i++) ShowSpeciesOverlay[i] = true;
+
         LoadPoiImages();
 
         // Create an unlit, blended material for GL drawing
@@ -117,7 +109,7 @@ public class WaypointOverlayRenderer : MonoBehaviour
             if (wp.speciesIndex < 0 || wp.speciesIndex >= 6) continue;
             if (!ShowSpeciesOverlay[wp.speciesIndex]) continue;
 
-            Color col = Palette[wp.speciesIndex];
+            Color col = GetSlotColor(wp.speciesIndex);
             // Source = full color, Destination = 50% alpha
             col.a = wp.type == 0 ? 1f : 0.5f;
             float radius = wp.type == 0 ? 8f : 12f;
@@ -128,11 +120,12 @@ public class WaypointOverlayRenderer : MonoBehaviour
 
         // Draw animated dashed lines along the smoothed path (or direct line as fallback)
         float dashOffset = Time.time % 1f;
-        for (int s = 0; s < 6; s++)
+        int numSlots = SlimeMapRenderer.Instance?.numActiveSlots ?? 16;
+        for (int s = 0; s < numSlots; s++)
         {
             if (!ShowSpeciesOverlay[s]) continue;
 
-            Color lineCol = Palette[s];
+            Color lineCol = GetSlotColor(s);
             lineCol.a = 0.7f;
 
             // Dessine un chemin lissé par destination (supporte plusieurs destinations)
@@ -162,6 +155,18 @@ public class WaypointOverlayRenderer : MonoBehaviour
         }
 
         GL.PopMatrix();
+    }
+
+    private static Color GetSlotColor(int slot)
+    {
+        var smr = SlimeMapRenderer.Instance;
+        if (smr != null && slot >= 0 && slot < smr.slotColors.Length)
+        {
+            var v = smr.slotColors[slot];
+            return new Color(v.x, v.y, v.z, 1f);
+        }
+        float hue = (slot % 16) / 16f;
+        return Color.HSVToRGB(hue, 1f, 1f);
     }
 
     private Vector3 MapToWorld(Vector2 pixelPos)

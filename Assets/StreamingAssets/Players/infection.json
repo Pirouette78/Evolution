@@ -1,0 +1,9 @@
+{
+  "id": "infection",
+  "displayName": "Infection",
+  "warsWith": ["corps_humain"],
+  "species": [
+    { "speciesId": "bacterie", "color": [0.2, 0.8, 0.2] },
+    { "speciesId": "virus",    "color": [0.0, 0.5, 0.0] }
+  ]
+}

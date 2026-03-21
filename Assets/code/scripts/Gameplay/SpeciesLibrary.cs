@@ -6,7 +6,6 @@ using UnityEngine;
 /// <summary>
 /// Charge et expose les définitions d'espèces depuis StreamingAssets/Species/*.json.
 /// Applique automatiquement les paramètres GPU à SlimeMapRenderer dès qu'il est prêt.
-/// Fallback sur des définitions built-in si le dossier est absent.
 ///
 /// Ajouter une espèce = créer un fichier JSON dans StreamingAssets/Species/, sans toucher au code.
 /// </summary>
@@ -32,10 +31,7 @@ public class SpeciesLibrary : MonoBehaviour
 
         LoadFromStreamingAssets();
         if (byId.Count == 0)
-        {
-            Debug.LogWarning("[SpeciesLibrary] Aucun fichier JSON trouvé — définitions built-in utilisées.");
-            LoadBuiltIn();
-        }
+            Debug.LogError("[SpeciesLibrary] Aucun fichier JSON trouvé dans StreamingAssets/Species/. Créez au moins un fichier .json d'espèce.");
 
         Debug.Log($"[SpeciesLibrary] {byId.Count} espèce(s) : {string.Join(", ", byId.Keys)}");
     }
@@ -59,7 +55,7 @@ public class SpeciesLibrary : MonoBehaviour
         // pour rester synchronisé avec ce que le joueur a choisi dans l'UI.
         foreach (var def in byId.Values)
         {
-            if (def.slotIndex < 0 || def.slotIndex >= 6) continue;
+            if (def.slotIndex < 0 || def.slotIndex >= 16) continue;
             // N'applique les settings JSON que si le slot a déjà ce type assigné
             string currentId = smr.speciesIds[def.slotIndex];
             if (currentId == def.id)
@@ -118,49 +114,6 @@ public class SpeciesLibrary : MonoBehaviour
         {
             Debug.LogError($"[SpeciesLibrary] Erreur {path} : {e.Message}");
         }
-    }
-
-    // ── Fallback built-in ────────────────────────────────────────────
-
-    private void LoadBuiltIn()
-    {
-        Register(new SpeciesDefinition
-        {
-            id = "globulerouge", displayName = "Globule Rouge", slotIndex = 0,
-            moveSpeed = 60, turnSpeed = 20, sensorAngleDeg = 30, sensorOffsetDst = 15,
-            sensorSize = 2, maxAge = 400, trailWeight = 8, decayRate = 0.3f, diffuseRate = 3f,
-            warDamageRate = 0.1f, behaviorType = "GlobuleRouge",
-            energyReward = 5f, arrivalRadius = 20f, loadingTime = 2f, unloadingTime = 1f
-        });
-        Register(new SpeciesDefinition
-        {
-            id = "globuleblanc", displayName = "Globule Blanc", slotIndex = 1,
-            moveSpeed = 120, turnSpeed = 20, sensorAngleDeg = 30, sensorOffsetDst = 25,
-            sensorSize = 2, maxAge = 60, trailWeight = 1, decayRate = 3f, diffuseRate = 0.5f,
-            warDamageRate = 3f, behaviorType = "GlobuleBlanc"
-        });
-        Register(new SpeciesDefinition
-        {
-            id = "bacterie", displayName = "Bactérie", slotIndex = 2,
-            moveSpeed = 50, turnSpeed = 20, sensorAngleDeg = 45, sensorOffsetDst = 15,
-            sensorSize = 2, maxAge = 30, trailWeight = 6, decayRate = 3f, diffuseRate = 4f,
-            warDamageRate = 4f, behaviorType = "Bacterie",
-            energyConsumptionRate = 5f, startingEnergy = 100f
-        });
-        Register(new SpeciesDefinition
-        {
-            id = "virus", displayName = "Virus", slotIndex = 3,
-            moveSpeed = 80, turnSpeed = 30, sensorAngleDeg = 20, sensorOffsetDst = 20,
-            sensorSize = 2, maxAge = 20, trailWeight = 1, decayRate = 5f, diffuseRate = 0.3f,
-            warDamageRate = 5f, behaviorType = "Virus"
-        });
-        Register(new SpeciesDefinition
-        {
-            id = "plaquette", displayName = "Plaquette", slotIndex = 4,
-            moveSpeed = 25, turnSpeed = 5, sensorAngleDeg = 45, sensorOffsetDst = 8,
-            sensorSize = 4, maxAge = 300, trailWeight = 20, decayRate = 0.1f, diffuseRate = 6f,
-            warDamageRate = 0f, behaviorType = "Plaquette"
-        });
     }
 
     private void Register(SpeciesDefinition def)
