@@ -1,0 +1,16 @@
+{
+  "id": "virus",
+  "displayName": "Virus",
+  "slotIndex": 3,
+  "moveSpeed": 80.0,
+  "turnSpeed": 30.0,
+  "sensorAngleDeg": 20.0,
+  "sensorOffsetDst": 20.0,
+  "sensorSize": 2,
+  "maxAge": 20.0,
+  "trailWeight": 1.0,
+  "decayRate": 5.0,
+  "diffuseRate": 0.3,
+  "warDamageRate": 5.0,
+  "behaviorType": "Virus"
+}

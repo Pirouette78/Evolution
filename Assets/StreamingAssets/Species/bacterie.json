@@ -1,0 +1,18 @@
+{
+  "id": "bacterie",
+  "displayName": "Bactérie",
+  "slotIndex": 2,
+  "moveSpeed": 50.0,
+  "turnSpeed": 20.0,
+  "sensorAngleDeg": 45.0,
+  "sensorOffsetDst": 15.0,
+  "sensorSize": 2,
+  "maxAge": 30.0,
+  "trailWeight": 6.0,
+  "decayRate": 3.0,
+  "diffuseRate": 4.0,
+  "warDamageRate": 4.0,
+  "behaviorType": "Bacterie",
+  "energyConsumptionRate": 5.0,
+  "startingEnergy": 100.0
+}

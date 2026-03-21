@@ -1,0 +1,17 @@
+{
+  "id": "globuleblanc",
+  "displayName": "Globule Blanc",
+  "slotIndex": 1,
+  "moveSpeed": 120.0,
+  "turnSpeed": 20.0,
+  "sensorAngleDeg": 30.0,
+  "sensorOffsetDst": 25.0,
+  "sensorSize": 2,
+  "maxAge": 60.0,
+  "trailWeight": 1.0,
+  "decayRate": 3.0,
+  "diffuseRate": 0.5,
+  "warDamageRate": 3.0,
+  "behaviorType": "GlobuleBlanc",
+  "startingEnergy": 0.0
+}

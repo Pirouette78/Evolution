@@ -20,7 +20,7 @@ public class WaypointOverlayRenderer : MonoBehaviour
 
     public bool[] ShowSpeciesOverlay = new bool[6] { true, true, true, true, true, true };
 
-    // Images POI : nom du bâtiment → texture chargée depuis Resources/POI/
+    // Images POI : id du bâtiment (JSON) → texture chargée depuis Resources/
     private readonly Dictionary<string, Texture2D> poiImages = new Dictionary<string, Texture2D>();
 
     // Palette matches the compute shader palette
@@ -58,12 +58,13 @@ public class WaypointOverlayRenderer : MonoBehaviour
 
     private void LoadPoiImages()
     {
-        var entries = new[] { ("Poumon", "POI/poumon"), ("Rate", "POI/rate") };
-        foreach (var (name, path) in entries)
+        if (BuildingLibrary.Instance == null) return;
+        foreach (var def in BuildingLibrary.Instance.GetAll())
         {
-            var tex = Resources.Load<Texture2D>(path);
-            if (tex != null) poiImages[name] = tex;
-            else Debug.LogWarning($"[POI] Texture introuvable : Resources/{path}");
+            if (string.IsNullOrEmpty(def.poiImagePath)) continue;
+            var tex = Resources.Load<Texture2D>(def.poiImagePath);
+            if (tex != null) poiImages[def.id] = tex;
+            else Debug.LogWarning($"[POI] Texture introuvable : Resources/{def.poiImagePath}");
         }
     }
 

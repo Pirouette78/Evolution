@@ -1,0 +1,20 @@
+{
+  "id": "globulerouge",
+  "displayName": "Globule Rouge",
+  "slotIndex": 0,
+  "moveSpeed": 60.0,
+  "turnSpeed": 20.0,
+  "sensorAngleDeg": 30.0,
+  "sensorOffsetDst": 15.0,
+  "sensorSize": 2,
+  "maxAge": 400.0,
+  "trailWeight": 8.0,
+  "decayRate": 0.3,
+  "diffuseRate": 3.0,
+  "warDamageRate": 0.1,
+  "behaviorType": "GlobuleRouge",
+  "energyReward": 5.0,
+  "arrivalRadius": 20.0,
+  "loadingTime": 2.0,
+  "unloadingTime": 1.0
+}

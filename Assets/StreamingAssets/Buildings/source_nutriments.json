@@ -1,0 +1,10 @@
+{
+  "id": "source_nutriments",
+  "displayName": "Source Nutriments",
+  "waypointSpeciesId": "bacterie",
+  "waypointType": 0,
+  "spawnsPerSecond": 3.0,
+  "maxPopulation": 8000,
+  "consumes": [],
+  "produces": []
+}

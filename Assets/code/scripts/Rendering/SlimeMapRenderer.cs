@@ -45,8 +45,10 @@ public class SlimeMapRenderer : MonoBehaviour
 
     public int SelectedPlayerIndex = 0;
     public SpeciesSettings[] speciesSettings = new SpeciesSettings[6];
-    public uint[] AliveSpeciesCounts = new uint[6];
-    public SpeciesType[] speciesTypes = new SpeciesType[6];
+    public uint[]   AliveSpeciesCounts = new uint[6];
+    public SpeciesType[] speciesTypes  = new SpeciesType[6];
+    /// <summary>ID d'espèce pour chaque slot GPU. Toujours synchronisé avec speciesTypes.</summary>
+    public string[] speciesIds         = new string[6];
 
     // ── Private ─────────────────────────────────────────────────────
     private ComputeBuffer agentBuffer;
@@ -141,6 +143,8 @@ public class SlimeMapRenderer : MonoBehaviour
                 diffuseRate = 2f,
                 warDamageRate = 1f
             };
+            // speciesIds toujours dérivé de speciesTypes (enum → lowercase string)
+            speciesIds[i] = speciesTypes[i].ToString().ToLowerInvariant();
         }
 
         if (DisplayTarget == null) DisplayTarget = GetComponent<MeshRenderer>();
@@ -361,9 +365,14 @@ public class SlimeMapRenderer : MonoBehaviour
     {
         if (index < 0 || index >= 6) return;
         speciesTypes[index] = type;
-        var preset = GetPreset(type);
-        preset.warMask = speciesSettings[index].warMask; // preserve existing war state
-        speciesSettings[index] = preset;
+        string id = type.ToString().ToLowerInvariant();
+        speciesIds[index] = id; // toujours synchronisé avec speciesTypes
+
+        // Paramètres : SpeciesLibrary (JSON) en priorité, sinon preset hardcodé
+        SpeciesDefinition jsonDef = SpeciesLibrary.Instance?.Get(id);
+        SpeciesSettings settings = jsonDef != null ? jsonDef.ToSpeciesSettings() : GetPreset(type);
+        settings.warMask = speciesSettings[index].warMask; // préserver l'état de guerre
+        speciesSettings[index] = settings;
     }
 
     public void SetWar(int a, int b, bool atWar)

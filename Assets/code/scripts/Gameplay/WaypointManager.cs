@@ -106,21 +106,24 @@ public class WaypointManager : MonoBehaviour
             if (def != null && def.produces != null)
             {
                 foreach (var prod in def.produces)
-                    ResourceManager.Instance.Produce(ResourceManager.Parse(prod.resource), prod.amount * dt);
+                    ResourceManager.Instance.Produce(prod.resource, prod.amount * dt);
             }
 
             // ── Consommation de ressources + efficacité ─────────────────
             float efficiency = 1f;
-            if (def != null && def.scalesWithOxygen && def.oxygenRequiredPerSecond > 0f)
+            string scaleRes    = def?.ResolvedScaleResource;
+            float  scaleAmount = def?.ResolvedScaleAmount ?? 0f;
+
+            if (!string.IsNullOrEmpty(scaleRes) && scaleAmount > 0f)
             {
-                float needed  = def.oxygenRequiredPerSecond * dt;
-                float consumed = ResourceManager.Instance.Consume(ResourceType.Oxygen, needed);
+                float needed   = scaleAmount * dt;
+                float consumed = ResourceManager.Instance.Consume(scaleRes, needed);
                 efficiency = needed > 0f ? consumed / needed : 1f;
             }
             else if (def != null && def.consumes != null)
             {
                 foreach (var req in def.consumes)
-                    ResourceManager.Instance.Consume(ResourceManager.Parse(req.resource), req.amount * dt);
+                    ResourceManager.Instance.Consume(req.resource, req.amount * dt);
             }
 
             // ── Spawn modulé par l'efficacité ───────────────────────────
@@ -172,15 +175,18 @@ public class WaypointManager : MonoBehaviour
         // Auto-create hive for Source waypoints
         if (wp.type == 0 && autoHive)
         {
-            // Récupère la définition depuis BuildingLibrary (id = buildingName en minuscules)
             BuildingDefinition def = BuildingLibrary.Instance != null
                 ? BuildingLibrary.Instance.Get(buildingName)
                 : null;
 
+            // Le slot espèce vient du waypoint (slot GPU du joueur qui a posé le bâtiment).
+            // Si la définition précise un slot différent (via waypointSpeciesId), on préfère le waypoint.
+            int slot = wp.speciesIndex;
+
             hiveList.Add(new HiveData
             {
                 waypointIndex   = newIndex,
-                speciesSlot     = wp.speciesIndex,
+                speciesSlot     = slot,
                 spawnsPerSecond = def != null ? def.spawnsPerSecond : 2f,
                 maxPopulation   = def != null ? def.maxPopulation   : 5000,
                 definition      = def

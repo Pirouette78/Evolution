@@ -377,14 +377,14 @@ public class UIController : MonoBehaviour
         }
 
         var root = uiDocument.rootVisualElement;
-        SpeciesType speciesType = SlimeMapRenderer.Instance != null
-            ? SlimeMapRenderer.Instance.speciesTypes[selectedPlayerIndex]
-            : SpeciesType.Plante;
 
-        BuildingPlacementController.BuildingInfo[] buildings =
-            BuildingPlacementController.GetBuildings(speciesType);
+        // Catalogue data-driven : basé sur l'id espèce du slot sélectionné
+        string speciesId = SlimeMapRenderer.Instance != null
+            ? SlimeMapRenderer.Instance.speciesIds[selectedPlayerIndex]
+            : "";
+        var buildings = BuildingPlacementController.GetBuildings(speciesId);
 
-        if (buildings.Length == 0)
+        if (buildings.Count == 0)
         {
             // No buildings available for this species type — show brief message
             constructionPanel = new VisualElement();
@@ -431,12 +431,12 @@ public class UIController : MonoBehaviour
         title.style.marginBottom  = 6;
         constructionPanel.Add(title);
 
-        foreach (var info in buildings)
+        foreach (var def in buildings)
         {
-            var btn   = new Button();
-            btn.text  = info.WaypointType == 0
-                ? $"🟢  {info.Name}"
-                : $"🟠  {info.Name}";
+            var btn  = new Button();
+            btn.text = def.waypointType == 0
+                ? $"🟢  {def.displayName}"
+                : $"🟠  {def.displayName}";
             btn.style.fontSize       = 13;
             btn.style.paddingTop     = 6;
             btn.style.paddingBottom  = 6;
@@ -447,18 +447,18 @@ public class UIController : MonoBehaviour
             btn.style.borderTopRightRadius    = new StyleLength(4);
             btn.style.borderBottomLeftRadius  = new StyleLength(4);
             btn.style.borderBottomRightRadius = new StyleLength(4);
-            var bg = info.WaypointType == 0
+            var bg = def.waypointType == 0
                 ? new Color(0.15f, 0.4f, 0.15f)
                 : new Color(0.45f, 0.25f, 0.05f);
             btn.style.backgroundColor = new StyleColor(bg);
             btn.style.color           = new StyleColor(Color.white);
 
-            var capturedInfo    = info;
+            var capturedDef     = def;
             int capturedSpecies = selectedPlayerIndex;
             btn.clicked += () =>
             {
                 BuildingPlacementController.Instance?.StartPlacement(
-                    capturedInfo.WaypointType, capturedSpecies, capturedInfo.Name);
+                    capturedDef.waypointType, capturedSpecies, capturedDef.id);
 
                 // Close panel, show banner, dim left panel
                 constructionPanel?.RemoveFromHierarchy();
@@ -467,7 +467,7 @@ public class UIController : MonoBehaviour
 
                 if (placementBannerText != null)
                     placementBannerText.text =
-                        $"Placer : {capturedInfo.Name}  (P{capturedSpecies + 1})  |  Clic gauche pour confirmer";
+                        $"Placer : {capturedDef.displayName}  (P{capturedSpecies + 1})  |  Clic gauche pour confirmer";
 
                 if (placementBanner != null) placementBanner.style.display = DisplayStyle.Flex;
 

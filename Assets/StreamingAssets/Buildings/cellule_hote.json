@@ -1,0 +1,6 @@
+{
+  "id": "cellule_hote",
+  "displayName": "Cellule Hôte",
+  "waypointSpeciesId": "virus",
+  "waypointType": 1
+}

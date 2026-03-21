@@ -8,8 +8,7 @@ using UnityEngine;
 ///   2. StreamingAssets/Buildings/Mods/**/*.json  (surcharges et nouveaux bâtiments de mods)
 ///
 /// Un fichier de mod dont l'id correspond à un bâtiment existant le remplace entièrement.
-/// S'il n'existe aucun fichier JSON (ex : éditeur sans StreamingAssets configurés),
-/// des définitions built-in sont utilisées comme fallback.
+/// S'il n'existe aucun fichier JSON, des définitions built-in sont utilisées comme fallback.
 /// </summary>
 public class BuildingLibrary : MonoBehaviour
 {
@@ -33,14 +32,13 @@ public class BuildingLibrary : MonoBehaviour
         Instance = this;
 
         LoadFromStreamingAssets();
-
         if (byId.Count == 0)
         {
-            Debug.LogWarning("[BuildingLibrary] Aucun fichier JSON trouvé — utilisation des définitions built-in.");
+            Debug.LogWarning("[BuildingLibrary] Aucun fichier JSON trouvé — définitions built-in utilisées.");
             LoadBuiltIn();
         }
 
-        Debug.Log($"[BuildingLibrary] {byId.Count} bâtiment(s) chargé(s).");
+        Debug.Log($"[BuildingLibrary] {byId.Count} bâtiment(s) : {string.Join(", ", byId.Keys)}");
     }
 
     // ── Accès public ─────────────────────────────────────────────────
@@ -48,6 +46,7 @@ public class BuildingLibrary : MonoBehaviour
     /// <summary>Retourne la définition par id ("poumon", "rate"…). Null si inconnu.</summary>
     public BuildingDefinition Get(string id)
     {
+        if (string.IsNullOrEmpty(id)) return null;
         byId.TryGetValue(id.ToLowerInvariant(), out var def);
         return def;
     }
@@ -55,13 +54,39 @@ public class BuildingLibrary : MonoBehaviour
     /// <summary>Retourne tous les bâtiments définis.</summary>
     public IReadOnlyCollection<BuildingDefinition> GetAll() => byId.Values;
 
-    /// <summary>Retourne les bâtiments d'un speciesSlot et waypointType donnés.</summary>
+    /// <summary>
+    /// Retourne les bâtiments pour une espèce donnée (par string id).
+    /// Filtre optionnel sur waypointType (0=Source, 1=Destination, -1=tous).
+    /// </summary>
+    public List<BuildingDefinition> GetFor(string speciesId, int waypointType = -1)
+    {
+        var result = new List<BuildingDefinition>();
+        if (string.IsNullOrEmpty(speciesId)) return result;
+        string sid = speciesId.ToLowerInvariant();
+
+        foreach (var def in byId.Values)
+        {
+            // Correspondance via waypointSpeciesId (nouveau) ou speciesSlot résolu (héritage)
+            bool match = (!string.IsNullOrEmpty(def.waypointSpeciesId) &&
+                          def.waypointSpeciesId.ToLowerInvariant() == sid)
+                      || (string.IsNullOrEmpty(def.waypointSpeciesId) &&
+                          SpeciesLibrary.Instance != null &&
+                          SpeciesLibrary.Instance.GetSlot(sid) == def.speciesSlot);
+
+            if (!match) continue;
+            if (waypointType >= 0 && def.waypointType != waypointType) continue;
+            result.Add(def);
+        }
+        return result;
+    }
+
+    /// <summary>[Héritage] Retourne les bâtiments par slot GPU et waypointType.</summary>
     public List<BuildingDefinition> GetFor(int speciesSlot, int waypointType = -1)
     {
         var result = new List<BuildingDefinition>();
         foreach (var def in byId.Values)
         {
-            if (def.speciesSlot != speciesSlot) continue;
+            if (def.ResolvedSpeciesSlot != speciesSlot) continue;
             if (waypointType >= 0 && def.waypointType != waypointType) continue;
             result.Add(def);
         }
@@ -75,17 +100,13 @@ public class BuildingLibrary : MonoBehaviour
         string basePath = Path.Combine(Application.streamingAssetsPath, "Buildings");
         if (!Directory.Exists(basePath)) return;
 
-        // 1. Fichiers de base (*.json directement dans Buildings/)
         foreach (string file in Directory.GetFiles(basePath, "*.json", SearchOption.TopDirectoryOnly))
             LoadFile(file);
 
-        // 2. Mods (surcharges + ajouts)
         string modsPath = Path.Combine(basePath, "Mods");
         if (Directory.Exists(modsPath))
-        {
             foreach (string file in Directory.GetFiles(modsPath, "*.json", SearchOption.AllDirectories))
                 LoadFile(file);
-        }
     }
 
     private void LoadFile(string path)
@@ -96,11 +117,10 @@ public class BuildingLibrary : MonoBehaviour
             var def = JsonUtility.FromJson<BuildingDefinition>(json);
             if (def == null || string.IsNullOrEmpty(def.id))
             {
-                Debug.LogWarning($"[BuildingLibrary] Fichier ignoré (id manquant) : {path}");
+                Debug.LogWarning($"[BuildingLibrary] Ignoré (id manquant) : {path}");
                 return;
             }
             byId[def.id.ToLowerInvariant()] = def;
-            Debug.Log($"[BuildingLibrary] Chargé : {def.id} ({path})");
         }
         catch (System.Exception e)
         {
@@ -112,45 +132,60 @@ public class BuildingLibrary : MonoBehaviour
 
     private void LoadBuiltIn()
     {
-        var builtIn = new BuildingDefinition[]
+        Register(new BuildingDefinition
         {
-            new BuildingDefinition
-            {
-                id                    = "poumon",
-                displayName           = "Poumon",
-                poiImagePath          = "POI/poumon",
-                speciesSlot           = 0,
-                waypointType          = 0,
-                spawnsPerSecond       = 2f,
-                maxPopulation         = 5000,
-                consumes              = new ResourceAmount[0],
-                produces              = new ResourceAmount[]
-                {
-                    new ResourceAmount { resource = "oxygen", amount = 5f }
-                },
-                scalesWithOxygen      = false,
-                oxygenRequiredPerSecond = 0f
-            },
-            new BuildingDefinition
-            {
-                id                    = "rate",
-                displayName           = "Rate",
-                poiImagePath          = "POI/rate",
-                speciesSlot           = 1,
-                waypointType          = 0,
-                spawnsPerSecond       = 1f,
-                maxPopulation         = 2000,
-                consumes              = new ResourceAmount[]
-                {
-                    new ResourceAmount { resource = "oxygen", amount = 2f }
-                },
-                produces              = new ResourceAmount[0],
-                scalesWithOxygen      = true,
-                oxygenRequiredPerSecond = 2f
-            }
-        };
+            id = "poumon", displayName = "Poumon", poiImagePath = "POI/poumon",
+            waypointSpeciesId = "globulerouge", waypointType = 0,
+            spawnsPerSecond = 2f, maxPopulation = 5000,
+            consumes = new ResourceAmount[0],
+            produces = new[] { new ResourceAmount { resource = "oxygen", amount = 5f } }
+        });
+        Register(new BuildingDefinition
+        {
+            id = "rate_reception", displayName = "Rate", poiImagePath = "POI/rate",
+            waypointSpeciesId = "globulerouge", waypointType = 1
+        });
+        Register(new BuildingDefinition
+        {
+            id = "rate", displayName = "Rate", poiImagePath = "POI/rate",
+            waypointSpeciesId = "globuleblanc", waypointType = 0,
+            spawnsPerSecond = 1f, maxPopulation = 2000,
+            consumes = new[] { new ResourceAmount { resource = "oxygen", amount = 2f } },
+            produces = new ResourceAmount[0],
+            scalesWithResource = "oxygen", resourceRequiredPerSecond = 2f
+        });
+        Register(new BuildingDefinition
+        {
+            id = "source_nutriments", displayName = "Source Nutriments", waypointSpeciesId = "bacterie", waypointType = 0,
+            spawnsPerSecond = 3f, maxPopulation = 8000
+        });
+        Register(new BuildingDefinition
+        {
+            id = "zone_infection", displayName = "Zone Infection", waypointSpeciesId = "bacterie", waypointType = 1
+        });
+        Register(new BuildingDefinition
+        {
+            id = "noeud_viral", displayName = "Nœud Viral", waypointSpeciesId = "virus", waypointType = 0,
+            spawnsPerSecond = 5f, maxPopulation = 10000
+        });
+        Register(new BuildingDefinition
+        {
+            id = "cellule_hote", displayName = "Cellule Hôte", waypointSpeciesId = "virus", waypointType = 1
+        });
+        Register(new BuildingDefinition
+        {
+            id = "moelle", displayName = "Moelle", waypointSpeciesId = "plaquette", waypointType = 0,
+            spawnsPerSecond = 1f, maxPopulation = 3000
+        });
+        Register(new BuildingDefinition
+        {
+            id = "lesion", displayName = "Lésion", waypointSpeciesId = "plaquette", waypointType = 1
+        });
+    }
 
-        foreach (var def in builtIn)
-            byId[def.id.ToLowerInvariant()] = def;
+    private void Register(BuildingDefinition def)
+    {
+        def.id = def.id.ToLowerInvariant();
+        byId[def.id] = def;
     }
 }

@@ -21,36 +21,20 @@ public class BuildingPlacementController : MonoBehaviour
         DontDestroyOnLoad(go);
     }
 
-    // ── Building catalogue ──────────────────────────────────────────
-
-    public struct BuildingInfo
-    {
-        public string Name;
-        public int    WaypointType; // 0 = Source, 1 = Destination
-
-        public BuildingInfo(string name, int waypointType)
-        { Name = name; WaypointType = waypointType; }
-    }
-
-    private static readonly Dictionary<SpeciesType, BuildingInfo[]> BuildingsBySpecies =
-        new Dictionary<SpeciesType, BuildingInfo[]>
-    {
-        { SpeciesType.GlobuleRouge,  new[] { new BuildingInfo("Poumon",            0), new BuildingInfo("Rate",           1) } },
-        { SpeciesType.GlobuleBlanc,  new[] { new BuildingInfo("Rate",              0) } },
-        { SpeciesType.Bacterie,      new[] { new BuildingInfo("Source Nutriments", 0), new BuildingInfo("Zone Infection", 1) } },
-        { SpeciesType.Virus,         new[] { new BuildingInfo("Nœud Viral",        0), new BuildingInfo("Cellule Hôte",   1) } },
-        { SpeciesType.Plaquette,     new[] { new BuildingInfo("Moelle",            0), new BuildingInfo("Lésion",         1) } },
-    };
-
-    public static BuildingInfo[] GetBuildings(SpeciesType type)
-        => BuildingsBySpecies.TryGetValue(type, out var b) ? b : System.Array.Empty<BuildingInfo>();
+    // ── Building catalogue (data-driven) ───────────────────────────
 
     /// <summary>
-    /// Retourne la BuildingDefinition complète pour un nom de bâtiment (lookup insensible à la casse).
-    /// Null si BuildingLibrary n'est pas encore chargé ou si le nom est inconnu.
+    /// Retourne les bâtiments disponibles pour une espèce (par string id : "globulerouge"…).
+    /// Données issues de BuildingLibrary (JSON). Aucune liste hardcodée.
     /// </summary>
-    public static BuildingDefinition GetDefinition(string buildingName)
-        => BuildingLibrary.Instance != null ? BuildingLibrary.Instance.Get(buildingName) : null;
+    public static List<BuildingDefinition> GetBuildings(string speciesId)
+        => BuildingLibrary.Instance != null
+            ? BuildingLibrary.Instance.GetFor(speciesId)
+            : new List<BuildingDefinition>();
+
+    /// <summary>Retourne la BuildingDefinition par id. Null si inconnu.</summary>
+    public static BuildingDefinition GetDefinition(string buildingId)
+        => BuildingLibrary.Instance?.Get(buildingId);
 
     // ── Events ──────────────────────────────────────────────────────
 

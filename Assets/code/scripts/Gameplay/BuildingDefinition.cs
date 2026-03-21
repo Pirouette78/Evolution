@@ -1,61 +1,122 @@
 using System;
 
 /// <summary>
-/// Données d'un type de bâtiment : taux de spawn, ressources consommées/produites, efficacité conditionnelle.
-/// Chargé depuis StreamingAssets/Buildings/*.json au démarrage via BuildingLibrary.
-/// Un mod peut surcharger n'importe quel bâtiment existant (même id) ou en créer de nouveaux.
+/// Données d'un type de bâtiment.
+/// Chargé depuis StreamingAssets/Buildings/*.json via BuildingLibrary.
+/// Un mod peut surcharger un bâtiment existant (même id) ou en créer de nouveaux.
 /// </summary>
 [Serializable]
 public class BuildingDefinition
 {
     // ── Identité ──────────────────────────────────────────────────────
-    /// <summary>Clé stable utilisée par les mods pour surcharger ce bâtiment.</summary>
-    public string id;               // "poumon", "rate"
+    /// <summary>Clé stable (minuscules) : "poumon", "rate"…</summary>
+    public string id;
 
     /// <summary>Nom affiché en UI.</summary>
-    public string displayName;      // "Poumon", "Rate"
+    public string displayName;
 
     /// <summary>Chemin vers la texture POI dans Resources/ (sans extension).</summary>
-    public string poiImagePath;     // "POI/poumon"
+    public string poiImagePath;
 
-    /// <summary>Index espèce 0-5.</summary>
-    public int    speciesSlot;
+    // ── Liaison espèce ────────────────────────────────────────────────
+    /// <summary>
+    /// ID de l'espèce qui utilise ce bâtiment comme waypoint ("globulerouge", "globuleblanc"…).
+    /// Prend le pas sur speciesSlot si renseigné.
+    /// </summary>
+    public string waypointSpeciesId;
 
-    /// <summary>0 = Source (spawner), 1 = Destination (récepteur).</summary>
-    public int    waypointType;
+    /// <summary>
+    /// [Héritage] Index de slot GPU (0-5). Utilisé si waypointSpeciesId est vide.
+    /// Ignoré quand waypointSpeciesId est défini.
+    /// </summary>
+    public int speciesSlot;
+
+    /// <summary>0 = Source (génère des agents ici), 1 = Destination (point d'arrivée).</summary>
+    public int waypointType;
 
     // ── Spawn ─────────────────────────────────────────────────────────
-    /// <summary>Taux de spawn de base (entités/seconde), modulé par l'efficacité.</summary>
-    public float  spawnsPerSecond;
+    /// <summary>Taux de spawn de base (agents/seconde), modulé par l'efficacité.</summary>
+    public float spawnsPerSecond;
 
-    /// <summary>Population maximale pour cette espèce.</summary>
-    public int    maxPopulation;
+    /// <summary>Population maximale pour l'espèce principale.</summary>
+    public int maxPopulation;
 
     // ── Ressources ────────────────────────────────────────────────────
-    /// <summary>Ressources consommées passivement par ce bâtiment (unités/seconde).</summary>
+    /// <summary>Ressources consommées passivement (unités/seconde).</summary>
     public ResourceAmount[] consumes;
 
-    /// <summary>Ressources produites passivement par ce bâtiment (unités/seconde).</summary>
+    /// <summary>Ressources produites passivement (unités/seconde).</summary>
     public ResourceAmount[] produces;
 
     // ── Efficacité conditionnelle ──────────────────────────────────────
     /// <summary>
-    /// Si true, spawnsPerSecond est multiplié par (oxygène_consommé / oxygenRequiredPerSecond),
-    /// plafonné à [0..1]. Le bâtiment ralentit proportionnellement au manque d'oxygène.
+    /// ID de la ressource dont dépend l'efficacité ("oxygen", "glucose"…).
+    /// Laissé vide = pas de scaling. Prend le pas sur scalesWithOxygen.
     /// </summary>
-    public bool   scalesWithOxygen;
+    public string scalesWithResource;
 
-    /// <summary>Oxygène nécessaire (u/s) pour fonctionner à 100%.</summary>
-    public float  oxygenRequiredPerSecond;
+    /// <summary>Quantité de la ressource nécessaire (u/s) pour fonctionner à 100%.</summary>
+    public float resourceRequiredPerSecond;
+
+    /// <summary>[Héritage] Équivalent à scalesWithResource = "oxygen". Ignoré si scalesWithResource est renseigné.</summary>
+    public bool scalesWithOxygen;
+
+    /// <summary>[Héritage] Équivalent à resourceRequiredPerSecond. Ignoré si resourceRequiredPerSecond > 0.</summary>
+    public float oxygenRequiredPerSecond;
+
+    // ── Propriétés résolues (runtime, non sérialisées) ────────────────
+
+    [NonSerialized] private int _resolvedSlot = int.MinValue;
+
+    /// <summary>
+    /// Slot GPU résolu : utilise waypointSpeciesId → SpeciesLibrary en priorité,
+    /// puis speciesSlot comme fallback.
+    /// </summary>
+    public int ResolvedSpeciesSlot
+    {
+        get
+        {
+            if (_resolvedSlot != int.MinValue) return _resolvedSlot;
+
+            if (!string.IsNullOrEmpty(waypointSpeciesId) && SpeciesLibrary.Instance != null)
+            {
+                int s = SpeciesLibrary.Instance.GetSlot(waypointSpeciesId);
+                if (s >= 0) { _resolvedSlot = s; return s; }
+            }
+            _resolvedSlot = speciesSlot;
+            return speciesSlot;
+        }
+    }
+
+    /// <summary>
+    /// Ressource de scaling résolue : utilise scalesWithResource en priorité,
+    /// puis "oxygen" si scalesWithOxygen est true (héritage).
+    /// </summary>
+    public string ResolvedScaleResource
+    {
+        get
+        {
+            if (!string.IsNullOrEmpty(scalesWithResource)) return scalesWithResource.ToLowerInvariant();
+            if (scalesWithOxygen) return "oxygen";
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Quantité de scaling résolue : utilise resourceRequiredPerSecond en priorité,
+    /// puis oxygenRequiredPerSecond (héritage).
+    /// </summary>
+    public float ResolvedScaleAmount =>
+        resourceRequiredPerSecond > 0f ? resourceRequiredPerSecond : oxygenRequiredPerSecond;
 }
 
 /// <summary>Paire ressource/quantité utilisée dans consumes[] et produces[].</summary>
 [Serializable]
 public class ResourceAmount
 {
-    /// <summary>Nom de la ressource : "oxygen", "glucose", "iron".</summary>
+    /// <summary>ID de la ressource : "oxygen", "glucose"… (définie dans resources.json)</summary>
     public string resource;
 
-    /// <summary>Quantité par seconde (pour consumes/produces passifs).</summary>
-    public float  amount;
+    /// <summary>Quantité par seconde.</summary>
+    public float amount;
 }

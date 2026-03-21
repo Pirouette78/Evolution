@@ -1,0 +1,84 @@
+using System;
+using UnityEngine;
+
+/// <summary>
+/// Paramètres complets d'une espèce d'agent.
+/// Chargé depuis StreamingAssets/Species/*.json au démarrage via SpeciesLibrary.
+/// Ajouter une espèce = créer un fichier JSON, sans modifier le code.
+/// </summary>
+[Serializable]
+public class SpeciesDefinition
+{
+    // ── Identité ──────────────────────────────────────────────────────
+    /// <summary>Identifiant stable (minuscules) : "globulerouge", "globuleblanc"…</summary>
+    public string id;
+
+    /// <summary>Nom affiché en UI.</summary>
+    public string displayName;
+
+    /// <summary>Slot GPU 0-5 occupé par cette espèce.</summary>
+    public int slotIndex;
+
+    // ── Mouvement ─────────────────────────────────────────────────────
+    public float moveSpeed;
+    public float turnSpeed;
+
+    /// <summary>Angle du senseur en degrés (converti en radians à l'usage).</summary>
+    public float sensorAngleDeg;
+    public float sensorOffsetDst;
+    public int   sensorSize;
+
+    // ── Cycle de vie ──────────────────────────────────────────────────
+    public float maxAge;
+    public float trailWeight;
+    public float decayRate;
+    public float diffuseRate;
+    public float warDamageRate;
+
+    // ── Comportement ──────────────────────────────────────────────────
+    /// <summary>"Default", "Bacterie", "GlobuleRouge", "GlobuleBlanc", "Virus", "Plaquette"</summary>
+    public string behaviorType;
+
+    public float energyConsumptionRate;
+    public float energyReward;
+    public float startingEnergy;
+
+    // ── Navigation (agents à waypoints type GlobuleRouge) ─────────────
+    public float arrivalRadius;
+    public float loadingTime;
+    public float unloadingTime;
+
+    // ── Conversion ───────────────────────────────────────────────────
+
+    public int BehaviorTypeInt => (behaviorType?.ToLowerInvariant()) switch
+    {
+        "bacterie"     => 1,
+        "globulerouge" => 2,
+        "globuleblanc" => 3,
+        "virus"        => 4,
+        "plaquette"    => 5,
+        _              => 0
+    };
+
+    /// <summary>Construit le struct GPU correspondant.</summary>
+    public SlimeMapRenderer.SpeciesSettings ToSpeciesSettings() => new SlimeMapRenderer.SpeciesSettings
+    {
+        moveSpeed             = moveSpeed,
+        turnSpeed             = turnSpeed,
+        sensorAngleRad        = sensorAngleDeg * Mathf.Deg2Rad,
+        sensorOffsetDst       = sensorOffsetDst,
+        sensorSize            = sensorSize,
+        maxAge                = maxAge,
+        trailWeight           = trailWeight,
+        decayRate             = decayRate,
+        diffuseRate           = diffuseRate,
+        warDamageRate         = warDamageRate,
+        behaviorType          = BehaviorTypeInt,
+        energyConsumptionRate = energyConsumptionRate,
+        energyReward          = energyReward,
+        startingEnergy        = startingEnergy,
+        arrivalRadius         = arrivalRadius,
+        loadingTime           = loadingTime,
+        unloadingTime         = unloadingTime,
+    };
+}

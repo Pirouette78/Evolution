@@ -1,0 +1,5 @@
+[
+  { "id": "oxygen",  "displayName": "Oxygène" },
+  { "id": "glucose", "displayName": "Glucose" },
+  { "id": "iron",    "displayName": "Fer" }
+]

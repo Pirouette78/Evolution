@@ -1,0 +1,10 @@
+{
+  "id": "noeud_viral",
+  "displayName": "Nœud Viral",
+  "waypointSpeciesId": "virus",
+  "waypointType": 0,
+  "spawnsPerSecond": 5.0,
+  "maxPopulation": 10000,
+  "consumes": [],
+  "produces": []
+}

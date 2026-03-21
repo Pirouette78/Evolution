@@ -1,0 +1,6 @@
+{
+  "id": "zone_infection",
+  "displayName": "Zone Infection",
+  "waypointSpeciesId": "bacterie",
+  "waypointType": 1
+}

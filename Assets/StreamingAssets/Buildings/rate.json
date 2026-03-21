@@ -2,7 +2,7 @@
   "id": "rate",
   "displayName": "Rate",
   "poiImagePath": "POI/rate",
-  "speciesSlot": 1,
+  "waypointSpeciesId": "globuleblanc",
   "waypointType": 0,
   "spawnsPerSecond": 1.0,
   "maxPopulation": 2000,
@@ -10,6 +10,6 @@
     { "resource": "oxygen", "amount": 2.0 }
   ],
   "produces": [],
-  "scalesWithOxygen": true,
-  "oxygenRequiredPerSecond": 2.0
+  "scalesWithResource": "oxygen",
+  "resourceRequiredPerSecond": 2.0
 }
