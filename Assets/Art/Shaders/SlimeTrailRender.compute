@@ -5,6 +5,7 @@
 #pragma kernel ComposeDisplay
 #pragma kernel ClearCounts
 #pragma kernel CountAlive
+#pragma kernel ClearDeliveryCounters
 
 // FORCING RECOMPILE 2
 
@@ -58,7 +59,7 @@ struct SpeciesSettings {
     float arrivalRadius;        // distance "arrived" at waypoint (was pad0)
     float loadingTime;          // time to wait at Source
     float unloadingTime;        // time to wait at Destination
-    float pad1;                 // padding → 76 bytes
+    float waitForStock;         // 1 = attend stock dispo avant de partir (remplace pad1)
 };
 
 struct Waypoint {
@@ -72,6 +73,9 @@ RWStructuredBuffer<uint> speciesCounts;
 
 StructuredBuffer<Waypoint> waypoints;
 int numWaypoints;
+
+StructuredBuffer<float>   waypointStockIn;   // stock actuel par waypoint (CPU → GPU)
+RWStructuredBuffer<int>   deliveryCounters;  // compteur atomique de livraisons (GPU → CPU)
 
 Texture2DArray<float2> FlowFieldMap;
 
@@ -265,50 +269,63 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
             agent.hunger -= deltaTime;
             if (agent.hunger <= 0)
             {
-                // Compter les destinations valides pour cette espèce
-                int validCount = 0;
-                for (int w = 0; w < numWaypoints; w++)
-                {
-                    if (waypoints[w].type != 1) continue;
-                    if (waypoints[w].speciesIndex != agent.speciesIndex) continue;
-                    validCount++;
-                }
+                // Vérifier le stock disponible à la source
+                bool hasStock = (targetIdx >= 0) && (waypointStockIn[targetIdx] > 0.5);
 
-                int bestIdx = -1;
-                if (validCount > 0)
+                if (!hasStock && settings.waitForStock > 0.5)
                 {
-                    // Tirage uniforme parmi les destinations valides
-                    uint r    = hash(random + 3u);
-                    int  pick = clamp((int)(scaleToRange01(r) * (float)validCount), 0, validCount - 1);
-                    int  rank = 0;
+                    // Pas de stock : l'agent attend (remet le timer)
+                    agent.hunger = settings.loadingTime;
+                }
+                else
+                {
+                    agent.typeOfWorker.queen = hasStock ? 1 : 0; // 1 = chargé, 0 = vide
+
+                    // Compter les destinations valides pour cette espèce
+                    int validCount = 0;
                     for (int w = 0; w < numWaypoints; w++)
                     {
                         if (waypoints[w].type != 1) continue;
                         if (waypoints[w].speciesIndex != agent.speciesIndex) continue;
-                        if (rank == pick) { bestIdx = w; break; }
-                        rank++;
+                        validCount++;
                     }
-                }
 
-                if (bestIdx >= 0)
-                {
-                    targetIdx = bestIdx;
-                    navState  = 3;
+                    int bestIdx = -1;
+                    if (validCount > 0)
+                    {
+                        // Tirage uniforme parmi les destinations valides
+                        uint r    = hash(random + 3u);
+                        int  pick = clamp((int)(scaleToRange01(r) * (float)validCount), 0, validCount - 1);
+                        int  rank = 0;
+                        for (int w = 0; w < numWaypoints; w++)
+                        {
+                            if (waypoints[w].type != 1) continue;
+                            if (waypoints[w].speciesIndex != agent.speciesIndex) continue;
+                            if (rank == pick) { bestIdx = w; break; }
+                            rank++;
+                        }
+                    }
 
-                    // Décider si l'agent doit suivre le chemin lissé ou le flow field.
-                    // Le chemin lissé part de path[0] = position de la Source principale de l'espèce.
-                    // Si l'agent est loin de cette position (ex : il est issu d'un 2ème Poumon),
-                    // on utilise le flow field qui est correct depuis n'importe quelle position.
-                    int2   smMeta      = smoothedPathMeta[bestIdx];
-                    bool   hasPath     = smMeta.y > 0;
-                    bool   nearStart   = hasPath &&
-                                        length(smoothedPaths[smMeta.x] - agent.position)
-                                            < settings.arrivalRadius * 4.0;
-                    agent.typeOfWorker.builder = nearStart ? 0 : -1; // -1 = flow field
-                }
-                else
-                {
-                    navState = 0; // no destination, restart
+                    if (bestIdx >= 0)
+                    {
+                        targetIdx = bestIdx;
+                        navState  = 3;
+
+                        // Décider si l'agent doit suivre le chemin lissé ou le flow field.
+                        // Le chemin lissé part de path[0] = position de la Source principale de l'espèce.
+                        // Si l'agent est loin de cette position (ex : il est issu d'un 2ème Poumon),
+                        // on utilise le flow field qui est correct depuis n'importe quelle position.
+                        int2   smMeta      = smoothedPathMeta[bestIdx];
+                        bool   hasPath     = smMeta.y > 0;
+                        bool   nearStart   = hasPath &&
+                                            length(smoothedPaths[smMeta.x] - agent.position)
+                                                < settings.arrivalRadius * 4.0;
+                        agent.typeOfWorker.builder = nearStart ? 0 : -1; // -1 = flow field
+                    }
+                    else
+                    {
+                        navState = 0; // no destination, restart
+                    }
                 }
             }
         }
@@ -341,7 +358,15 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
         {
             stayPut = true;
             agent.hunger -= deltaTime;
-            if (agent.hunger <= 0) navState = 0;
+            if (agent.hunger <= 0)
+            {
+                if (agent.typeOfWorker.queen == 1 && targetIdx >= 0)
+                {
+                    InterlockedAdd(deliveryCounters[targetIdx], 1);
+                    agent.typeOfWorker.queen = 0;
+                }
+                navState = 0;
+            }
         }
 
         agent.typeOfWorker.fighter = navState;
@@ -530,4 +555,10 @@ void ComposeDisplay (uint3 id : SV_DispatchThreadID)
     } else {
         DisplayMap[id.xy] = float4(0, 0, 0, 1);
     }
+}
+
+[numthreads(16,1,1)]
+void ClearDeliveryCounters(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < 16) deliveryCounters[id.x] = 0;
 }

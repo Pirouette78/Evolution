@@ -188,9 +188,8 @@ public class UIController : MonoBehaviour
         toggleSpeciesOverlay = root.Q<Toggle>("ToggleSpeciesOverlay");
         if (toggleSpeciesOverlay != null) {
             toggleSpeciesOverlay.RegisterValueChangedCallback(e => {
-                if (WaypointOverlayRenderer.Instance != null) {
-                    WaypointOverlayRenderer.Instance.ShowSpeciesOverlay[GetCurrentSpeciesSlot()] = e.newValue;
-                }
+                if (WaypointOverlayRenderer.Instance != null)
+                    WaypointOverlayRenderer.Instance.ShowPOI = e.newValue;
             });
         }
 
@@ -346,7 +345,7 @@ public class UIController : MonoBehaviour
             }
 
             if (toggleSpeciesOverlay != null && WaypointOverlayRenderer.Instance != null) {
-                toggleSpeciesOverlay.SetValueWithoutNotify(WaypointOverlayRenderer.Instance.ShowSpeciesOverlay[firstSlot]);
+                toggleSpeciesOverlay.SetValueWithoutNotify(WaypointOverlayRenderer.Instance.ShowPOI);
             }
         }
 
@@ -404,7 +403,7 @@ public class UIController : MonoBehaviour
             toggleVisibility?.SetValueWithoutNotify(smr.GetPlayerVisibility(slot));
         }
         if (toggleSpeciesOverlay != null && WaypointOverlayRenderer.Instance != null)
-            toggleSpeciesOverlay.SetValueWithoutNotify(WaypointOverlayRenderer.Instance.ShowSpeciesOverlay[slot]);
+            toggleSpeciesOverlay.SetValueWithoutNotify(WaypointOverlayRenderer.Instance.ShowPOI);
 
         RefreshTypeButtons();
     }
@@ -978,14 +977,13 @@ public class UIController : MonoBehaviour
         AddStatLine($"Agents produits",          $"{(int)totalSpawned:N0}");
         AddStatLine($"Uptime",                   $"{mins}m {secs:D2}s");
 
-        // Ressources en cours (stock global)
+        // Ressources en cours (stock local du bâtiment)
         if (def != null)
         {
             string scaleRes = def.ResolvedScaleResource;
-            if (!string.IsNullOrEmpty(scaleRes) && ResourceManager.Instance != null)
+            if (!string.IsNullOrEmpty(scaleRes) && primary != null)
             {
-                float stock = ResourceManager.Instance.Get(scaleRes);
-                AddStatLine($"Stock {scaleRes}", $"{stock:F0}");
+                AddStatLine($"Stock {scaleRes}", $"{primary.localStock:F0} / {primary.maxLocalStock:F0}");
             }
 
             // Ressources produites

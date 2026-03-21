@@ -31,6 +31,11 @@ public class WaypointManager : MonoBehaviour
         [System.NonSerialized] public BuildingDefinition definition;
         [System.NonSerialized] public bool processResources;
 
+        // ── Stock local (ressources transportées par agents) ───────
+        [System.NonSerialized] public float localStock;             // oxygène, glucose… reçu par livraison
+        [System.NonSerialized] public float maxLocalStock;        // plafond (défini au placement)
+        [System.NonSerialized] public float cachedEfficiency = 1f;// calculé chaque frame par la hive primaire, lu par les hives secondaires
+
         // ── Stats ──────────────────────────────────────────────────
         [System.NonSerialized] public int   placementId;
         [System.NonSerialized] public float totalAgentsSpawned;
@@ -101,57 +106,114 @@ public class WaypointManager : MonoBehaviour
 
     private void Update()
     {
-        if (SlimeMapRenderer.Instance == null || !SlimeMapRenderer.Instance.IsReady) return;
-        if (ResourceManager.Instance == null) return;
+        var smr = SlimeMapRenderer.Instance;
+        if (smr == null || !smr.IsReady) return;
 
+        float dt = Time.deltaTime;
+
+        // ── Phase A : Production locale ───────────────────────────────────
+        // Les bâtiments producteurs (Poumon…) remplissent leur propre stock local.
         foreach (var hive in hiveList)
         {
-            if (hive.speciesSlot < 0 || hive.speciesSlot >= 6) continue;
-            if (SlimeMapRenderer.Instance.AliveSpeciesCounts[hive.speciesSlot] >= (uint)hive.maxPopulation) continue;
-
+            if (!hive.processResources) continue;
             var def = hive.definition;
-            float dt = Time.deltaTime;
-
-            // Ressources traitées uniquement par la Hive primaire (évite les doublons multi-output)
-            float efficiency = 1f;
-            if (hive.processResources)
+            if (def?.produces == null) continue;
+            foreach (var prod in def.produces)
             {
-                // ── Production passive de ressources (ex : Poumon → oxygène) ──
-                float produced = 0f;
-                if (def != null && def.produces != null)
-                {
-                    foreach (var prod in def.produces)
-                    {
-                        ResourceManager.Instance.Produce(prod.resource, prod.amount * dt);
-                        produced += prod.amount * dt;
-                    }
-                }
-                hive.totalResourceProduced += produced;
+                float added = prod.amount * dt;
+                hive.localStock = Mathf.Min(hive.localStock + added, hive.maxLocalStock);
+                hive.totalResourceProduced += added;
+            }
+        }
 
-                // ── Consommation de ressources + efficacité ──────────────
-                string scaleRes    = def?.ResolvedScaleResource;
-                float  scaleAmount = def?.ResolvedScaleAmount ?? 0f;
+        // ── Phase B : Livraison (lecture des compteurs GPU) ───────────────
+        // Upload des stocks actuels vers le GPU (lu par les agents au chargement)
+        float[] wpStocks = new float[16];
+        foreach (var hive in hiveList)
+        {
+            if (!hive.processResources) continue;
+            int wi = hive.waypointIndex;
+            if (wi >= 0 && wi < 16) wpStocks[wi] = hive.localStock;
+        }
+        smr.SetWaypointStocks(wpStocks);
 
-                if (!string.IsNullOrEmpty(scaleRes) && scaleAmount > 0f)
+        // Appliquer les livraisons lues depuis le GPU (frame précédente)
+        foreach (var dest in hiveList)
+        {
+            int dWi = dest.waypointIndex;
+            if (dWi < 0 || dWi >= 16) continue;
+            if (dWi >= waypointList.Count) continue;
+            if (waypointList[dWi].type != 1) continue;
+
+            int deliveries = smr.DeliveryCounts[dWi];
+            if (deliveries <= 0) continue;
+
+            var carrierDef = SpeciesLibrary.Instance?.GetBySlot(dest.speciesSlot);
+            float delivered = deliveries * (carrierDef?.payloadCapacity ?? 1f);
+
+            // Drainer le stock de la Source correspondante
+            foreach (var src in hiveList)
+            {
+                if (!src.processResources) continue;
+                int srcWi = src.waypointIndex;
+                if (srcWi < 0 || srcWi >= waypointList.Count) continue;
+                if (waypointList[srcWi].type != 0 || waypointList[srcWi].speciesIndex != dest.speciesSlot) continue;
+                float taken = Mathf.Min(delivered, src.localStock);
+                src.localStock -= taken;
+                delivered = taken; // n'ajouter que ce qui a réellement été prélevé
+                break;
+            }
+
+            var consumer = GetPrimaryHive(dest.placementId);
+            if (consumer != null && consumer != dest)
+                consumer.localStock = Mathf.Min(consumer.localStock + delivered, consumer.maxLocalStock);
+        }
+
+        // ── Phase C : Consommation locale + spawn ─────────────────────────
+        // Passe 1 : calcul de l'efficacité par la hive primaire de chaque placement.
+        // Résultat stocké dans cachedEfficiency pour être partagé avec les hives secondaires.
+        foreach (var hive in hiveList)
+        {
+            if (!hive.processResources) continue;
+            var   def = hive.definition;
+            float eff = 1f;
+
+            string scaleRes    = def?.ResolvedScaleResource;
+            float  scaleAmount = def?.ResolvedScaleAmount ?? 0f;
+
+            if (!string.IsNullOrEmpty(scaleRes) && scaleAmount > 0f)
+            {
+                float needed   = scaleAmount * dt;
+                float consumed = Mathf.Min(needed, hive.localStock);
+                hive.localStock            -= consumed;
+                hive.totalResourceConsumed += consumed;
+                eff = needed > 0f ? consumed / needed : 1f;
+            }
+            else if (def?.consumes != null)
+            {
+                foreach (var req in def.consumes)
                 {
-                    float needed   = scaleAmount * dt;
-                    float consumed = ResourceManager.Instance.Consume(scaleRes, needed);
-                    efficiency = needed > 0f ? consumed / needed : 1f;
+                    float needed   = req.amount * dt;
+                    float consumed = Mathf.Min(needed, hive.localStock);
+                    hive.localStock            -= consumed;
                     hive.totalResourceConsumed += consumed;
-                }
-                else if (def != null && def.consumes != null)
-                {
-                    foreach (var req in def.consumes)
-                    {
-                        float consumed = ResourceManager.Instance.Consume(req.resource, req.amount * dt);
-                        hive.totalResourceConsumed += consumed;
-                    }
+                    eff = Mathf.Min(eff, needed > 0f ? consumed / needed : 1f);
                 }
             }
 
+            hive.cachedEfficiency = eff;
+        }
+
+        // Passe 2 : toutes les hives de production utilisent l'efficacité
+        // de la hive primaire de leur placement (primaire ET secondaires partagent la même).
+        foreach (var hive in hiveList)
+        {
+            if (hive.speciesSlot < 0 || hive.speciesSlot >= 6) continue;
+            if (smr.AliveSpeciesCounts[hive.speciesSlot] >= (uint)hive.maxPopulation) continue;
+
             hive.lifetimeSeconds += dt;
 
-            // ── Spawn modulé par l'efficacité ───────────────────────────
+            float efficiency    = GetPrimaryHive(hive.placementId)?.cachedEfficiency ?? 1f;
             float effectiveRate = hive.spawnsPerSecond * efficiency;
             if (effectiveRate <= 0f) continue;
 
@@ -160,11 +222,11 @@ public class WaypointManager : MonoBehaviour
             if (hive.accumulator >= interval)
             {
                 hive.accumulator -= interval;
-                int  wi  = hive.waypointIndex;
-                Vector2 pos = (wi >= 0 && wi < waypointList.Count)
-                    ? waypointList[wi].position
-                    : new Vector2(SlimeMapRenderer.Instance.Width * 0.5f, SlimeMapRenderer.Instance.Height * 0.5f);
-                SlimeMapRenderer.Instance.AddAgentsAt(1, hive.speciesSlot, pos);
+                int     wpi = hive.waypointIndex;
+                Vector2 pos = (wpi >= 0 && wpi < waypointList.Count)
+                    ? waypointList[wpi].position
+                    : new Vector2(smr.Width * 0.5f, smr.Height * 0.5f);
+                smr.AddAgentsAt(1, hive.speciesSlot, pos);
                 hive.totalAgentsSpawned++;
                 hive.level = Mathf.Min(1 + (int)(hive.totalAgentsSpawned / 500f), 10);
             }
@@ -209,9 +271,10 @@ public class WaypointManager : MonoBehaviour
             string playerId = PlayerLibrary.Instance?.GetPlayerIdForSlot(wp.speciesIndex);
             var outputs = def?.ResolvedOutputs();
 
+            int pid = -1;
             if (outputs != null && outputs.Length > 0)
             {
-                int pid = nextPlacementId++;
+                pid = nextPlacementId++;
                 bool isFirst = true;
                 foreach (var output in outputs)
                 {
@@ -244,21 +307,41 @@ public class WaypointManager : MonoBehaviour
                         definition       = def,
                         processResources = isFirst,
                         placementId      = pid,
-                        level            = 1
+                        level            = 1,
+                        maxLocalStock    = 500f,
                     });
 
                     isFirst = false;
                 }
             }
             // Si le bâtiment a une espèce liée, créer automatiquement un waypoint Destination pour elle
+            // + une HiveData "point de livraison" pour le mécanisme de transport de ressources.
             if (def != null && !string.IsNullOrEmpty(def.linkedSpeciesId))
             {
                 int linkedSlot = (!string.IsNullOrEmpty(playerId) && PlayerLibrary.Instance != null)
                     ? PlayerLibrary.Instance.GetSlotIndex(playerId, def.linkedSpeciesId)
                     : -1;
                 if (linkedSlot >= 0)
+                {
                     AddWaypoint(new WaypointData { position = wp.position, type = 1, speciesIndex = linkedSlot },
                                 buildingName, autoHive: false);
+                    // Créer la HiveData associée au waypoint Destination pour tracer les livraisons
+                    if (pid >= 0)
+                    {
+                        hiveList.Add(new HiveData
+                        {
+                            waypointIndex    = waypointList.Count - 1,
+                            speciesSlot      = linkedSlot,
+                            spawnsPerSecond  = 0f,
+                            maxPopulation    = int.MaxValue,
+                            definition       = def,
+                            processResources = false,
+                            placementId      = pid,
+                            level            = 0,
+                            maxLocalStock    = 0f,
+                        });
+                    }
+                }
             }
         }
 

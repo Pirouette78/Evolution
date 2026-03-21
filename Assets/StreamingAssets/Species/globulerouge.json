@@ -17,5 +17,7 @@
   "energyReward": 5.0,
   "arrivalRadius": 20.0,
   "loadingTime": 2.0,
-  "unloadingTime": 1.0
+  "unloadingTime": 1.0,
+  "payloadCapacity": 5.0,
+  "waitForStock": true
 }

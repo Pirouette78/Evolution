@@ -19,6 +19,7 @@ public class WaypointOverlayRenderer : MonoBehaviour
     }
 
     public bool[] ShowSpeciesOverlay = new bool[16];
+    public bool   ShowPOI = true; // toggle global — contrôlé par le bouton "Afficher POI"
 
     // Images POI : id du bâtiment (JSON) → texture chargée depuis Resources/
     private readonly Dictionary<string, Texture2D> poiImages = new Dictionary<string, Texture2D>();
@@ -62,6 +63,7 @@ public class WaypointOverlayRenderer : MonoBehaviour
 
     private void OnGUI()
     {
+        if (!ShowPOI) return;
         if (WaypointManager.Instance == null || SlimeMapRenderer.Instance == null) return;
 
         WaypointData[] waypoints = WaypointManager.Instance.GetWaypoints();
@@ -72,8 +74,7 @@ public class WaypointOverlayRenderer : MonoBehaviour
         for (int i = 0; i < waypoints.Length; i++)
         {
             var wp = waypoints[i];
-            if (wp.speciesIndex < 0 || wp.speciesIndex >= 6) continue;
-            if (!ShowSpeciesOverlay[wp.speciesIndex]) continue;
+            if (wp.speciesIndex < 0 || wp.speciesIndex >= 16) continue;
 
             string name = WaypointManager.Instance.GetWaypointName(i);
             if (!poiImages.TryGetValue(name, out Texture2D tex) || tex == null) continue;
@@ -91,6 +92,7 @@ public class WaypointOverlayRenderer : MonoBehaviour
 
     private void OnRenderObject()
     {
+        if (!ShowPOI) return;
         if (WaypointManager.Instance == null || SlimeMapRenderer.Instance == null) return;
 
         WaypointData[] waypoints = WaypointManager.Instance.GetWaypoints();
@@ -106,8 +108,7 @@ public class WaypointOverlayRenderer : MonoBehaviour
         for (int i = 0; i < waypoints.Length; i++)
         {
             var wp = waypoints[i];
-            if (wp.speciesIndex < 0 || wp.speciesIndex >= 6) continue;
-            if (!ShowSpeciesOverlay[wp.speciesIndex]) continue;
+            if (wp.speciesIndex < 0 || wp.speciesIndex >= 16) continue;
 
             Color col = GetSlotColor(wp.speciesIndex);
             // Source = full color, Destination = 50% alpha
@@ -123,7 +124,6 @@ public class WaypointOverlayRenderer : MonoBehaviour
         int numSlots = SlimeMapRenderer.Instance?.numActiveSlots ?? 16;
         for (int s = 0; s < numSlots; s++)
         {
-            if (!ShowSpeciesOverlay[s]) continue;
 
             Color lineCol = GetSlotColor(s);
             lineCol.a = 0.7f;

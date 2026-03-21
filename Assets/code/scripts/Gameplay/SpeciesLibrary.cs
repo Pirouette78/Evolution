@@ -79,6 +79,14 @@ public class SpeciesLibrary : MonoBehaviour
         return def != null ? def.slotIndex : -1;
     }
 
+    /// <summary>Retourne la définition par slot GPU (0-15). Null si inconnu.</summary>
+    public SpeciesDefinition GetBySlot(int slotIndex)
+    {
+        foreach (var def in byId.Values)
+            if (def.slotIndex == slotIndex) return def;
+        return null;
+    }
+
     public IReadOnlyCollection<SpeciesDefinition> GetAll() => byId.Values;
 
     // ── Chargement ───────────────────────────────────────────────────

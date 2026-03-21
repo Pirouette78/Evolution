@@ -55,6 +55,12 @@ public class SpeciesDefinition
     public float loadingTime;
     public float unloadingTime;
 
+    /// <summary>Quantité de ressource transportée par agent par voyage (0 = non-transporteur).</summary>
+    public float payloadCapacity;
+
+    /// <summary>Si true, l'agent attend en navState 2 jusqu'à ce que le stock soit disponible.</summary>
+    public bool waitForStock;
+
     // ── Conversion ───────────────────────────────────────────────────
 
     public int BehaviorTypeInt => behaviorTypeInt;
@@ -79,5 +85,6 @@ public class SpeciesDefinition
         arrivalRadius         = arrivalRadius,
         loadingTime           = loadingTime,
         unloadingTime         = unloadingTime,
+        waitForStock          = waitForStock ? 1f : 0f,
     };
 }

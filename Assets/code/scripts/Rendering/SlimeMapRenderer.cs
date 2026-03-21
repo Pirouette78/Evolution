@@ -63,7 +63,10 @@ public class SlimeMapRenderer : MonoBehaviour
     private bool initialSpawnDone = false;
     private int playerVisibilityMask = 0xFFFF; // all 16 slots visible by default
 
-    private int updateKernel, drawKernel, diffuseKernel, clearKernel, composeKernel, clearCountsKernel, countAliveKernel;
+    private int updateKernel, drawKernel, diffuseKernel, clearKernel, composeKernel, clearCountsKernel, countAliveKernel, clearDeliveryKernel;
+    public  int[] DeliveryCounts = new int[16];
+    private ComputeBuffer waypointStockBuffer;
+    private ComputeBuffer deliveryCounterBuffer;
 
     // Cached terrain data for CPU-side spawn validation
     private float[,] heightMapCache;
@@ -91,7 +94,7 @@ public class SlimeMapRenderer : MonoBehaviour
         public float arrivalRadius;         // distance to consider "arrived" at waypoint (was pad0)
         public float loadingTime;           // time to wait at Source waypoint
         public float unloadingTime;         // time to wait at Destination waypoint
-        public float pad1;                  // padding → 76 bytes total
+        public float waitForStock;          // 1 = attend stock dispo (remplace pad1) → 76 bytes total
     }
     private ComputeBuffer speciesSettingsBuffer;
     private ComputeBuffer speciesCountsBuffer;
@@ -143,6 +146,10 @@ public class SlimeMapRenderer : MonoBehaviour
         speciesSettingsBuffer = new ComputeBuffer(16, 76);
         speciesCountsBuffer   = new ComputeBuffer(16, sizeof(uint));
         slotColorsBuffer      = new ComputeBuffer(16, sizeof(float) * 4);
+        waypointStockBuffer   = new ComputeBuffer(16, sizeof(float));
+        deliveryCounterBuffer = new ComputeBuffer(16, sizeof(int));
+        waypointStockBuffer.SetData(new float[16]);
+        deliveryCounterBuffer.SetData(new int[16]);
 
         // Default colors: spread across hue for the 16 slots
         for (int i = 0; i < 16; i++) {
@@ -233,8 +240,9 @@ public class SlimeMapRenderer : MonoBehaviour
         diffuseKernel = SlimeShader.FindKernel("Diffuse");
         clearKernel   = SlimeShader.FindKernel("ResetMap");
         composeKernel = SlimeShader.FindKernel("ComposeDisplay");
-        clearCountsKernel = SlimeShader.FindKernel("ClearCounts");
-        countAliveKernel  = SlimeShader.FindKernel("CountAlive");
+        clearCountsKernel    = SlimeShader.FindKernel("ClearCounts");
+        countAliveKernel     = SlimeShader.FindKernel("CountAlive");
+        clearDeliveryKernel  = SlimeShader.FindKernel("ClearDeliveryCounters");
 
         // Bind textures (persistent across frames)
         SlimeShader.SetTexture(updateKernel,  "TrailMap",         TrailMap);
@@ -257,6 +265,9 @@ public class SlimeMapRenderer : MonoBehaviour
         SlimeShader.SetBuffer(countAliveKernel, "speciesCounts", speciesCountsBuffer);
         slotColorsBuffer.SetData(slotColors);
         SlimeShader.SetBuffer(composeKernel, "slotColors", slotColorsBuffer);
+        SlimeShader.SetBuffer(updateKernel, "waypointStockIn",  waypointStockBuffer);
+        SlimeShader.SetBuffer(updateKernel, "deliveryCounters", deliveryCounterBuffer);
+        SlimeShader.SetBuffer(clearDeliveryKernel, "deliveryCounters", deliveryCounterBuffer);
 
         // Waypoints buffer (max 16 × 16 bytes)
         waypointBuffer = new ComputeBuffer(16, 16);
@@ -627,6 +638,10 @@ public class SlimeMapRenderer : MonoBehaviour
                 SlimeShader.Dispatch(countAliveKernel, countGroups, 1, 1);
                 speciesCountsBuffer.GetData(AliveSpeciesCounts);
 
+                // Lire et réinitialiser les compteurs de livraison GPU
+                deliveryCounterBuffer.GetData(DeliveryCounts);
+                SlimeShader.Dispatch(clearDeliveryKernel, 1, 1, 1);
+
                 if (updateFrameBugTracer < 5) {
                     uint totalAlive = 0;
                     for (int i=0; i<16; i++) totalAlive += AliveSpeciesCounts[i];
@@ -653,9 +668,14 @@ public class SlimeMapRenderer : MonoBehaviour
         waypointBuffer?.Release();
         smoothedPathBuffer?.Release();
         smoothedPathMetaBuffer?.Release();
+        waypointStockBuffer?.Release();
+        deliveryCounterBuffer?.Release();
         if (flowFieldMapIsOwned && flowFieldMap != null) Destroy(flowFieldMap);
         TrailMap?.Release();
         DiffusedMap?.Release();
         DisplayMap?.Release();
     }
+
+    /// <summary>Upload les stocks actuels des waypoints vers le GPU (appelé par WaypointManager chaque frame).</summary>
+    public void SetWaypointStocks(float[] stocks) => waypointStockBuffer.SetData(stocks);
 }
