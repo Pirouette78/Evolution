@@ -293,7 +293,17 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
                 {
                     targetIdx = bestIdx;
                     navState  = 3;
-                    agent.typeOfWorker.builder = 0; // reset smooth path index
+
+                    // Décider si l'agent doit suivre le chemin lissé ou le flow field.
+                    // Le chemin lissé part de path[0] = position de la Source principale de l'espèce.
+                    // Si l'agent est loin de cette position (ex : il est issu d'un 2ème Poumon),
+                    // on utilise le flow field qui est correct depuis n'importe quelle position.
+                    int2   smMeta      = smoothedPathMeta[bestIdx];
+                    bool   hasPath     = smMeta.y > 0;
+                    bool   nearStart   = hasPath &&
+                                        length(smoothedPaths[smMeta.x] - agent.position)
+                                            < settings.arrivalRadius * 4.0;
+                    agent.typeOfWorker.builder = nearStart ? 0 : -1; // -1 = flow field
                 }
                 else
                 {
@@ -306,15 +316,17 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
         else if (navState == 3 && targetIdx >= 0)
         {
             bool arrived = false;
-            if (smoothedPathMeta[targetIdx].y > 0)
+            int  pathIdx = agent.typeOfWorker.builder;
+            // pathIdx >= 0  : chemin lissé (agent issu de la source principale)
+            // pathIdx == -1 : flow field   (agent issu d'une autre source, ou pas de chemin)
+            if (pathIdx >= 0 && smoothedPathMeta[targetIdx].y > 0)
             {
-                int pathIdx = agent.typeOfWorker.builder;
                 arrived = navigateViaSmoothedPath(agent, settings, pathIdx, targetIdx);
                 agent.typeOfWorker.builder = pathIdx;
             }
             else
             {
-                arrived = navigateViaFlowField(agent, settings, targetIdx); // fallback
+                arrived = navigateViaFlowField(agent, settings, targetIdx);
             }
             if (arrived)
             {
