@@ -2,11 +2,10 @@
   "id": "poumon",
   "displayName": "Poumon",
   "poiImagePath": "POI/poumon",
-  "waypointSpeciesId": "globulerouge",
   "waypointType": 0,
-  "spawnsPerSecond": 2.0,
-  "maxPopulation": 5000,
-  "consumes": [],
+  "outputs": [
+    { "speciesId": "globulerouge", "spawnsPerSecond": 2.0, "maxPopulation": 5000 }
+  ],
   "produces": [
     { "resource": "oxygen", "amount": 5.0 }
   ]

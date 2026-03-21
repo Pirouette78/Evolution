@@ -63,29 +63,14 @@ public class BuildingLibrary : MonoBehaviour
 
         foreach (var def in byId.Values)
         {
-            // Correspondance via waypointSpeciesId, linkedSpeciesId (nouveau), ou speciesSlot résolu (héritage)
-            bool match = (!string.IsNullOrEmpty(def.waypointSpeciesId) &&
-                          def.waypointSpeciesId.ToLowerInvariant() == sid)
+            // Correspondance via outputs[], linkedSpeciesId
+            bool match = (def.outputs != null && System.Array.Exists(
+                              def.outputs, o => !string.IsNullOrEmpty(o.speciesId) &&
+                                                o.speciesId.ToLowerInvariant() == sid))
                       || (!string.IsNullOrEmpty(def.linkedSpeciesId) &&
-                          def.linkedSpeciesId.ToLowerInvariant() == sid)
-                      || (string.IsNullOrEmpty(def.waypointSpeciesId) &&
-                          SpeciesLibrary.Instance != null &&
-                          SpeciesLibrary.Instance.GetSlot(sid) == def.speciesSlot);
+                          def.linkedSpeciesId.ToLowerInvariant() == sid);
 
             if (!match) continue;
-            if (waypointType >= 0 && def.waypointType != waypointType) continue;
-            result.Add(def);
-        }
-        return result;
-    }
-
-    /// <summary>[Héritage] Retourne les bâtiments par slot GPU et waypointType.</summary>
-    public List<BuildingDefinition> GetFor(int speciesSlot, int waypointType = -1)
-    {
-        var result = new List<BuildingDefinition>();
-        foreach (var def in byId.Values)
-        {
-            if (def.ResolvedSpeciesSlot != speciesSlot) continue;
             if (waypointType >= 0 && def.waypointType != waypointType) continue;
             result.Add(def);
         }

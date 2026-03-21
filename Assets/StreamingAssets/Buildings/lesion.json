@@ -1,6 +1,8 @@
 {
   "id": "lesion",
-  "displayName": "Lésion",
-  "waypointSpeciesId": "plaquette",
-  "waypointType": 1
+  "displayName": "Lesion",
+  "waypointType": 1,
+  "outputs": [
+    { "speciesId": "plaquette" }
+  ]
 }

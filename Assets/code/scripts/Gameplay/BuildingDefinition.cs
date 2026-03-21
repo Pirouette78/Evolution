@@ -20,18 +20,6 @@ public class BuildingDefinition
 
     // ── Liaison espèce ────────────────────────────────────────────────
     /// <summary>
-    /// ID de l'espèce qui utilise ce bâtiment comme waypoint ("globulerouge", "globuleblanc"…).
-    /// Prend le pas sur speciesSlot si renseigné.
-    /// </summary>
-    public string waypointSpeciesId;
-
-    /// <summary>
-    /// [Héritage] Index de slot GPU (0-5). Utilisé si waypointSpeciesId est vide.
-    /// Ignoré quand waypointSpeciesId est défini.
-    /// </summary>
-    public int speciesSlot;
-
-    /// <summary>
     /// Espèce liée : si renseignée, placer ce bâtiment crée AUSSI un waypoint Destination
     /// pour cette espèce au même endroit (ex: "globulerouge" pour la Rate).
     /// </summary>
@@ -40,12 +28,16 @@ public class BuildingDefinition
     /// <summary>0 = Source (génère des agents ici), 1 = Destination (point d'arrivée).</summary>
     public int waypointType;
 
-    // ── Spawn ─────────────────────────────────────────────────────────
-    /// <summary>Taux de spawn de base (agents/seconde), modulé par l'efficacité.</summary>
-    public float spawnsPerSecond;
+    // ── Outputs (espèces produites) ───────────────────────────────────
+    /// <summary>
+    /// Liste des espèces produites par ce bâtiment.
+    /// Pour un bâtiment Source (type=0) : chaque entrée crée sa propre Hive.
+    /// Pour un bâtiment Destination (type=1) : seul speciesId est utilisé (pour le routage).
+    /// </summary>
+    public OutputEntry[] outputs;
 
-    /// <summary>Population maximale pour l'espèce principale.</summary>
-    public int maxPopulation;
+    /// <summary>Retourne outputs ou un tableau vide si null.</summary>
+    public OutputEntry[] ResolvedOutputs() => outputs ?? new OutputEntry[0];
 
     // ── Ressources ────────────────────────────────────────────────────
     /// <summary>Ressources consommées passivement (unités/seconde).</summary>
@@ -72,28 +64,6 @@ public class BuildingDefinition
 
     // ── Propriétés résolues (runtime, non sérialisées) ────────────────
 
-    [NonSerialized] private int _resolvedSlot = int.MinValue;
-
-    /// <summary>
-    /// Slot GPU résolu : utilise waypointSpeciesId → SpeciesLibrary en priorité,
-    /// puis speciesSlot comme fallback.
-    /// </summary>
-    public int ResolvedSpeciesSlot
-    {
-        get
-        {
-            if (_resolvedSlot != int.MinValue) return _resolvedSlot;
-
-            if (!string.IsNullOrEmpty(waypointSpeciesId) && SpeciesLibrary.Instance != null)
-            {
-                int s = SpeciesLibrary.Instance.GetSlot(waypointSpeciesId);
-                if (s >= 0) { _resolvedSlot = s; return s; }
-            }
-            _resolvedSlot = speciesSlot;
-            return speciesSlot;
-        }
-    }
-
     /// <summary>
     /// Ressource de scaling résolue : utilise scalesWithResource en priorité,
     /// puis "oxygen" si scalesWithOxygen est true (héritage).
@@ -114,6 +84,15 @@ public class BuildingDefinition
     /// </summary>
     public float ResolvedScaleAmount =>
         resourceRequiredPerSecond > 0f ? resourceRequiredPerSecond : oxygenRequiredPerSecond;
+}
+
+/// <summary>Une espèce produite par un bâtiment, avec son propre taux et sa population max.</summary>
+[Serializable]
+public class OutputEntry
+{
+    public string speciesId;
+    public float  spawnsPerSecond;
+    public int    maxPopulation;
 }
 
 /// <summary>Paire ressource/quantité utilisée dans consumes[] et produces[].</summary>

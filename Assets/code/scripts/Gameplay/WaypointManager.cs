@@ -30,6 +30,11 @@ public class WaypointManager : MonoBehaviour
         [HideInInspector] public float accumulator;
         /// <summary>Définition du bâtiment (chargée depuis BuildingLibrary). Peut être null si id inconnu.</summary>
         [System.NonSerialized] public BuildingDefinition definition;
+        /// <summary>
+        /// Seule la Hive primaire (premier output) consomme/produit des ressources.
+        /// Les Hives secondaires partagent le même bâtiment mais ne doublonnent pas la consommation.
+        /// </summary>
+        [System.NonSerialized] public bool processResources;
     }
 
     [Header("Waypoints initiaux (optionnel, pré-configurés)")]
@@ -102,28 +107,32 @@ public class WaypointManager : MonoBehaviour
             var def = hive.definition;
             float dt = Time.deltaTime;
 
-            // ── Production passive de ressources (ex : Poumon → oxygène) ──
-            if (def != null && def.produces != null)
-            {
-                foreach (var prod in def.produces)
-                    ResourceManager.Instance.Produce(prod.resource, prod.amount * dt);
-            }
-
-            // ── Consommation de ressources + efficacité ─────────────────
+            // Ressources traitées uniquement par la Hive primaire (évite les doublons multi-output)
             float efficiency = 1f;
-            string scaleRes    = def?.ResolvedScaleResource;
-            float  scaleAmount = def?.ResolvedScaleAmount ?? 0f;
+            if (hive.processResources)
+            {
+                // ── Production passive de ressources (ex : Poumon → oxygène) ──
+                if (def != null && def.produces != null)
+                {
+                    foreach (var prod in def.produces)
+                        ResourceManager.Instance.Produce(prod.resource, prod.amount * dt);
+                }
 
-            if (!string.IsNullOrEmpty(scaleRes) && scaleAmount > 0f)
-            {
-                float needed   = scaleAmount * dt;
-                float consumed = ResourceManager.Instance.Consume(scaleRes, needed);
-                efficiency = needed > 0f ? consumed / needed : 1f;
-            }
-            else if (def != null && def.consumes != null)
-            {
-                foreach (var req in def.consumes)
-                    ResourceManager.Instance.Consume(req.resource, req.amount * dt);
+                // ── Consommation de ressources + efficacité ──────────────
+                string scaleRes    = def?.ResolvedScaleResource;
+                float  scaleAmount = def?.ResolvedScaleAmount ?? 0f;
+
+                if (!string.IsNullOrEmpty(scaleRes) && scaleAmount > 0f)
+                {
+                    float needed   = scaleAmount * dt;
+                    float consumed = ResourceManager.Instance.Consume(scaleRes, needed);
+                    efficiency = needed > 0f ? consumed / needed : 1f;
+                }
+                else if (def != null && def.consumes != null)
+                {
+                    foreach (var req in def.consumes)
+                        ResourceManager.Instance.Consume(req.resource, req.amount * dt);
+                }
             }
 
             // ── Spawn modulé par l'efficacité ───────────────────────────
@@ -172,31 +181,60 @@ public class WaypointManager : MonoBehaviour
         ComputeFlowFieldForIndex(newIndex);
         UploadToGPU();
 
-        // Auto-create hive for Source waypoints
+        // Auto-create hive(s) for Source waypoints
         if (wp.type == 0 && autoHive)
         {
             BuildingDefinition def = BuildingLibrary.Instance != null
                 ? BuildingLibrary.Instance.Get(buildingName)
                 : null;
 
-            // Le slot espèce vient du waypoint (slot GPU du joueur qui a posé le bâtiment).
-            // Si la définition précise un slot différent (via waypointSpeciesId), on préfère le waypoint.
-            int slot = wp.speciesIndex;
+            string playerId = PlayerLibrary.Instance?.GetPlayerIdForSlot(wp.speciesIndex);
+            var outputs = def?.ResolvedOutputs();
 
-            hiveList.Add(new HiveData
+            if (outputs != null && outputs.Length > 0)
             {
-                waypointIndex   = newIndex,
-                speciesSlot     = slot,
-                spawnsPerSecond = def != null ? def.spawnsPerSecond : 2f,
-                maxPopulation   = def != null ? def.maxPopulation   : 5000,
-                definition      = def
-            });
+                bool isFirst = true;
+                foreach (var output in outputs)
+                {
+                    int slot = (!string.IsNullOrEmpty(playerId) && PlayerLibrary.Instance != null)
+                        ? PlayerLibrary.Instance.GetSlotIndex(playerId, output.speciesId)
+                        : -1;
+                    if (slot < 0) { isFirst = false; continue; }
 
+                    // Premier output : réutilise le waypoint déjà ajouté.
+                    // Outputs suivants : ajoute un nouveau waypoint Source.
+                    int wpIndex;
+                    if (isFirst)
+                    {
+                        wpIndex = newIndex;
+                    }
+                    else
+                    {
+                        if (waypointList.Count >= 16) { Debug.LogWarning("[WAYPOINTS] Max 16 waypoints reached."); break; }
+                        waypointList.Add(new WaypointData { position = wp.position, type = 0, speciesIndex = slot });
+                        waypointNames.Add(buildingName);
+                        wpIndex = waypointList.Count - 1;
+                        ComputeFlowFieldForIndex(wpIndex);
+                        UploadToGPU();
+                    }
+
+                    hiveList.Add(new HiveData
+                    {
+                        waypointIndex    = wpIndex,
+                        speciesSlot      = slot,
+                        spawnsPerSecond  = output.spawnsPerSecond,
+                        maxPopulation    = output.maxPopulation,
+                        definition       = def,
+                        processResources = isFirst
+                    });
+
+                    isFirst = false;
+                }
+            }
             // Si le bâtiment a une espèce liée, créer automatiquement un waypoint Destination pour elle
             if (def != null && !string.IsNullOrEmpty(def.linkedSpeciesId))
             {
-                string playerId   = PlayerLibrary.Instance?.GetPlayerIdForSlot(slot);
-                int    linkedSlot = (!string.IsNullOrEmpty(playerId) && PlayerLibrary.Instance != null)
+                int linkedSlot = (!string.IsNullOrEmpty(playerId) && PlayerLibrary.Instance != null)
                     ? PlayerLibrary.Instance.GetSlotIndex(playerId, def.linkedSpeciesId)
                     : -1;
                 if (linkedSlot >= 0)

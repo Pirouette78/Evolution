@@ -1,6 +1,8 @@
 {
   "id": "cellule_hote",
-  "displayName": "Cellule Hôte",
-  "waypointSpeciesId": "virus",
-  "waypointType": 1
+  "displayName": "Cellule Hote",
+  "waypointType": 1,
+  "outputs": [
+    { "speciesId": "virus" }
+  ]
 }

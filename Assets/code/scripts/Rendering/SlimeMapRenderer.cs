@@ -557,6 +557,7 @@ public class SlimeMapRenderer : MonoBehaviour
             if (updateFrameBugTracer < 5) Debug.Log($"[RENDERER] Update Frame {updateFrameBugTracer}");
 
             if (!isInitialized || !initialSpawnDone) return;
+            if (speciesSettingsBuffer == null || slotColorsBuffer == null || agentBuffer == null) return;
 
             // Re-bind terrain every frame in case it became available after initialization
             if (TerrainMapRenderer.Instance != null &&

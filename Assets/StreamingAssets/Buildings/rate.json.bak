@@ -5,8 +5,8 @@
   "linkedSpeciesId": "globulerouge",
   "waypointType": 0,
   "outputs": [
-    { "speciesId": "globuleblanc", "spawnsPerSecond": 1.0, "maxPopulation": 2000 },
-    { "speciesId": "plaquette", "spawnsPerSecond": 100.0, "maxPopulation": 2000 }
+    { "speciesId": "globuleblanc", "spawnsPerSecond": 1.0, "maxPopulation": 2000 }
+	{ "speciesId": "plaquette", "spawnsPerSecond": 1.0, "maxPopulation": 2000 }
   ],
   "consumes": [
     { "resource": "oxygen", "amount": 2.0 }

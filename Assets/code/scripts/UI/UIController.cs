@@ -373,8 +373,31 @@ public class UIController : MonoBehaviour
         selectedSpeciesId = speciesId;
 
         int slot = GetCurrentSpeciesSlot();
-        if (toggleVisibility != null && SlimeMapRenderer.Instance != null)
-            toggleVisibility.SetValueWithoutNotify(SlimeMapRenderer.Instance.GetPlayerVisibility(slot));
+        var smr = SlimeMapRenderer.Instance;
+        if (smr != null)
+        {
+            smr.SelectedPlayerIndex = slot;
+            var s = smr.speciesSettings[slot];
+            maxAgeSlider?.SetValueWithoutNotify(s.maxAge);
+            if (maxAgeLabel != null) maxAgeLabel.text = s.maxAge.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+            trailWeightSlider?.SetValueWithoutNotify(s.trailWeight);
+            if (trailWeightLabel != null) trailWeightLabel.text = s.trailWeight.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+            decayRateSlider?.SetValueWithoutNotify(s.decayRate);
+            if (decayRateLabel != null) decayRateLabel.text = s.decayRate.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+            diffuseRateSlider?.SetValueWithoutNotify(s.diffuseRate);
+            if (diffuseRateLabel != null) diffuseRateLabel.text = s.diffuseRate.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+            moveSpeedSlider?.SetValueWithoutNotify(s.moveSpeed);
+            if (moveSpeedLabel != null) moveSpeedLabel.text = s.moveSpeed.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+            turnSpeedSlider?.SetValueWithoutNotify(s.turnSpeed);
+            if (turnSpeedLabel != null) turnSpeedLabel.text = s.turnSpeed.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+            sensorAngleSlider?.SetValueWithoutNotify(s.sensorAngleRad * Mathf.Rad2Deg);
+            if (sensorAngleLabel != null) sensorAngleLabel.text = (s.sensorAngleRad * Mathf.Rad2Deg).ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "°";
+            sensorOffsetSlider?.SetValueWithoutNotify(s.sensorOffsetDst);
+            if (sensorOffsetLabel != null) sensorOffsetLabel.text = s.sensorOffsetDst.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+            sensorSizeSlider?.SetValueWithoutNotify(s.sensorSize);
+            if (sensorSizeLabel != null) sensorSizeLabel.text = s.sensorSize.ToString();
+            toggleVisibility?.SetValueWithoutNotify(smr.GetPlayerVisibility(slot));
+        }
         if (toggleSpeciesOverlay != null && WaypointOverlayRenderer.Instance != null)
             toggleSpeciesOverlay.SetValueWithoutNotify(WaypointOverlayRenderer.Instance.ShowSpeciesOverlay[slot]);
 
@@ -617,10 +640,9 @@ public class UIController : MonoBehaviour
             btn.style.color           = new StyleColor(Color.white);
 
             var capturedDef = def;
-            // Slot GPU : priorité à waypointSpeciesId (espèce que le bâtiment CRÉE),
-            // sinon sid (espèce sous laquelle le bâtiment est listé, ex: linkedSpeciesId).
-            string spawnSid = !string.IsNullOrEmpty(capturedDef.waypointSpeciesId)
-                ? capturedDef.waypointSpeciesId
+            // Slot GPU : premier output si disponible, sinon espèce sous laquelle le bâtiment est listé.
+            string spawnSid = (capturedDef.outputs != null && capturedDef.outputs.Length > 0)
+                ? capturedDef.outputs[0].speciesId
                 : sid;
             int capturedSpecies = PlayerLibrary.Instance != null
                 ? PlayerLibrary.Instance.GetSlotIndex(selectedPlayerId, spawnSid)

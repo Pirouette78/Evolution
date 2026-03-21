@@ -1,10 +1,8 @@
 {
   "id": "moelle",
   "displayName": "Moelle",
-  "waypointSpeciesId": "plaquette",
   "waypointType": 0,
-  "spawnsPerSecond": 1.0,
-  "maxPopulation": 3000,
-  "consumes": [],
-  "produces": []
+  "outputs": [
+    { "speciesId": "plaquette", "spawnsPerSecond": 1.0, "maxPopulation": 3000 }
+  ]
 }
