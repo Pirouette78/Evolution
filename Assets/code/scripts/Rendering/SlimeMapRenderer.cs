@@ -52,6 +52,7 @@ public class SlimeMapRenderer : MonoBehaviour
     private ComputeBuffer agentBuffer;
     private int maxAgents = 600000;
     private int currentAgentCount = 0;
+    private int nextSpawnIndex = 0;   // index circulaire pour réutiliser les slots morts
     private bool isInitialized = false;
     private bool initialSpawnDone = false;
     private int playerVisibilityMask = 63; // 111111 in binary (all 6 visible by default)
@@ -412,7 +413,6 @@ public class SlimeMapRenderer : MonoBehaviour
     public void AddAgentsAt(int count, int speciesIndex, Vector2 position)
     {
         if (!isInitialized) return;
-        count = Mathf.Min(count, maxAgents - currentAgentCount);
         if (count <= 0) return;
 
         Agent[] newAgents = new Agent[count];
@@ -433,17 +433,27 @@ public class SlimeMapRenderer : MonoBehaviour
                 typeOfWorker = new TypeOfWorker()
             };
         }
-        agentBuffer.SetData(newAgents, 0, currentAgentCount, count);
-        currentAgentCount += count;
+        int writePos;
+        if (currentAgentCount + count <= maxAgents)
+        {
+            writePos = currentAgentCount;
+            currentAgentCount += count;
+        }
+        else
+        {
+            // Buffer plein : réutilisation circulaire des slots morts
+            currentAgentCount = maxAgents;
+            writePos = nextSpawnIndex;
+            nextSpawnIndex = (nextSpawnIndex + count) % maxAgents;
+        }
+        agentBuffer.SetData(newAgents, 0, writePos, count);
     }
 
     /// <summary>Append count new agents to the GPU buffer.</summary>
     public void AddAgents(int count, int forceSpecies = -1)
     {
         if (!isInitialized) { Debug.LogWarning("[RENDERER] Not initialized."); return; }
-        
-        count = Mathf.Min(count, maxAgents - currentAgentCount);
-        if (count <= 0) { Debug.LogWarning("[RENDERER] Max agents reached."); return; }
+        if (count <= 0) return;
 
         // Build only the NEW agents on the CPU
         Agent[] newAgents = new Agent[count];
@@ -465,10 +475,21 @@ public class SlimeMapRenderer : MonoBehaviour
         }
 
         // Upload only the new slice (no full-buffer stall)
-        agentBuffer.SetData(newAgents, 0, currentAgentCount, count);
-        currentAgentCount += count;
+        int writePos;
+        if (currentAgentCount + count <= maxAgents)
+        {
+            writePos = currentAgentCount;
+            currentAgentCount += count;
+        }
+        else
+        {
+            currentAgentCount = maxAgents;
+            writePos = nextSpawnIndex;
+            nextSpawnIndex = (nextSpawnIndex + count) % maxAgents;
+        }
+        agentBuffer.SetData(newAgents, 0, writePos, count);
 
-        Debug.Log($"[RENDERER] Added {count} agents. Total: {currentAgentCount}");
+        Debug.Log($"[RENDERER] Added {count} agents. Total: {currentAgentCount} (writePos={writePos})");
     }
 
     private Vector2 GetSpawnPosition()
