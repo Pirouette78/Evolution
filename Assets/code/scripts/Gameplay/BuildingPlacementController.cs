@@ -45,6 +45,13 @@ public class BuildingPlacementController : MonoBehaviour
     public static BuildingInfo[] GetBuildings(SpeciesType type)
         => BuildingsBySpecies.TryGetValue(type, out var b) ? b : System.Array.Empty<BuildingInfo>();
 
+    /// <summary>
+    /// Retourne la BuildingDefinition complète pour un nom de bâtiment (lookup insensible à la casse).
+    /// Null si BuildingLibrary n'est pas encore chargé ou si le nom est inconnu.
+    /// </summary>
+    public static BuildingDefinition GetDefinition(string buildingName)
+        => BuildingLibrary.Instance != null ? BuildingLibrary.Instance.Get(buildingName) : null;
+
     // ── Events ──────────────────────────────────────────────────────
 
     public event System.Action               OnPlacementStarted;

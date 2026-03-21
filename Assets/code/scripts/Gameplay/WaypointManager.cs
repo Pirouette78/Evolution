@@ -28,6 +28,8 @@ public class WaypointManager : MonoBehaviour
         public float spawnsPerSecond;
         public int   maxPopulation;
         [HideInInspector] public float accumulator;
+        /// <summary>Définition du bâtiment (chargée depuis BuildingLibrary). Peut être null si id inconnu.</summary>
+        [System.NonSerialized] public BuildingDefinition definition;
     }
 
     [Header("Waypoints initiaux (optionnel, pré-configurés)")]
@@ -90,14 +92,43 @@ public class WaypointManager : MonoBehaviour
     private void Update()
     {
         if (SlimeMapRenderer.Instance == null || !SlimeMapRenderer.Instance.IsReady) return;
+        if (ResourceManager.Instance == null) return;
 
         foreach (var hive in hiveList)
         {
             if (hive.speciesSlot < 0 || hive.speciesSlot >= 6) continue;
             if (SlimeMapRenderer.Instance.AliveSpeciesCounts[hive.speciesSlot] >= (uint)hive.maxPopulation) continue;
 
-            hive.accumulator += Time.deltaTime;
-            float interval = hive.spawnsPerSecond > 0f ? 1f / hive.spawnsPerSecond : float.MaxValue;
+            var def = hive.definition;
+            float dt = Time.deltaTime;
+
+            // ── Production passive de ressources (ex : Poumon → oxygène) ──
+            if (def != null && def.produces != null)
+            {
+                foreach (var prod in def.produces)
+                    ResourceManager.Instance.Produce(ResourceManager.Parse(prod.resource), prod.amount * dt);
+            }
+
+            // ── Consommation de ressources + efficacité ─────────────────
+            float efficiency = 1f;
+            if (def != null && def.scalesWithOxygen && def.oxygenRequiredPerSecond > 0f)
+            {
+                float needed  = def.oxygenRequiredPerSecond * dt;
+                float consumed = ResourceManager.Instance.Consume(ResourceType.Oxygen, needed);
+                efficiency = needed > 0f ? consumed / needed : 1f;
+            }
+            else if (def != null && def.consumes != null)
+            {
+                foreach (var req in def.consumes)
+                    ResourceManager.Instance.Consume(ResourceManager.Parse(req.resource), req.amount * dt);
+            }
+
+            // ── Spawn modulé par l'efficacité ───────────────────────────
+            float effectiveRate = hive.spawnsPerSecond * efficiency;
+            if (effectiveRate <= 0f) continue;
+
+            hive.accumulator += dt;
+            float interval = 1f / effectiveRate;
             if (hive.accumulator >= interval)
             {
                 hive.accumulator -= interval;
@@ -141,12 +172,18 @@ public class WaypointManager : MonoBehaviour
         // Auto-create hive for Source waypoints
         if (wp.type == 0 && autoHive)
         {
+            // Récupère la définition depuis BuildingLibrary (id = buildingName en minuscules)
+            BuildingDefinition def = BuildingLibrary.Instance != null
+                ? BuildingLibrary.Instance.Get(buildingName)
+                : null;
+
             hiveList.Add(new HiveData
             {
-                waypointIndex  = newIndex,
-                speciesSlot    = wp.speciesIndex,
-                spawnsPerSecond = 2f,
-                maxPopulation  = 5000
+                waypointIndex   = newIndex,
+                speciesSlot     = wp.speciesIndex,
+                spawnsPerSecond = def != null ? def.spawnsPerSecond : 2f,
+                maxPopulation   = def != null ? def.maxPopulation   : 5000,
+                definition      = def
             });
         }
 

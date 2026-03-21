@@ -1,0 +1,15 @@
+{
+  "id": "rate",
+  "displayName": "Rate",
+  "poiImagePath": "POI/rate",
+  "speciesSlot": 1,
+  "waypointType": 0,
+  "spawnsPerSecond": 1.0,
+  "maxPopulation": 2000,
+  "consumes": [
+    { "resource": "oxygen", "amount": 2.0 }
+  ],
+  "produces": [],
+  "scalesWithOxygen": true,
+  "oxygenRequiredPerSecond": 2.0
+}
