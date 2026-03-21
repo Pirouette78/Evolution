@@ -56,34 +56,14 @@ public class BuildingDefinition
     /// <summary>Quantité de la ressource nécessaire (u/s) pour fonctionner à 100%.</summary>
     public float resourceRequiredPerSecond;
 
-    /// <summary>[Héritage] Équivalent à scalesWithResource = "oxygen". Ignoré si scalesWithResource est renseigné.</summary>
-    public bool scalesWithOxygen;
-
-    /// <summary>[Héritage] Équivalent à resourceRequiredPerSecond. Ignoré si resourceRequiredPerSecond > 0.</summary>
-    public float oxygenRequiredPerSecond;
-
     // ── Propriétés résolues (runtime, non sérialisées) ────────────────
 
-    /// <summary>
-    /// Ressource de scaling résolue : utilise scalesWithResource en priorité,
-    /// puis "oxygen" si scalesWithOxygen est true (héritage).
-    /// </summary>
-    public string ResolvedScaleResource
-    {
-        get
-        {
-            if (!string.IsNullOrEmpty(scalesWithResource)) return scalesWithResource.ToLowerInvariant();
-            if (scalesWithOxygen) return "oxygen";
-            return null;
-        }
-    }
+    /// <summary>Ressource de scaling résolue (null si non définie).</summary>
+    public string ResolvedScaleResource =>
+        string.IsNullOrEmpty(scalesWithResource) ? null : scalesWithResource.ToLowerInvariant();
 
-    /// <summary>
-    /// Quantité de scaling résolue : utilise resourceRequiredPerSecond en priorité,
-    /// puis oxygenRequiredPerSecond (héritage).
-    /// </summary>
-    public float ResolvedScaleAmount =>
-        resourceRequiredPerSecond > 0f ? resourceRequiredPerSecond : oxygenRequiredPerSecond;
+    /// <summary>Quantité de la ressource de scaling nécessaire par seconde.</summary>
+    public float ResolvedScaleAmount => resourceRequiredPerSecond;
 }
 
 /// <summary>Une espèce produite par un bâtiment, avec son propre taux et sa population max.</summary>

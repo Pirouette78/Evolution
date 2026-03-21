@@ -15,23 +15,16 @@ public class RuntimeSingletonInjector : MonoBehaviour {
         
         // Check if singleton already exists
         var query = entityManager.CreateEntityQuery(typeof(GlobalBootstrapData));
-        if (query.CalculateEntityCount() > 0) {
-            Debug.Log("[INJECTOR] GlobalBootstrapData already exists. Skipping injection.");
-            return;
-        }
+        if (query.CalculateEntityCount() > 0) return;
 
-        Debug.LogWarning("[INJECTOR] Manually injecting GlobalBootstrapData singleton...");
         var entity = entityManager.CreateEntity();
-        
         entityManager.AddComponentData(entity, new GlobalBootstrapData {
-            CellPrefab = Entity.Null, 
+            CellPrefab = Entity.Null,
             FoodPrefab = Entity.Null,
             InitialCellCount = authoring.InitialCellCount,
             InitialFoodCount = authoring.InitialFoodCount,
             SpawnRadius = authoring.SpawnRadius,
             HasSpawned = false
         });
-        
-        Debug.LogWarning("[INJECTOR] Singleton injected. Warning: Prefabs are Entity.Null. WorldBootstrapSystem may need adjustment.");
     }
 }
