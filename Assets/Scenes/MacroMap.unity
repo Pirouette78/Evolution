@@ -168,6 +168,16 @@ MonoBehaviour:
     trailWeight: 0
     decayRate: 0
     diffuseRate: 0
+    warDamageRate: 0
+    warMask: 0
+    behaviorType: 0
+    energyConsumptionRate: 0
+    energyReward: 0
+    startingEnergy: 0
+    arrivalRadius: 0
+    loadingTime: 0
+    unloadingTime: 0
+    waitForStock: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -177,6 +187,16 @@ MonoBehaviour:
     trailWeight: 0
     decayRate: 0
     diffuseRate: 0
+    warDamageRate: 0
+    warMask: 0
+    behaviorType: 0
+    energyConsumptionRate: 0
+    energyReward: 0
+    startingEnergy: 0
+    arrivalRadius: 0
+    loadingTime: 0
+    unloadingTime: 0
+    waitForStock: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -186,6 +206,16 @@ MonoBehaviour:
     trailWeight: 0
     decayRate: 0
     diffuseRate: 0
+    warDamageRate: 0
+    warMask: 0
+    behaviorType: 0
+    energyConsumptionRate: 0
+    energyReward: 0
+    startingEnergy: 0
+    arrivalRadius: 0
+    loadingTime: 0
+    unloadingTime: 0
+    waitForStock: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -195,6 +225,16 @@ MonoBehaviour:
     trailWeight: 0
     decayRate: 0
     diffuseRate: 0
+    warDamageRate: 0
+    warMask: 0
+    behaviorType: 0
+    energyConsumptionRate: 0
+    energyReward: 0
+    startingEnergy: 0
+    arrivalRadius: 0
+    loadingTime: 0
+    unloadingTime: 0
+    waitForStock: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -204,6 +244,16 @@ MonoBehaviour:
     trailWeight: 0
     decayRate: 0
     diffuseRate: 0
+    warDamageRate: 0
+    warMask: 0
+    behaviorType: 0
+    energyConsumptionRate: 0
+    energyReward: 0
+    startingEnergy: 0
+    arrivalRadius: 0
+    loadingTime: 0
+    unloadingTime: 0
+    waitForStock: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -213,6 +263,44 @@ MonoBehaviour:
     trailWeight: 0
     decayRate: 0
     diffuseRate: 0
+    warDamageRate: 0
+    warMask: 0
+    behaviorType: 0
+    energyConsumptionRate: 0
+    energyReward: 0
+    startingEnergy: 0
+    arrivalRadius: 0
+    loadingTime: 0
+    unloadingTime: 0
+    waitForStock: 0
+  AliveSpeciesCounts: 000000000000000000000000000000000000000000000000
+  speciesTypes: 000000000000000000000000000000000000000000000000
+  speciesIds:
+  - 
+  - 
+  - 
+  - 
+  - 
+  - 
+  numActiveSlots: 16
+  slotColors:
+  - {x: 0, y: 0, z: 0, w: 0}
+  - {x: 0, y: 0, z: 0, w: 0}
+  - {x: 0, y: 0, z: 0, w: 0}
+  - {x: 0, y: 0, z: 0, w: 0}
+  - {x: 0, y: 0, z: 0, w: 0}
+  - {x: 0, y: 0, z: 0, w: 0}
+  - {x: 0, y: 0, z: 0, w: 0}
+  - {x: 0, y: 0, z: 0, w: 0}
+  - {x: 0, y: 0, z: 0, w: 0}
+  - {x: 0, y: 0, z: 0, w: 0}
+  - {x: 0, y: 0, z: 0, w: 0}
+  - {x: 0, y: 0, z: 0, w: 0}
+  - {x: 0, y: 0, z: 0, w: 0}
+  - {x: 0, y: 0, z: 0, w: 0}
+  - {x: 0, y: 0, z: 0, w: 0}
+  - {x: 0, y: 0, z: 0, w: 0}
+  DeliveryCounts: 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 --- !u!23 &104352733
 MeshRenderer:
   m_ObjectHideFlags: 0

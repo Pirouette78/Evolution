@@ -7,24 +7,17 @@
 #pragma kernel CountAlive
 #pragma kernel ClearDeliveryCounters
 
-// FORCING RECOMPILE 2
-
-struct TypeOfWorker {
-    int    fighter;
-    int    worker;
-    int    builder;
-    int    queen;
-    int    scout;
-    int    foodCollector;
-};
 
 struct Agent {
     float2 position;
     float  angle;
     int    speciesIndex;
-    float  age;         // Time alive in seconds
+    float  age;      // Time alive in seconds
     float  hunger;
-    TypeOfWorker    typeOfWorker;
+    int    navState; // 0=cherche Source, 1→Source, 2=chargement, 3→Dest, 4=déchargement
+    int    targetWp; // index waypoint cible (-1=aucun)
+    int    pathIdx;  // index dans le chemin lissé (-1=utiliser flow field)
+    int    cargo;    // 0=vide, 1=chargé
 };
 
 RWStructuredBuffer<Agent> agents;
@@ -56,10 +49,10 @@ struct SpeciesSettings {
     float energyConsumptionRate;// energy drained per second (Bacterie)
     float energyReward;         // energy released via trail (GlobuleRouge)
     float startingEnergy;       // initial agent.hunger value at spawn
-    float arrivalRadius;        // distance "arrived" at waypoint (was pad0)
+    float arrivalRadius;        // distance seuil pour considérer un waypoint "atteint"
     float loadingTime;          // time to wait at Source
     float unloadingTime;        // time to wait at Destination
-    float waitForStock;         // 1 = attend stock dispo avant de partir (remplace pad1)
+    float waitForStock;         // 1 = attend le stock disponible avant de partir
 };
 
 struct Waypoint {
@@ -172,7 +165,7 @@ bool navigateViaFlowField(inout Agent agent, SpeciesSettings settings, int waypo
 }
 
 // Navigate agent along a pre-computed string-pulled path (smoothedPaths buffer).
-// pathIdx    = index courant dans le chemin (typeOfWorker.builder).
+// pathIdx    = index courant dans le chemin (agent.pathIdx).
 // waypointIdx = index du waypoint de destination (targetIdx de l'agent).
 // Retourne true quand l'agent atteint le dernier waypoint (la Destination).
 bool navigateViaSmoothedPath(inout Agent agent, SpeciesSettings settings,
@@ -228,8 +221,8 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
 
     if (useNavigation)
     {
-        int navState   = agent.typeOfWorker.fighter;
-        int targetIdx  = agent.typeOfWorker.worker;
+        int navState   = agent.navState;
+        int targetIdx  = agent.targetWp;
 
         // navState 0: find nearest Source waypoint for this species
         if (navState == 0)
@@ -279,7 +272,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
                 }
                 else
                 {
-                    agent.typeOfWorker.queen = hasStock ? 1 : 0; // 1 = chargé, 0 = vide
+                    agent.cargo = hasStock ? 1 : 0; // 1 = chargé, 0 = vide
 
                     // Compter les destinations valides pour cette espèce
                     int validCount = 0;
@@ -320,7 +313,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
                         bool   nearStart   = hasPath &&
                                             length(smoothedPaths[smMeta.x] - agent.position)
                                                 < settings.arrivalRadius * 4.0;
-                        agent.typeOfWorker.builder = nearStart ? 0 : -1; // -1 = flow field
+                        agent.pathIdx = nearStart ? 0 : -1; // -1 = flow field
                     }
                     else
                     {
@@ -334,13 +327,13 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
         else if (navState == 3 && targetIdx >= 0)
         {
             bool arrived = false;
-            int  pathIdx = agent.typeOfWorker.builder;
+            int  pathIdx = agent.pathIdx;
             // pathIdx >= 0  : chemin lissé (agent issu de la source principale)
             // pathIdx == -1 : flow field   (agent issu d'une autre source, ou pas de chemin)
             if (pathIdx >= 0 && smoothedPathMeta[targetIdx].y > 0)
             {
                 arrived = navigateViaSmoothedPath(agent, settings, pathIdx, targetIdx);
-                agent.typeOfWorker.builder = pathIdx;
+                agent.pathIdx = pathIdx;
             }
             else
             {
@@ -360,17 +353,17 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
             agent.hunger -= deltaTime;
             if (agent.hunger <= 0)
             {
-                if (agent.typeOfWorker.queen == 1 && targetIdx >= 0)
+                if (agent.cargo == 1 && targetIdx >= 0)
                 {
                     InterlockedAdd(deliveryCounters[targetIdx], 1);
-                    agent.typeOfWorker.queen = 0;
+                    agent.cargo = 0;
                 }
                 navState = 0;
             }
         }
 
-        agent.typeOfWorker.fighter = navState;
-        agent.typeOfWorker.worker  = targetIdx;
+        agent.navState = navState;
+        agent.targetWp = targetIdx;
     }
     else
     {

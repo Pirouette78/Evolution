@@ -43,7 +43,6 @@ public class SlimeMapRenderer : MonoBehaviour
     public bool IsReady              => isInitialized;
     public int  AgentCount           => currentAgentCount;
 
-    public int SelectedPlayerIndex = 0;
     public SpeciesSettings[] speciesSettings = new SpeciesSettings[16];
     public uint[]   AliveSpeciesCounts = new uint[16];
     public SpeciesType[] speciesTypes  = new SpeciesType[16];
@@ -91,10 +90,10 @@ public class SlimeMapRenderer : MonoBehaviour
         public float energyConsumptionRate; // energy drained per second (Bacterie)
         public float energyReward;          // energy released via trail (GlobuleRouge)
         public float startingEnergy;        // initial agent.hunger value at spawn
-        public float arrivalRadius;         // distance to consider "arrived" at waypoint (was pad0)
+        public float arrivalRadius;         // distance seuil pour considérer un waypoint "atteint"
         public float loadingTime;           // time to wait at Source waypoint
         public float unloadingTime;         // time to wait at Destination waypoint
-        public float waitForStock;          // 1 = attend stock dispo (remplace pad1) → 76 bytes total
+        public float waitForStock;          // 1 = attend le stock disponible avant de partir  → 76 bytes total
     }
     private ComputeBuffer speciesSettingsBuffer;
     private ComputeBuffer speciesCountsBuffer;
@@ -105,25 +104,18 @@ public class SlimeMapRenderer : MonoBehaviour
     private Texture2DArray flowFieldMap;
     private bool flowFieldMapIsOwned = false;
 
-    struct TypeOfWorker
-    {
-        public int fighter;
-        public int worker;
-        public int builder;
-        public int queen;
-        public int scout;
-        public int foodCollector;
-    }
-
     struct Agent
     {
-        public Vector2 position;   // 8
-        public float   angle;      // 4
-        public int     speciesIndex;// 4
-        public float   age;         // 4
-        public float   hunger;      // 4
-        public TypeOfWorker typeOfWorker;// 24
-    }
+        public Vector2 position;     // 8
+        public float   angle;        // 4
+        public int     speciesIndex; // 4
+        public float   age;          // 4
+        public float   hunger;       // 4
+        public int     navState;     // 4 : 0=cherche Source, 1→Source, 2=chargement, 3→Dest, 4=déchargement
+        public int     targetWp;     // 4 : index waypoint cible (-1=aucun)
+        public int     pathIdx;      // 4 : index chemin lissé (-1=flow field)
+        public int     cargo;        // 4 : 0=vide, 1=chargé
+    } // total 40 bytes
 
     // ================== Unity lifecycle ============================
 
@@ -140,9 +132,8 @@ public class SlimeMapRenderer : MonoBehaviour
         slotColors        = new Vector4[16];
         AliveSpeciesCounts= new uint[16];
 
-        agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*5 + sizeof(int)*7);
-        // struct size (48 bytes) = 5 floats (20) + 7 ints (28)
-        // C# size corresponds to exactly 48 bytes via padding
+        agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*5 + sizeof(int)*5);
+        // struct size (40 bytes) = 5 floats (20) + 5 ints (20)
         speciesSettingsBuffer = new ComputeBuffer(16, 76);
         speciesCountsBuffer   = new ComputeBuffer(16, sizeof(uint));
         slotColorsBuffer      = new ComputeBuffer(16, sizeof(float) * 4);
@@ -480,7 +471,6 @@ public class SlimeMapRenderer : MonoBehaviour
                 speciesIndex = speciesIndex,
                 age          = 0f,
                 hunger       = speciesSettings[speciesIndex].startingEnergy,
-                typeOfWorker = new TypeOfWorker()
             };
         }
         int writePos;
@@ -520,7 +510,6 @@ public class SlimeMapRenderer : MonoBehaviour
                 speciesIndex= pid,
                 age         = 0f,
                 hunger      = speciesSettings[pid].startingEnergy,
-                typeOfWorker= new TypeOfWorker()
             };
         }
 
@@ -559,14 +548,10 @@ public class SlimeMapRenderer : MonoBehaviour
 
     // ================== Simulation loop ============================
 
-    private int updateFrameBugTracer = 0;
     private int countFrameAccum = 0;
     private void Update()
     {
         try {
-            updateFrameBugTracer++;
-            if (updateFrameBugTracer < 5) Debug.Log($"[RENDERER] Update Frame {updateFrameBugTracer}");
-
             if (!isInitialized || !initialSpawnDone) return;
             if (speciesSettingsBuffer == null || slotColorsBuffer == null || agentBuffer == null) return;
 
@@ -641,12 +626,6 @@ public class SlimeMapRenderer : MonoBehaviour
                 // Lire et réinitialiser les compteurs de livraison GPU
                 deliveryCounterBuffer.GetData(DeliveryCounts);
                 SlimeShader.Dispatch(clearDeliveryKernel, 1, 1, 1);
-
-                if (updateFrameBugTracer < 5) {
-                    uint totalAlive = 0;
-                    for (int i=0; i<16; i++) totalAlive += AliveSpeciesCounts[i];
-                    Debug.Log($"[RENDERER] alive={totalAlive}/{currentAgentCount}, P0={AliveSpeciesCounts[0]}");
-                }
             }
 
             // 5. Compose the final display map

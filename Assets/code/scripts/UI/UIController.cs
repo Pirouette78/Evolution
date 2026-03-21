@@ -310,8 +310,6 @@ public class UIController : MonoBehaviour
         int firstSlot = GetCurrentSpeciesSlot();
 
         if (SlimeMapRenderer.Instance != null) {
-            SlimeMapRenderer.Instance.SelectedPlayerIndex = firstSlot;
-
             var settings = SlimeMapRenderer.Instance.speciesSettings[firstSlot];
             maxAgeSlider?.SetValueWithoutNotify(settings.maxAge);
             if (maxAgeLabel != null) maxAgeLabel.text = settings.maxAge.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
@@ -380,7 +378,6 @@ public class UIController : MonoBehaviour
         var smr = SlimeMapRenderer.Instance;
         if (smr != null)
         {
-            smr.SelectedPlayerIndex = slot;
             var s = smr.speciesSettings[slot];
             maxAgeSlider?.SetValueWithoutNotify(s.maxAge);
             if (maxAgeLabel != null) maxAgeLabel.text = s.maxAge.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
