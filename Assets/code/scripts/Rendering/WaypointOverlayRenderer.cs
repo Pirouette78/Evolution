@@ -134,26 +134,29 @@ public class WaypointOverlayRenderer : MonoBehaviour
             Color lineCol = Palette[s];
             lineCol.a = 0.7f;
 
-            Vector2[] smoothPath = WaypointManager.Instance.GetSmoothedPath(s);
-            if (smoothPath != null && smoothPath.Length >= 2)
+            // Dessine un chemin lissé par destination (supporte plusieurs destinations)
+            var smoothPaths = WaypointManager.Instance.GetSmoothedPathsForSpecies(s);
+            if (smoothPaths != null && smoothPaths.Count > 0)
             {
-                // Dessine le chemin lissé segment par segment
-                for (int p = 0; p < smoothPath.Length - 1; p++)
-                    DrawDashedLine(MapToWorld(smoothPath[p]), MapToWorld(smoothPath[p + 1]),
-                                   lineCol, dashOffset, 0.4f);
+                foreach (var path in smoothPaths)
+                    for (int p = 0; p < path.Length - 1; p++)
+                        DrawDashedLine(MapToWorld(path[p]), MapToWorld(path[p + 1]),
+                                       lineCol, dashOffset, 0.4f);
             }
             else
             {
-                // Fallback : ligne droite Source → Destination
-                Vector2? src = null, dst = null;
+                // Fallback : ligne droite Source → chaque Destination
+                Vector2? src = null;
+                for (int i = 0; i < waypoints.Length; i++)
+                    if (waypoints[i].speciesIndex == s && waypoints[i].type == 0) { src = waypoints[i].position; break; }
+                if (src == null) continue;
+
                 for (int i = 0; i < waypoints.Length; i++)
                 {
-                    if (waypoints[i].speciesIndex != s) continue;
-                    if (waypoints[i].type == 0 && src == null) src = waypoints[i].position;
-                    if (waypoints[i].type == 1 && dst == null) dst = waypoints[i].position;
+                    if (waypoints[i].speciesIndex != s || waypoints[i].type != 1) continue;
+                    DrawDashedLine(MapToWorld(src.Value), MapToWorld(waypoints[i].position),
+                                   lineCol, dashOffset, 0.05f);
                 }
-                if (src == null || dst == null) continue;
-                DrawDashedLine(MapToWorld(src.Value), MapToWorld(dst.Value), lineCol, dashOffset, 0.05f);
             }
         }
 

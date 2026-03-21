@@ -167,11 +167,13 @@ bool navigateViaFlowField(inout Agent agent, SpeciesSettings settings, int waypo
 }
 
 // Navigate agent along a pre-computed string-pulled path (smoothedPaths buffer).
-// pathIdx = index courant dans le chemin de l'espèce (typeOfWorker.builder).
+// pathIdx    = index courant dans le chemin (typeOfWorker.builder).
+// waypointIdx = index du waypoint de destination (targetIdx de l'agent).
 // Retourne true quand l'agent atteint le dernier waypoint (la Destination).
-bool navigateViaSmoothedPath(inout Agent agent, SpeciesSettings settings, inout int pathIdx)
+bool navigateViaSmoothedPath(inout Agent agent, SpeciesSettings settings,
+                              inout int pathIdx, int waypointIdx)
 {
-    int2 meta  = smoothedPathMeta[agent.speciesIndex];
+    int2 meta  = smoothedPathMeta[waypointIdx]; // indexé par destination, pas par espèce
     int  start = meta.x;
     int  count = meta.y;
     if (count == 0) return false; // pas de chemin, l'appelant doit utiliser le flow field
@@ -262,16 +264,31 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
             agent.hunger -= deltaTime;
             if (agent.hunger <= 0)
             {
-                // Find nearest Destination waypoint
-                int   bestIdx  = -1;
-                float bestDist = 1e9;
+                // Compter les destinations valides pour cette espèce
+                int validCount = 0;
                 for (int w = 0; w < numWaypoints; w++)
                 {
-                    if (waypoints[w].type != 1) continue;       // Destination only
+                    if (waypoints[w].type != 1) continue;
                     if (waypoints[w].speciesIndex != agent.speciesIndex) continue;
-                    float d = length(waypoints[w].position - agent.position);
-                    if (d < bestDist) { bestDist = d; bestIdx = w; }
+                    validCount++;
                 }
+
+                int bestIdx = -1;
+                if (validCount > 0)
+                {
+                    // Tirage uniforme parmi les destinations valides
+                    uint r    = hash(random + 3u);
+                    int  pick = clamp((int)(scaleToRange01(r) * (float)validCount), 0, validCount - 1);
+                    int  rank = 0;
+                    for (int w = 0; w < numWaypoints; w++)
+                    {
+                        if (waypoints[w].type != 1) continue;
+                        if (waypoints[w].speciesIndex != agent.speciesIndex) continue;
+                        if (rank == pick) { bestIdx = w; break; }
+                        rank++;
+                    }
+                }
+
                 if (bestIdx >= 0)
                 {
                     targetIdx = bestIdx;
@@ -289,10 +306,10 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
         else if (navState == 3 && targetIdx >= 0)
         {
             bool arrived = false;
-            if (smoothedPathMeta[agent.speciesIndex].y > 0)
+            if (smoothedPathMeta[targetIdx].y > 0)
             {
                 int pathIdx = agent.typeOfWorker.builder;
-                arrived = navigateViaSmoothedPath(agent, settings, pathIdx);
+                arrived = navigateViaSmoothedPath(agent, settings, pathIdx, targetIdx);
                 agent.typeOfWorker.builder = pathIdx;
             }
             else

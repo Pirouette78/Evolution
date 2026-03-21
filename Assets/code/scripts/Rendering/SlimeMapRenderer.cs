@@ -237,13 +237,13 @@ public class SlimeMapRenderer : MonoBehaviour
         SlimeShader.SetBuffer(updateKernel, "waypoints", waypointBuffer);
         SlimeShader.SetInt("numWaypoints", 0);
 
-        // Smooth path buffers (string pulling)
-        smoothedPathBuffer = new ComputeBuffer(6 * 64, sizeof(float) * 2); // float2 × 384
-        smoothedPathBuffer.SetData(new Vector2[6 * 64]);
+        // Smooth path buffers (string pulling) — indexés par waypoint (0-15), pas par espèce
+        smoothedPathBuffer = new ComputeBuffer(16 * 64, sizeof(float) * 2); // float2 × 1024
+        smoothedPathBuffer.SetData(new Vector2[16 * 64]);
         SlimeShader.SetBuffer(updateKernel, "smoothedPaths", smoothedPathBuffer);
 
-        smoothedPathMetaBuffer = new ComputeBuffer(6, sizeof(int) * 2); // int2 × 6
-        smoothedPathMetaBuffer.SetData(new Vector2Int[6]);
+        smoothedPathMetaBuffer = new ComputeBuffer(16, sizeof(int) * 2); // int2 × 16
+        smoothedPathMetaBuffer.SetData(new Vector2Int[16]);
         SlimeShader.SetBuffer(updateKernel, "smoothedPathMeta", smoothedPathMetaBuffer);
 
         // Flow field texture array (16 slices, one per waypoint, RG = direction)
@@ -404,8 +404,8 @@ public class SlimeMapRenderer : MonoBehaviour
     {
         if (smoothedPathBuffer == null || smoothedPathMetaBuffer == null) return;
         smoothedPathBuffer.SetData(flatPaths);
-        var meta = new Vector2Int[6];
-        for (int i = 0; i < 6; i++) meta[i] = new Vector2Int(starts[i], counts[i]);
+        var meta = new Vector2Int[16]; // indexé par waypoint (0-15)
+        for (int i = 0; i < 16; i++) meta[i] = new Vector2Int(starts[i], counts[i]);
         smoothedPathMetaBuffer.SetData(meta);
     }
 

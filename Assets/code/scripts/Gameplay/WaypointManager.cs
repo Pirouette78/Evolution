@@ -47,8 +47,8 @@ public class WaypointManager : MonoBehaviour
     private Texture2DArray flowFieldTexture;
     private bool           flowFieldReady = false;
 
-    // Smoothed paths (string pulling) — one per species slot 0-5
-    private Vector2[][] smoothPaths = new Vector2[6][];
+    // Smoothed paths (string pulling) — indexés par waypoint de destination (0-15)
+    private Vector2[][] smoothPaths = new Vector2[16][];
     private const int   MaxSmoothedWaypoints = 64;
 
     private void Awake()
@@ -245,8 +245,18 @@ public class WaypointManager : MonoBehaviour
         ComputeSmoothedPaths();
     }
 
-    public Vector2[] GetSmoothedPath(int speciesIndex)
-        => (speciesIndex >= 0 && speciesIndex < 6) ? smoothPaths[speciesIndex] : null;
+    /// <summary>Retourne tous les chemins lissés (vers chaque destination) d'une espèce.</summary>
+    public List<Vector2[]> GetSmoothedPathsForSpecies(int speciesIndex)
+    {
+        var result = new List<Vector2[]>();
+        for (int wi = 0; wi < Mathf.Min(waypointList.Count, 16); wi++)
+        {
+            if (waypointList[wi].speciesIndex != speciesIndex) continue;
+            if (waypointList[wi].type != 1) continue;
+            if (smoothPaths[wi] != null) result.Add(smoothPaths[wi]);
+        }
+        return result;
+    }
 
     // ── BFS ─────────────────────────────────────────────────────────
 
@@ -357,7 +367,10 @@ public class WaypointManager : MonoBehaviour
         return result;
     }
 
-    /// <summary>Pour chaque espèce ayant une Source et une Destination, calcule le chemin lissé et l'envoie au GPU.</summary>
+    /// <summary>
+    /// Pour chaque waypoint de DESTINATION, calcule le chemin lissé depuis la Source de la même espèce.
+    /// Indexé par index de waypoint (0-15), pas par espèce — supporte plusieurs destinations par espèce.
+    /// </summary>
     private void ComputeSmoothedPaths()
     {
         var terrain = TerrainMapRenderer.Instance;
@@ -365,33 +378,38 @@ public class WaypointManager : MonoBehaviour
         int W = terrain.Width, H = terrain.Height;
         bool[,] walkable = terrain.WalkabilityGrid;
 
-        var flatBuffer = new Vector2[6 * MaxSmoothedWaypoints];
-        var starts     = new int[6];
-        var counts     = new int[6];
+        var flatBuffer = new Vector2[16 * MaxSmoothedWaypoints];
+        var starts     = new int[16];
+        var counts     = new int[16];
 
-        for (int s = 0; s < 6; s++)
+        for (int i = 0; i < 16; i++)
         {
-            smoothPaths[s] = null;
-            starts[s]      = s * MaxSmoothedWaypoints;
-            counts[s]      = 0;
+            smoothPaths[i] = null;
+            starts[i]      = i * MaxSmoothedWaypoints;
+            counts[i]      = 0;
+        }
 
-            int srcWp = -1, dstWp = -1;
+        // Un chemin lissé par waypoint de destination
+        for (int wi = 0; wi < Mathf.Min(waypointList.Count, 16); wi++)
+        {
+            if (waypointList[wi].type != 1) continue; // destinations seulement
+
+            int s = waypointList[wi].speciesIndex;
+
+            // Trouver la source de la même espèce
+            int srcWp = -1;
             for (int w = 0; w < waypointList.Count; w++)
-            {
-                if (waypointList[w].speciesIndex != s) continue;
-                if (waypointList[w].type == 0 && srcWp == -1) srcWp = w;
-                if (waypointList[w].type == 1 && dstWp == -1) dstWp = w;
-            }
-            if (srcWp < 0 || dstWp < 0) continue;
+                if (waypointList[w].speciesIndex == s && waypointList[w].type == 0) { srcWp = w; break; }
+            if (srcWp < 0) continue;
 
             Vector2 srcPos = waypointList[srcWp].position;
-            Vector2 dstPos = waypointList[dstWp].position;
+            Vector2 dstPos = waypointList[wi].position;
             int srcX = Mathf.Clamp((int)srcPos.x, 0, W - 1);
             int srcY = Mathf.Clamp((int)srcPos.y, 0, H - 1);
             int dstX = Mathf.Clamp((int)dstPos.x, 0, W - 1);
             int dstY = Mathf.Clamp((int)dstPos.y, 0, H - 1);
 
-            // BFS depuis la destination (le flow field est enraciné à la cible)
+            // BFS depuis cette destination (flow field enraciné à la cible)
             BFSFlowField(walkable, W, H, dstX, dstY, out int[] parent);
 
             var raw      = ExtractRawPath(parent, W, srcY * W + srcX, dstY * W + dstX);
@@ -399,14 +417,14 @@ public class WaypointManager : MonoBehaviour
             if (smoothed == null || smoothed.Count == 0) continue;
 
             int count = Mathf.Min(smoothed.Count, MaxSmoothedWaypoints);
-            smoothPaths[s] = new Vector2[count];
+            smoothPaths[wi] = new Vector2[count];
             for (int i = 0; i < count; i++)
             {
                 var v = new Vector2(smoothed[i].x, smoothed[i].y);
-                smoothPaths[s][i]               = v;
-                flatBuffer[starts[s] + i] = v;
+                smoothPaths[wi][i]              = v;
+                flatBuffer[starts[wi] + i] = v;
             }
-            counts[s] = count;
+            counts[wi] = count;
         }
 
         SlimeMapRenderer.Instance.SetSmoothedPaths(flatBuffer, starts, counts);
