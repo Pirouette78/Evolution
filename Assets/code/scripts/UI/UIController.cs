@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UIElements;
+using UnityEngine.InputSystem;
 using Unity.Entities;
 
 public class UIController : MonoBehaviour
@@ -51,6 +52,10 @@ public class UIController : MonoBehaviour
 
     // ── Species count ──────────────────────────────────────────────
     private Label speciesCountLabel;
+
+    // ── Building stats popup ────────────────────────────────────────
+    private VisualElement buildingStatsPanel;
+    private int           statsShownPlacementId = -1;
 
     // ── Construction ───────────────────────────────────────────────
     private Button        btnConstruction;
@@ -799,8 +804,37 @@ public class UIController : MonoBehaviour
     }
 
     // ── Update Loop ───────────────────────────────────────────────
+    // Convertit une position écran en coordonnées pixel de la carte (même logique que BuildingPlacementController)
+    private Vector2? ScreenToMapPixel(Vector2 screenPos)
+    {
+        var smr = SlimeMapRenderer.Instance;
+        if (smr == null || Camera.main == null) return null;
+        float depth = -Camera.main.transform.position.z;
+        Vector3 world = Camera.main.ScreenToWorldPoint(new Vector3(screenPos.x, screenPos.y, depth));
+        int px = (int)world.x;
+        int py = (int)world.y;
+        if (px < 0 || px >= smr.Width || py < 0 || py >= smr.Height) return null;
+        return new Vector2(px, py);
+    }
+
     private void Update()
     {
+        // Détection clic gauche sur la carte (hors mode placement)
+        var mouse = Mouse.current;
+        if (mouse != null && mouse.leftButton.wasPressedThisFrame)
+        {
+            bool placing = BuildingPlacementController.Instance != null &&
+                           BuildingPlacementController.Instance.IsPlacing;
+            if (!placing)
+            {
+                Vector2? px = ScreenToMapPixel(mouse.position.ReadValue());
+                if (px.HasValue)
+                    OnMapClick(px.Value);
+                else
+                    CloseBuildingStats();
+            }
+        }
+
         uiUpdateCounter++;
         if (uiUpdateCounter < 15) return;
         uiUpdateCounter = 0;
@@ -857,5 +891,154 @@ public class UIController : MonoBehaviour
         }
 
         if (energyLabel != null) energyLabel.text = "Énergie : —";
+
+        // Rafraîchir le popup stats si ouvert
+        if (buildingStatsPanel != null && statsShownPlacementId >= 0)
+            RefreshBuildingStatsPanel(statsShownPlacementId);
+    }
+
+    // ── Building stats popup ────────────────────────────────────────
+
+    /// <summary>
+    /// Appelé depuis la détection de clic sur la carte (pixel space).
+    /// Ouvre le popup pour le bâtiment cliqué, ou le ferme si clic dans le vide.
+    /// </summary>
+    public void OnMapClick(Vector2 pixelPos)
+    {
+        if (WaypointManager.Instance == null) return;
+        int pid = WaypointManager.Instance.GetPlacementAt(pixelPos);
+        if (pid >= 0)
+            ShowBuildingStats(pid);
+        else
+            CloseBuildingStats();
+    }
+
+    private void ShowBuildingStats(int placementId)
+    {
+        statsShownPlacementId = placementId;
+        if (buildingStatsPanel != null) buildingStatsPanel.RemoveFromHierarchy();
+
+        buildingStatsPanel = new VisualElement();
+        buildingStatsPanel.style.position        = Position.Absolute;
+        buildingStatsPanel.style.top             = 120;
+        buildingStatsPanel.style.left            = 295;
+        buildingStatsPanel.style.minWidth        = 200;
+        buildingStatsPanel.style.backgroundColor = new StyleColor(new Color(0.05f, 0.05f, 0.12f, 0.96f));
+        buildingStatsPanel.style.paddingTop      = 10;
+        buildingStatsPanel.style.paddingBottom   = 10;
+        buildingStatsPanel.style.paddingLeft     = 14;
+        buildingStatsPanel.style.paddingRight    = 14;
+        buildingStatsPanel.style.borderTopLeftRadius     = new StyleLength(8);
+        buildingStatsPanel.style.borderTopRightRadius    = new StyleLength(8);
+        buildingStatsPanel.style.borderBottomLeftRadius  = new StyleLength(8);
+        buildingStatsPanel.style.borderBottomRightRadius = new StyleLength(8);
+
+        uiDocument.rootVisualElement.Add(buildingStatsPanel);
+        RefreshBuildingStatsPanel(placementId);
+    }
+
+    private void RefreshBuildingStatsPanel(int placementId)
+    {
+        if (buildingStatsPanel == null || WaypointManager.Instance == null) return;
+        buildingStatsPanel.Clear();
+
+        var primary = WaypointManager.Instance.GetPrimaryHive(placementId);
+        var allHives = WaypointManager.Instance.GetHivesForPlacement(placementId);
+        if (primary == null && allHives.Count == 0) return;
+
+        var def = primary?.definition ?? allHives[0].definition;
+        string buildingName = def?.displayName ?? "Bâtiment";
+
+        // Somme agents de tous les outputs
+        float totalSpawned = 0f;
+        foreach (var h in allHives) totalSpawned += h.totalAgentsSpawned;
+
+        int level = primary?.level ?? 1;
+        string stars = new string('★', level) + new string('☆', 10 - level);
+
+        // Uptime
+        float uptime = primary?.lifetimeSeconds ?? allHives[0].lifetimeSeconds;
+        int mins = (int)(uptime / 60f);
+        int secs = (int)(uptime % 60f);
+
+        // Titre
+        var title = new Label($"🏠 {buildingName}  [Niv. {level}]");
+        title.style.color       = new StyleColor(new Color(0.55f, 0.78f, 1f));
+        title.style.fontSize    = 13;
+        title.style.unityFontStyleAndWeight = UnityEngine.FontStyle.Bold;
+        title.style.marginBottom = 2;
+        buildingStatsPanel.Add(title);
+
+        var starsLabel = new Label(stars);
+        starsLabel.style.color      = new StyleColor(new Color(1f, 0.85f, 0.2f));
+        starsLabel.style.fontSize   = 11;
+        starsLabel.style.marginBottom = 6;
+        buildingStatsPanel.Add(starsLabel);
+
+        AddStatLine($"Agents produits",          $"{(int)totalSpawned:N0}");
+        AddStatLine($"Uptime",                   $"{mins}m {secs:D2}s");
+
+        // Ressources en cours (stock global)
+        if (def != null)
+        {
+            string scaleRes = def.ResolvedScaleResource;
+            if (!string.IsNullOrEmpty(scaleRes) && ResourceManager.Instance != null)
+            {
+                float stock = ResourceManager.Instance.Get(scaleRes);
+                AddStatLine($"Stock {scaleRes}", $"{stock:F0}");
+            }
+
+            // Ressources produites
+            if (primary != null && primary.totalResourceProduced > 0f)
+            {
+                string prodRes = def.produces != null && def.produces.Length > 0 ? def.produces[0].resource : "—";
+                AddStatLine($"Produit ({prodRes})", $"{primary.totalResourceProduced:F0} u");
+            }
+
+            // Ressources consommées
+            if (primary != null && primary.totalResourceConsumed > 0f)
+            {
+                string consRes = !string.IsNullOrEmpty(def.ResolvedScaleResource)
+                    ? def.ResolvedScaleResource
+                    : (def.consumes != null && def.consumes.Length > 0 ? def.consumes[0].resource : "—");
+                AddStatLine($"Consommé ({consRes})", $"{primary.totalResourceConsumed:F0} u");
+            }
+        }
+
+        // Bouton fermer
+        var closeBtn = new Button(() => CloseBuildingStats()) { text = "✕ Fermer" };
+        closeBtn.style.marginTop       = 8;
+        closeBtn.style.fontSize        = 11;
+        closeBtn.style.color           = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
+        closeBtn.style.backgroundColor = new StyleColor(new Color(0.15f, 0.15f, 0.2f));
+        buildingStatsPanel.Add(closeBtn);
+    }
+
+    private void AddStatLine(string label, string value)
+    {
+        var row = new VisualElement();
+        row.style.flexDirection = FlexDirection.Row;
+        row.style.justifyContent = Justify.SpaceBetween;
+        row.style.marginBottom = 2;
+
+        var lbl = new Label(label);
+        lbl.style.color    = new StyleColor(new Color(0.6f, 0.6f, 0.7f));
+        lbl.style.fontSize = 11;
+
+        var val = new Label(value);
+        val.style.color    = new StyleColor(Color.white);
+        val.style.fontSize = 11;
+        val.style.unityFontStyleAndWeight = UnityEngine.FontStyle.Bold;
+
+        row.Add(lbl);
+        row.Add(val);
+        buildingStatsPanel.Add(row);
+    }
+
+    private void CloseBuildingStats()
+    {
+        buildingStatsPanel?.RemoveFromHierarchy();
+        buildingStatsPanel = null;
+        statsShownPlacementId = -1;
     }
 }

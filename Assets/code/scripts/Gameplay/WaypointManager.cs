@@ -28,14 +28,19 @@ public class WaypointManager : MonoBehaviour
         public float spawnsPerSecond;
         public int   maxPopulation;
         [HideInInspector] public float accumulator;
-        /// <summary>Définition du bâtiment (chargée depuis BuildingLibrary). Peut être null si id inconnu.</summary>
         [System.NonSerialized] public BuildingDefinition definition;
-        /// <summary>
-        /// Seule la Hive primaire (premier output) consomme/produit des ressources.
-        /// Les Hives secondaires partagent le même bâtiment mais ne doublonnent pas la consommation.
-        /// </summary>
         [System.NonSerialized] public bool processResources;
+
+        // ── Stats ──────────────────────────────────────────────────
+        [System.NonSerialized] public int   placementId;
+        [System.NonSerialized] public float totalAgentsSpawned;
+        [System.NonSerialized] public float totalResourceProduced;
+        [System.NonSerialized] public float totalResourceConsumed;
+        [System.NonSerialized] public float lifetimeSeconds;
+        [System.NonSerialized] public int   level;
     }
+
+    private static int nextPlacementId = 0;
 
     [Header("Waypoints initiaux (optionnel, pré-configurés)")]
     public WaypointData[] InitialWaypoints = new WaypointData[0];
@@ -112,11 +117,16 @@ public class WaypointManager : MonoBehaviour
             if (hive.processResources)
             {
                 // ── Production passive de ressources (ex : Poumon → oxygène) ──
+                float produced = 0f;
                 if (def != null && def.produces != null)
                 {
                     foreach (var prod in def.produces)
+                    {
                         ResourceManager.Instance.Produce(prod.resource, prod.amount * dt);
+                        produced += prod.amount * dt;
+                    }
                 }
+                hive.totalResourceProduced += produced;
 
                 // ── Consommation de ressources + efficacité ──────────────
                 string scaleRes    = def?.ResolvedScaleResource;
@@ -127,13 +137,19 @@ public class WaypointManager : MonoBehaviour
                     float needed   = scaleAmount * dt;
                     float consumed = ResourceManager.Instance.Consume(scaleRes, needed);
                     efficiency = needed > 0f ? consumed / needed : 1f;
+                    hive.totalResourceConsumed += consumed;
                 }
                 else if (def != null && def.consumes != null)
                 {
                     foreach (var req in def.consumes)
-                        ResourceManager.Instance.Consume(req.resource, req.amount * dt);
+                    {
+                        float consumed = ResourceManager.Instance.Consume(req.resource, req.amount * dt);
+                        hive.totalResourceConsumed += consumed;
+                    }
                 }
             }
+
+            hive.lifetimeSeconds += dt;
 
             // ── Spawn modulé par l'efficacité ───────────────────────────
             float effectiveRate = hive.spawnsPerSecond * efficiency;
@@ -149,6 +165,8 @@ public class WaypointManager : MonoBehaviour
                     ? waypointList[wi].position
                     : new Vector2(SlimeMapRenderer.Instance.Width * 0.5f, SlimeMapRenderer.Instance.Height * 0.5f);
                 SlimeMapRenderer.Instance.AddAgentsAt(1, hive.speciesSlot, pos);
+                hive.totalAgentsSpawned++;
+                hive.level = Mathf.Min(1 + (int)(hive.totalAgentsSpawned / 500f), 10);
             }
         }
     }
@@ -193,6 +211,7 @@ public class WaypointManager : MonoBehaviour
 
             if (outputs != null && outputs.Length > 0)
             {
+                int pid = nextPlacementId++;
                 bool isFirst = true;
                 foreach (var output in outputs)
                 {
@@ -201,8 +220,6 @@ public class WaypointManager : MonoBehaviour
                         : -1;
                     if (slot < 0) { isFirst = false; continue; }
 
-                    // Premier output : réutilise le waypoint déjà ajouté.
-                    // Outputs suivants : ajoute un nouveau waypoint Source.
                     int wpIndex;
                     if (isFirst)
                     {
@@ -225,7 +242,9 @@ public class WaypointManager : MonoBehaviour
                         spawnsPerSecond  = output.spawnsPerSecond,
                         maxPopulation    = output.maxPopulation,
                         definition       = def,
-                        processResources = isFirst
+                        processResources = isFirst,
+                        placementId      = pid,
+                        level            = 1
                     });
 
                     isFirst = false;
@@ -250,6 +269,49 @@ public class WaypointManager : MonoBehaviour
 
     public string GetWaypointName(int index)
         => (index >= 0 && index < waypointNames.Count) ? waypointNames[index] : "";
+
+    /// <summary>Retourne la Hive primaire (processResources=true) d'un placement.</summary>
+    public HiveData GetPrimaryHive(int placementId)
+    {
+        foreach (var h in hiveList)
+            if (h.placementId == placementId && h.processResources) return h;
+        // Fallback : première hive du placement
+        foreach (var h in hiveList)
+            if (h.placementId == placementId) return h;
+        return null;
+    }
+
+    /// <summary>Retourne toutes les Hives d'un placement (multi-output).</summary>
+    public List<HiveData> GetHivesForPlacement(int placementId)
+    {
+        var result = new List<HiveData>();
+        foreach (var h in hiveList)
+            if (h.placementId == placementId) result.Add(h);
+        return result;
+    }
+
+    /// <summary>
+    /// Retourne le placementId du waypoint Source le plus proche de worldPos.
+    /// Retourne -1 si aucun dans le rayon maxDist (pixels).
+    /// </summary>
+    public int GetPlacementAt(Vector2 worldPos, float maxDist = 25f)
+    {
+        float best = maxDist * maxDist;
+        int   found = -1;
+        for (int i = 0; i < waypointList.Count; i++)
+        {
+            if (waypointList[i].type != 0) continue; // Sources uniquement
+            float d = (waypointList[i].position - worldPos).sqrMagnitude;
+            if (d < best)
+            {
+                best = d;
+                // Trouver le placementId associé à ce waypoint index
+                foreach (var h in hiveList)
+                    if (h.waypointIndex == i) { found = h.placementId; break; }
+            }
+        }
+        return found;
+    }
 
     // ── Flow field computation ───────────────────────────────────────
 
