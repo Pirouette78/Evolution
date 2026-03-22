@@ -39,6 +39,7 @@ public class SlimeMapRenderer : MonoBehaviour
     public RenderTexture TrailMap    { get; private set; }
     public RenderTexture DiffusedMap { get; private set; }
     public RenderTexture DisplayMap  { get; private set; }
+    public RenderTexture AgentMap    { get; private set; }
     public ComputeBuffer AgentBuffer => agentBuffer;
     public bool IsReady              => isInitialized;
     public int  AgentCount           => currentAgentCount;
@@ -62,7 +63,7 @@ public class SlimeMapRenderer : MonoBehaviour
     private bool initialSpawnDone = false;
     private int playerVisibilityMask = 0xFFFF; // all 16 slots visible by default
 
-    private int updateKernel, drawKernel, diffuseKernel, clearKernel, composeKernel, clearCountsKernel, countAliveKernel, clearDeliveryKernel;
+    private int updateKernel, drawKernel, diffuseKernel, clearKernel, composeKernel, clearCountsKernel, countAliveKernel, clearDeliveryKernel, clearAgentMapKernel;
     public  int[] DeliveryCounts = new int[16];
     private ComputeBuffer waypointStockBuffer;
     private ComputeBuffer deliveryCounterBuffer;
@@ -100,7 +101,9 @@ public class SlimeMapRenderer : MonoBehaviour
     public enum DiplomaticState { Neutral, Ally, Peace, War }
     private ComputeBuffer speciesSettingsBuffer;
     private ComputeBuffer interactionMatrixBuffer;
-    public  float[]       interactionMatrixData = new float[16 * 16];
+    public  float[]       interactionMatrixData      = new float[16 * 16];
+    private ComputeBuffer agentInteractionMatrixBuffer;
+    public  float[]       agentInteractionMatrixData = new float[16 * 16];
     private ComputeBuffer speciesCountsBuffer;
     private ComputeBuffer slotColorsBuffer;
     private ComputeBuffer waypointBuffer;
@@ -205,8 +208,9 @@ public class SlimeMapRenderer : MonoBehaviour
 
     private void InitTextures()
     {
-        TrailMap = CreateRTArray("TrailMap");
+        TrailMap    = CreateRTArray("TrailMap");
         DiffusedMap = CreateRTArray("DiffusedMap");
+        AgentMap    = CreateRTArray("AgentMap");
 
         DisplayMap = new RenderTexture(Width, Height, 0, RenderTextureFormat.ARGBFloat)
         { 
@@ -240,14 +244,19 @@ public class SlimeMapRenderer : MonoBehaviour
         clearCountsKernel    = SlimeShader.FindKernel("ClearCounts");
         countAliveKernel     = SlimeShader.FindKernel("CountAlive");
         clearDeliveryKernel  = SlimeShader.FindKernel("ClearDeliveryCounters");
+        clearAgentMapKernel  = SlimeShader.FindKernel("ClearAgentMap");
 
         // Bind textures (persistent across frames)
-        SlimeShader.SetTexture(updateKernel,  "TrailMap",         TrailMap);
-        SlimeShader.SetTexture(drawKernel,    "TrailMap",         TrailMap);
-        SlimeShader.SetTexture(diffuseKernel, "TrailMap",         TrailMap);
-        SlimeShader.SetTexture(diffuseKernel, "DiffusedTrailMap", DiffusedMap);
-        SlimeShader.SetTexture(clearKernel,   "TrailMap",         TrailMap);
-        SlimeShader.SetTexture(clearKernel,   "DiffusedTrailMap", DiffusedMap);
+        SlimeShader.SetTexture(updateKernel,       "TrailMap",         TrailMap);
+        SlimeShader.SetTexture(updateKernel,       "AgentMap",         AgentMap);
+        SlimeShader.SetTexture(drawKernel,         "TrailMap",         TrailMap);
+        SlimeShader.SetTexture(drawKernel,         "AgentMap",         AgentMap);
+        SlimeShader.SetTexture(diffuseKernel,      "TrailMap",         TrailMap);
+        SlimeShader.SetTexture(diffuseKernel,      "DiffusedTrailMap", DiffusedMap);
+        SlimeShader.SetTexture(clearKernel,        "TrailMap",         TrailMap);
+        SlimeShader.SetTexture(clearKernel,        "DiffusedTrailMap", DiffusedMap);
+        SlimeShader.SetTexture(clearKernel,        "AgentMap",         AgentMap);
+        SlimeShader.SetTexture(clearAgentMapKernel,"AgentMap",         AgentMap);
         SlimeShader.SetTexture(composeKernel, "DiffusedTrailMap", DiffusedMap);
         SlimeShader.SetTexture(composeKernel, "DisplayMap",       DisplayMap);
         SlimeShader.SetTexture(composeKernel, "DisplayMap",       DisplayMap);
@@ -270,6 +279,11 @@ public class SlimeMapRenderer : MonoBehaviour
         interactionMatrixBuffer = new ComputeBuffer(256, sizeof(float));
         interactionMatrixBuffer.SetData(interactionMatrixData);
         SlimeShader.SetBuffer(updateKernel, "interactionMatrix", interactionMatrixBuffer);
+
+        // Agent interaction matrix (16×16 = 256 floats) pour le sensing direct de présence d'agents
+        agentInteractionMatrixBuffer = new ComputeBuffer(256, sizeof(float));
+        agentInteractionMatrixBuffer.SetData(agentInteractionMatrixData);
+        SlimeShader.SetBuffer(updateKernel, "agentInteractionMatrix", agentInteractionMatrixBuffer);
 
         // Waypoints buffer (max 16 × 16 bytes)
         waypointBuffer = new ComputeBuffer(16, 16);
@@ -501,6 +515,9 @@ public class SlimeMapRenderer : MonoBehaviour
     {
         if (fromSlot < 0 || fromSlot >= 16 || toSlot < 0 || toSlot >= 16 || level == null) return;
         SetInteraction(fromSlot, toSlot, level.value);
+        // Agent sensing matrix
+        if (fromSlot != toSlot)
+            agentInteractionMatrixData[fromSlot * 16 + toSlot] = level.agentSenseWeight;
         if (fromSlot == toSlot) return;
         var s = speciesSettings[fromSlot];
         if (level.isWar) s.warMask |=  (1 << toSlot);
@@ -514,6 +531,8 @@ public class SlimeMapRenderer : MonoBehaviour
         if (slotA < 0 || slotA >= 16 || slotB < 0 || slotB >= 16 || slotA == slotB || level == null) return;
         SetInteraction(slotA, slotB, level.value);
         SetInteraction(slotB, slotA, level.value);
+        agentInteractionMatrixData[slotA * 16 + slotB] = level.agentSenseWeight;
+        agentInteractionMatrixData[slotB * 16 + slotA] = level.agentSenseWeight;
         var sa = speciesSettings[slotA];
         var sb = speciesSettings[slotB];
         if (level.isWar) { sa.warMask |= (1 << slotB); sb.warMask |= (1 << slotA); }
@@ -701,14 +720,19 @@ public class SlimeMapRenderer : MonoBehaviour
             SlimeShader.SetBuffer(updateKernel, "smoothedPathMeta", smoothedPathMetaBuffer);
             interactionMatrixBuffer.SetData(interactionMatrixData);
             SlimeShader.SetBuffer(updateKernel, "interactionMatrix", interactionMatrixBuffer);
+            agentInteractionMatrixBuffer.SetData(agentInteractionMatrixData);
+            SlimeShader.SetBuffer(updateKernel, "agentInteractionMatrix", agentInteractionMatrixBuffer);
 
             for (int step = 0; step < StepsPerFrame; step++)
             {
-                // 1. Move agents
+                // 0. Clear AgentMap (présence réelle d'agents du step précédent)
+                SlimeShader.Dispatch(clearAgentMapKernel, texGroupsX, texGroupsY, 1);
+
+                // 1. Move agents (lit TrailMap + AgentMap du step précédent)
                 SlimeShader.SetBuffer(updateKernel, "agents", agentBuffer);
                 SlimeShader.Dispatch(updateKernel, agentGroups, 1, 1);
 
-                // 2. Draw agent positions into trail map
+                // 2. Draw agent positions into trail map + AgentMap
                 SlimeShader.SetBuffer(drawKernel, "agents", agentBuffer);
                 SlimeShader.Dispatch(drawKernel, agentGroups, 1, 1);
 

@@ -22,4 +22,12 @@ public class DiplomacyLevelDefinition
 
     /// <summary>Si true, active warMask → warDamageRate et trailErasePower contre cet ennemi.</summary>
     public bool isWar;
+
+    /// <summary>
+    /// Poids dans agentInteractionMatrix : détection directe de la présence d'agents ennemis.
+    /// > 0 : ce slot chasse les agents de l'autre slot.
+    /// &lt; 0 : ce slot fuit les agents de l'autre slot.
+    /// 0 : aucun sensing d'agents (défaut).
+    /// </summary>
+    public float agentSenseWeight;
 }

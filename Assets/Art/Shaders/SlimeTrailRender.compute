@@ -6,6 +6,7 @@
 #pragma kernel ClearCounts
 #pragma kernel CountAlive
 #pragma kernel ClearDeliveryCounters
+#pragma kernel ClearAgentMap
 
 
 struct Agent {
@@ -25,6 +26,7 @@ uint numAgents;
 
 RWTexture2DArray<float> TrailMap;
 RWTexture2DArray<float> DiffusedTrailMap;
+RWTexture2DArray<float> AgentMap; // présence d'agents temps-réel (reset chaque step)
 RWTexture2D<float4> DisplayMap;
 Texture2D<float4> TerrainWalkabilityMap; // Used to block movement
 SamplerState sampler_TerrainWalkabilityMap;
@@ -64,7 +66,8 @@ struct Waypoint {
 
 StructuredBuffer<SpeciesSettings> speciesSettings;
 RWStructuredBuffer<uint> speciesCounts;
-StructuredBuffer<float> interactionMatrix; // 16×16 = 256 floats — matrice d'interaction Particle Life sur traînées
+StructuredBuffer<float> interactionMatrix;      // 16×16 — trail sensing (attraction/répulsion chimique)
+StructuredBuffer<float> agentInteractionMatrix; // 16×16 — agent sensing (présence directe)
 
 StructuredBuffer<Waypoint> waypoints;
 int numWaypoints;
@@ -133,7 +136,7 @@ float sense(Agent agent, float sensorAngleOffset, SpeciesSettings settings) {
     return sum;
 }
 
-// Like sense() but reads from a specific species slice (for GlobuleBlanc targeting)
+// Like sense() but reads from a specific species slice of TrailMap
 float senseSpecies(Agent agent, float sensorAngleOffset, SpeciesSettings settings, int targetSlice) {
     float sensorAngle = agent.angle + sensorAngleOffset;
     float2 sensorDir = float2(cos(sensorAngle), sin(sensorAngle));
@@ -148,6 +151,23 @@ float senseSpecies(Agent agent, float sensorAngleOffset, SpeciesSettings setting
             sum += TrailMap[int3(sampleX, sampleY, targetSlice)];
         }
     }
+    return sum;
+}
+
+// Lit AgentMap au lieu de TrailMap : détecte la présence réelle d'agents (non-diffuse)
+float senseAgents(Agent agent, float sensorAngleOffset, SpeciesSettings settings, int targetSlice) {
+    float sensorAngle = agent.angle + sensorAngleOffset;
+    float2 sensorDir  = float2(cos(sensorAngle), sin(sensorAngle));
+    float2 sensorPos  = agent.position + sensorDir * settings.sensorOffsetDst;
+    int sensorCentreX = (int)sensorPos.x;
+    int sensorCentreY = (int)sensorPos.y;
+    float sum = 0;
+    for (int offsetX = -settings.sensorSize; offsetX <= settings.sensorSize; offsetX++)
+        for (int offsetY = -settings.sensorSize; offsetY <= settings.sensorSize; offsetY++) {
+            int sampleX = min(width-1, max(0, sensorCentreX + offsetX));
+            int sampleY = min(height-1, max(0, sensorCentreY + offsetY));
+            sum += AgentMap[int3(sampleX, sampleY, targetSlice)];
+        }
     return sum;
 }
 
@@ -388,6 +408,15 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
             weightRight   += senseSpecies(agent, -settings.sensorAngleRad, settings, s) * w;
         }
 
+        // Sensing direct de présence d'agents (AgentMap) — non-diffus, temps-réel
+        for (int sa = 0; sa < numActiveSlots; sa++) {
+            float aw = agentInteractionMatrix[agent.speciesIndex * 16 + sa];
+            if (abs(aw) < 0.001) continue;
+            weightForward += senseAgents(agent, 0,                        settings, sa) * aw;
+            weightLeft    += senseAgents(agent,  settings.sensorAngleRad, settings, sa) * aw;
+            weightRight   += senseAgents(agent, -settings.sensorAngleRad, settings, sa) * aw;
+        }
+
         if (weightForward >= weightLeft && weightForward >= weightRight) {
             // go straight
         } else if (weightRight > weightLeft) {
@@ -471,6 +500,7 @@ void DrawMap (uint3 id : SV_DispatchThreadID)
     
     if (cellCoords.x >= 0 && cellCoords.x < width && cellCoords.y >= 0 && cellCoords.y < height) {
         TrailMap[cellCoords] = saturate(TrailMap[cellCoords] + settings.trailWeight * deltaTime);
+        AgentMap[cellCoords] = 1.0; // présence réelle de l'agent (idempotent si plusieurs agents en même cellule)
     }
 
     // Érosion de guerre : l'agent efface la traînée ennemie à sa position
@@ -530,12 +560,21 @@ void CountAlive(uint3 id : SV_DispatchThreadID)
 }
 
 [numthreads(8,8,1)]
+void ClearAgentMap (uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)width || id.y >= (uint)height) return;
+    for (int slice = 0; slice < 16; slice++)
+        AgentMap[int3(id.xy, slice)] = 0.0;
+}
+
+[numthreads(8,8,1)]
 void ResetMap (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)width || id.y >= (uint)height) return;
     for (int slice = 0; slice < 16; slice++) {
         TrailMap[int3(id.xy, slice)] = 0.0;
         DiffusedTrailMap[int3(id.xy, slice)] = 0.0;
+        AgentMap[int3(id.xy, slice)] = 0.0;
     }
 }
 
