@@ -114,7 +114,8 @@ public class PlayerLibrary : MonoBehaviour
             smr.SetSlotColor(s, slotColor);
         }
 
-        // Matrice d'interaction diplomatique : Guerre / Allié / Paix entre joueurs différents
+        // Matrice d'interaction diplomatique (data-driven via DiplomacyLibrary)
+        var diploLib = DiplomacyLibrary.Instance;
         for (int a = 0; a < slots.Count; a++)
         {
             for (int b = a + 1; b < slots.Count; b++)
@@ -126,22 +127,27 @@ public class PlayerLibrary : MonoBehaviour
                 bool isAlly = IsAllyDeclared(slots[a].player, slots[b].player.id)
                            || IsAllyDeclared(slots[b].player, slots[a].player.id);
 
-                SlimeMapRenderer.DiplomaticState state =
-                    atWar  ? SlimeMapRenderer.DiplomaticState.War   :
-                    isAlly ? SlimeMapRenderer.DiplomaticState.Ally  :
-                             SlimeMapRenderer.DiplomaticState.Peace;
+                DiplomacyLevelDefinition level =
+                    atWar  ? diploLib?.WarLevel          :
+                    isAlly ? diploLib?.DefaultAllyLevel  :
+                             diploLib?.DefaultNeutralLevel;
 
-                smr.SetDiplomaticState(a, b, state);
+                if (level != null)
+                    smr.SetInteractionSymmetric(a, b, level);
             }
         }
 
         // Intra-joueur : espèces différentes du même joueur → Allié par défaut
+        var allyLevel = diploLib?.DefaultAllyLevel;
         for (int a = 0; a < slots.Count; a++)
             for (int b = 0; b < slots.Count; b++)
             {
                 if (a == b) continue;
                 if (slots[a].player.id != slots[b].player.id) continue;
-                smr.SetInteraction(a, b, 0.5f);
+                if (allyLevel != null)
+                    smr.SetInteractionOneWay(a, b, allyLevel);
+                else
+                    smr.SetInteraction(a, b, 0.5f);
             }
 
         Debug.Log($"[PlayerLibrary] {slots.Count} slots configurés dans SlimeMapRenderer.");

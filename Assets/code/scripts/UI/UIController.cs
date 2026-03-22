@@ -535,9 +535,10 @@ public class UIController : MonoBehaviour
         legend.style.flexDirection = FlexDirection.Row;
         legend.style.marginBottom  = 8;
         legend.style.alignItems    = Align.Center;
-        AddLegendDot(legend, new Color(0.08f, 0.6f, 0.15f), "Allié");
-        AddLegendDot(legend, new Color(0.38f, 0.38f, 0.38f), "Paix");
-        AddLegendDot(legend, new Color(0.7f, 0.1f, 0.1f),  "Guerre");
+        var diploLevels = DiplomacyLibrary.Instance?.Levels;
+        if (diploLevels != null)
+            foreach (var lvl in diploLevels)
+                AddLegendDot(legend, DiploLevelToColor(lvl), lvl.displayName);
         diploMatrixPanel.Add(legend);
 
         // ── Grille ────────────────────────────────────────────────
@@ -581,28 +582,33 @@ public class UIController : MonoBehaviour
                 cell.style.borderBottomLeftRadius  = new StyleLength(3);
                 cell.style.borderBottomRightRadius = new StyleLength(3);
 
-                bool isDiag = (capturedR >= 0 && capturedR == capturedC);
-                if (isDiag)
+                var initLevel = (capturedR >= 0 && capturedC >= 0)
+                    ? smr.GetDiplomacyLevel(capturedR, capturedC)
+                    : DiplomacyLibrary.Instance?.DefaultNeutralLevel;
+                cell.style.backgroundColor = new StyleColor(DiploLevelToColor(initLevel));
+
+                if (capturedR >= 0 && capturedC >= 0)
                 {
-                    cell.style.backgroundColor = new StyleColor(new Color(0.1f, 0.1f, 0.1f));
-                    cell.SetEnabled(false);
-                }
-                else
-                {
-                    var state = (capturedR >= 0 && capturedC >= 0)
-                        ? smr.GetDiplomaticState(capturedR, capturedC)
-                        : SlimeMapRenderer.DiplomaticState.Neutral;
-                    cell.style.backgroundColor = new StyleColor(DiploStateToColor(state));
-                    if (capturedR >= 0 && capturedC >= 0)
+                    // Click gauche : monte le niveau de diplomatie (vers Allié)
+                    cell.clicked += () =>
                     {
-                        cell.clicked += () =>
-                        {
-                            var cur  = smr.GetDiplomaticState(capturedR, capturedC);
-                            var next = CycleDiploState(cur);
-                            smr.SetInteractionOneWay(capturedR, capturedC, next);
-                            RefreshDiploMatrixCells();
-                        };
-                    }
+                        var cur  = smr.GetDiplomacyLevel(capturedR, capturedC);
+                        var next = IncDiploLevel(cur);
+                        if (next == cur) return;
+                        smr.SetInteractionOneWay(capturedR, capturedC, next);
+                        RefreshDiploMatrixCells();
+                    };
+                    // Click droit : baisse le niveau de diplomatie (vers Guerre)
+                    cell.RegisterCallback<PointerDownEvent>(evt =>
+                    {
+                        if (evt.button != 1) return;
+                        var cur  = smr.GetDiplomacyLevel(capturedR, capturedC);
+                        var next = DecDiploLevel(cur);
+                        if (next == cur) return;
+                        smr.SetInteractionOneWay(capturedR, capturedC, next);
+                        RefreshDiploMatrixCells();
+                        evt.StopPropagation();
+                    });
                 }
 
                 diploMatrixCells[r, c] = cell;
@@ -748,32 +754,36 @@ public class UIController : MonoBehaviour
                 int colSlot = lib.GetSlotIndex(players[diploColPlayer].id, colSpecies[c]);
                 var cell    = diploMatrixCells[r, c];
                 if (cell == null || rowSlot < 0 || colSlot < 0) continue;
-                if (rowSlot == colSlot) continue; // diagonal — static
-                var state = smr.GetDiplomaticState(rowSlot, colSlot);
-                cell.style.backgroundColor = new StyleColor(DiploStateToColor(state));
+                var level = smr.GetDiplomacyLevel(rowSlot, colSlot);
+                cell.style.backgroundColor = new StyleColor(DiploLevelToColor(level));
             }
         }
     }
 
-    private static Color DiploStateToColor(SlimeMapRenderer.DiplomaticState state)
+    private static Color DiploLevelToColor(DiplomacyLevelDefinition level)
     {
-        switch (state)
-        {
-            case SlimeMapRenderer.DiplomaticState.Ally:  return new Color(0.08f, 0.60f, 0.15f);
-            case SlimeMapRenderer.DiplomaticState.Peace: return new Color(0.38f, 0.38f, 0.38f);
-            case SlimeMapRenderer.DiplomaticState.War:   return new Color(0.70f, 0.10f, 0.10f);
-            default:                                     return new Color(0.15f, 0.22f, 0.32f);
-        }
+        if (level?.color != null && level.color.Length >= 3)
+            return new Color(level.color[0], level.color[1], level.color[2]);
+        return new Color(0.15f, 0.22f, 0.32f); // fallback bleu nuit
     }
 
-    private static SlimeMapRenderer.DiplomaticState CycleDiploState(SlimeMapRenderer.DiplomaticState s)
+    // Navigation par index dans DiplomacyLibrary.Levels (ordre JSON = ordre de navigation)
+    private static DiplomacyLevelDefinition IncDiploLevel(DiplomacyLevelDefinition cur)
     {
-        switch (s)
-        {
-            case SlimeMapRenderer.DiplomaticState.Ally:  return SlimeMapRenderer.DiplomaticState.Peace;
-            case SlimeMapRenderer.DiplomaticState.Peace: return SlimeMapRenderer.DiplomaticState.War;
-            default:                                     return SlimeMapRenderer.DiplomaticState.Ally;
-        }
+        var levels = DiplomacyLibrary.Instance?.Levels;
+        if (levels == null || levels.Count == 0) return cur;
+        if (cur == null) return levels[0];
+        int i = levels.IndexOf(cur);
+        return (i >= 0 && i < levels.Count - 1) ? levels[i + 1] : cur;
+    }
+
+    private static DiplomacyLevelDefinition DecDiploLevel(DiplomacyLevelDefinition cur)
+    {
+        var levels = DiplomacyLibrary.Instance?.Levels;
+        if (levels == null || levels.Count == 0) return cur;
+        if (cur == null) return levels[levels.Count - 1];
+        int i = levels.IndexOf(cur);
+        return (i > 0) ? levels[i - 1] : cur;
     }
 
     // ── Construction panel ─────────────────────────────────────────

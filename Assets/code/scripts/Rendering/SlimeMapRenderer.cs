@@ -487,10 +487,49 @@ public class SlimeMapRenderer : MonoBehaviour
             case DiplomaticState.War:   weight =  2.5f; break;
         }
         SetInteraction(fromSlot, toSlot, weight);
+        if (fromSlot == toSlot) return; // diagonal : pas de warMask sur soi-même
         var s = speciesSettings[fromSlot];
         if (state == DiplomaticState.War) s.warMask |=  (1 << toSlot);
         else                               s.warMask &= ~(1 << toSlot);
         speciesSettings[fromSlot] = s;
+    }
+
+    // ── API data-driven (DiplomacyLibrary) ───────────────────────────
+
+    /// <summary>Setter asymétrique prenant un DiplomacyLevelDefinition (data-driven).</summary>
+    public void SetInteractionOneWay(int fromSlot, int toSlot, DiplomacyLevelDefinition level)
+    {
+        if (fromSlot < 0 || fromSlot >= 16 || toSlot < 0 || toSlot >= 16 || level == null) return;
+        SetInteraction(fromSlot, toSlot, level.value);
+        if (fromSlot == toSlot) return;
+        var s = speciesSettings[fromSlot];
+        if (level.isWar) s.warMask |=  (1 << toSlot);
+        else             s.warMask &= ~(1 << toSlot);
+        speciesSettings[fromSlot] = s;
+    }
+
+    /// <summary>Setter symétrique (pour init PlayerLibrary).</summary>
+    public void SetInteractionSymmetric(int slotA, int slotB, DiplomacyLevelDefinition level)
+    {
+        if (slotA < 0 || slotA >= 16 || slotB < 0 || slotB >= 16 || slotA == slotB || level == null) return;
+        SetInteraction(slotA, slotB, level.value);
+        SetInteraction(slotB, slotA, level.value);
+        var sa = speciesSettings[slotA];
+        var sb = speciesSettings[slotB];
+        if (level.isWar) { sa.warMask |= (1 << slotB); sb.warMask |= (1 << slotA); }
+        else             { sa.warMask &=~(1 << slotB); sb.warMask &=~(1 << slotA); }
+        speciesSettings[slotA] = sa;
+        speciesSettings[slotB] = sb;
+    }
+
+    /// <summary>Retourne le niveau diplomatique correspondant à la direction slotA→slotB.</summary>
+    public DiplomacyLevelDefinition GetDiplomacyLevel(int slotA, int slotB)
+    {
+        var lib = DiplomacyLibrary.Instance;
+        if (lib == null) return null;
+        if (slotA >= 0 && slotB >= 0 && IsAtWar(slotA, slotB)) return lib.WarLevel;
+        float w = (slotA >= 0 && slotB >= 0) ? interactionMatrixData[slotA * 16 + slotB] : 0f;
+        return lib.GetByValue(w);
     }
 
     public void SetWaypoints(WaypointData[] data)
