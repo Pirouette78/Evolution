@@ -45,15 +45,58 @@
                 <ui:Button name="BtnTypePlaquette"     text="Plaquette" style="font-size: 11px; padding: 3px 5px; min-width: 46px; margin: 1px; background-color: rgb(180,120,20); color: white; border-radius: 4px;" />
             </ui:VisualElement>
 
-            <!-- ── Guerres ────────────────────────── -->
-            <ui:Label text="En guerre avec" style="font-size: 13px; color: rgb(255,140,140); -unity-font-style: bold; margin-bottom: 4px;" />
-            <ui:VisualElement style="flex-direction: row; margin-bottom: 10px;">
-                <ui:Button name="BtnWar0" text="P1" style="width: 35px; font-size: 11px; padding: 3px 2px; margin: 1px; background-color: rgb(80,0,0);   color: white; border-radius: 4px;" />
-                <ui:Button name="BtnWar1" text="P2" style="width: 35px; font-size: 11px; padding: 3px 2px; margin: 1px; background-color: rgb(0,80,0);   color: white; border-radius: 4px;" />
-                <ui:Button name="BtnWar2" text="P3" style="width: 35px; font-size: 11px; padding: 3px 2px; margin: 1px; background-color: rgb(0,0,100);  color: white; border-radius: 4px;" />
-                <ui:Button name="BtnWar3" text="P4" style="width: 35px; font-size: 11px; padding: 3px 2px; margin: 1px; background-color: rgb(0,80,80);  color: white; border-radius: 4px;" />
-                <ui:Button name="BtnWar4" text="P5" style="width: 35px; font-size: 11px; padding: 3px 2px; margin: 1px; background-color: rgb(80,0,80);  color: white; border-radius: 4px;" />
-                <ui:Button name="BtnWar5" text="P6" style="width: 35px; font-size: 11px; padding: 3px 2px; margin: 1px; background-color: rgb(80,80,0);  color: white; border-radius: 4px;" />
+            <!-- ── Diplomatie ──────────────────────── -->
+            <ui:Label text="Diplomatie" style="font-size: 13px; color: rgb(255,200,100); -unity-font-style: bold; margin-bottom: 4px;" />
+            <ui:VisualElement style="flex-direction: row; flex-wrap: wrap; margin-bottom: 10px;">
+
+                <!-- Colonne joueur 0 -->
+                <ui:VisualElement name="DiploCol0" style="flex-direction: column; align-items: stretch; margin: 2px; min-width: 40px;">
+                    <ui:Label name="DiploLabel0" text="P1" style="font-size: 9px; color: white; -unity-text-align: middle-center; margin-bottom: 1px;" />
+                    <ui:Button name="BtnDiplo0War"   text="Guerre" style="font-size: 9px; padding: 2px 1px; margin-bottom: 1px; background-color: rgb(100,20,20); color: white; border-radius: 3px;" />
+                    <ui:Button name="BtnDiplo0Peace" text="Paix"   style="font-size: 9px; padding: 2px 1px; margin-bottom: 1px; background-color: rgb(20,50,100); color: white; border-radius: 3px;" />
+                    <ui:Button name="BtnDiplo0Ally"  text="Allié"  style="font-size: 9px; padding: 2px 1px;                      background-color: rgb(20,80,30);  color: white; border-radius: 3px;" />
+                </ui:VisualElement>
+
+                <!-- Colonne joueur 1 -->
+                <ui:VisualElement name="DiploCol1" style="flex-direction: column; align-items: stretch; margin: 2px; min-width: 40px;">
+                    <ui:Label name="DiploLabel1" text="P2" style="font-size: 9px; color: white; -unity-text-align: middle-center; margin-bottom: 1px;" />
+                    <ui:Button name="BtnDiplo1War"   text="Guerre" style="font-size: 9px; padding: 2px 1px; margin-bottom: 1px; background-color: rgb(100,20,20); color: white; border-radius: 3px;" />
+                    <ui:Button name="BtnDiplo1Peace" text="Paix"   style="font-size: 9px; padding: 2px 1px; margin-bottom: 1px; background-color: rgb(20,50,100); color: white; border-radius: 3px;" />
+                    <ui:Button name="BtnDiplo1Ally"  text="Allié"  style="font-size: 9px; padding: 2px 1px;                      background-color: rgb(20,80,30);  color: white; border-radius: 3px;" />
+                </ui:VisualElement>
+
+                <!-- Colonne joueur 2 -->
+                <ui:VisualElement name="DiploCol2" style="flex-direction: column; align-items: stretch; margin: 2px; min-width: 40px;">
+                    <ui:Label name="DiploLabel2" text="P3" style="font-size: 9px; color: white; -unity-text-align: middle-center; margin-bottom: 1px;" />
+                    <ui:Button name="BtnDiplo2War"   text="Guerre" style="font-size: 9px; padding: 2px 1px; margin-bottom: 1px; background-color: rgb(100,20,20); color: white; border-radius: 3px;" />
+                    <ui:Button name="BtnDiplo2Peace" text="Paix"   style="font-size: 9px; padding: 2px 1px; margin-bottom: 1px; background-color: rgb(20,50,100); color: white; border-radius: 3px;" />
+                    <ui:Button name="BtnDiplo2Ally"  text="Allié"  style="font-size: 9px; padding: 2px 1px;                      background-color: rgb(20,80,30);  color: white; border-radius: 3px;" />
+                </ui:VisualElement>
+
+                <!-- Colonne joueur 3 -->
+                <ui:VisualElement name="DiploCol3" style="flex-direction: column; align-items: stretch; margin: 2px; min-width: 40px;">
+                    <ui:Label name="DiploLabel3" text="P4" style="font-size: 9px; color: white; -unity-text-align: middle-center; margin-bottom: 1px;" />
+                    <ui:Button name="BtnDiplo3War"   text="Guerre" style="font-size: 9px; padding: 2px 1px; margin-bottom: 1px; background-color: rgb(100,20,20); color: white; border-radius: 3px;" />
+                    <ui:Button name="BtnDiplo3Peace" text="Paix"   style="font-size: 9px; padding: 2px 1px; margin-bottom: 1px; background-color: rgb(20,50,100); color: white; border-radius: 3px;" />
+                    <ui:Button name="BtnDiplo3Ally"  text="Allié"  style="font-size: 9px; padding: 2px 1px;                      background-color: rgb(20,80,30);  color: white; border-radius: 3px;" />
+                </ui:VisualElement>
+
+                <!-- Colonne joueur 4 -->
+                <ui:VisualElement name="DiploCol4" style="flex-direction: column; align-items: stretch; margin: 2px; min-width: 40px;">
+                    <ui:Label name="DiploLabel4" text="P5" style="font-size: 9px; color: white; -unity-text-align: middle-center; margin-bottom: 1px;" />
+                    <ui:Button name="BtnDiplo4War"   text="Guerre" style="font-size: 9px; padding: 2px 1px; margin-bottom: 1px; background-color: rgb(100,20,20); color: white; border-radius: 3px;" />
+                    <ui:Button name="BtnDiplo4Peace" text="Paix"   style="font-size: 9px; padding: 2px 1px; margin-bottom: 1px; background-color: rgb(20,50,100); color: white; border-radius: 3px;" />
+                    <ui:Button name="BtnDiplo4Ally"  text="Allié"  style="font-size: 9px; padding: 2px 1px;                      background-color: rgb(20,80,30);  color: white; border-radius: 3px;" />
+                </ui:VisualElement>
+
+                <!-- Colonne joueur 5 -->
+                <ui:VisualElement name="DiploCol5" style="flex-direction: column; align-items: stretch; margin: 2px; min-width: 40px;">
+                    <ui:Label name="DiploLabel5" text="P6" style="font-size: 9px; color: white; -unity-text-align: middle-center; margin-bottom: 1px;" />
+                    <ui:Button name="BtnDiplo5War"   text="Guerre" style="font-size: 9px; padding: 2px 1px; margin-bottom: 1px; background-color: rgb(100,20,20); color: white; border-radius: 3px;" />
+                    <ui:Button name="BtnDiplo5Peace" text="Paix"   style="font-size: 9px; padding: 2px 1px; margin-bottom: 1px; background-color: rgb(20,50,100); color: white; border-radius: 3px;" />
+                    <ui:Button name="BtnDiplo5Ally"  text="Allié"  style="font-size: 9px; padding: 2px 1px;                      background-color: rgb(20,80,30);  color: white; border-radius: 3px;" />
+                </ui:VisualElement>
+
             </ui:VisualElement>
 
             <!-- ── Construction ─────────────────────── -->

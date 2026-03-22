@@ -109,15 +109,24 @@ public class PlayerLibrary : MonoBehaviour
             smr.SetSlotColor(s, info.speciesEntry.ToVector4());
         }
 
-        // Guerre : tous les slots de joueurs différents et déclarés ennemis
+        // Matrice d'interaction diplomatique : Guerre / Allié / Paix entre joueurs différents
         for (int a = 0; a < slots.Count; a++)
         {
             for (int b = a + 1; b < slots.Count; b++)
             {
                 if (slots[a].player.id == slots[b].player.id) continue;
-                bool atWar = IsWarDeclared(slots[a].player, slots[b].player.id)
-                          || IsWarDeclared(slots[b].player, slots[a].player.id);
-                if (atWar) smr.SetWar(a, b, true);
+
+                bool atWar  = IsWarDeclared (slots[a].player, slots[b].player.id)
+                           || IsWarDeclared (slots[b].player, slots[a].player.id);
+                bool isAlly = IsAllyDeclared(slots[a].player, slots[b].player.id)
+                           || IsAllyDeclared(slots[b].player, slots[a].player.id);
+
+                SlimeMapRenderer.DiplomaticState state =
+                    atWar  ? SlimeMapRenderer.DiplomaticState.War   :
+                    isAlly ? SlimeMapRenderer.DiplomaticState.Ally  :
+                             SlimeMapRenderer.DiplomaticState.Peace;
+
+                smr.SetDiplomaticState(a, b, state);
             }
         }
 
@@ -128,6 +137,14 @@ public class PlayerLibrary : MonoBehaviour
     {
         if (player.warsWith == null) return false;
         foreach (var id in player.warsWith)
+            if (id?.ToLowerInvariant() == otherId) return true;
+        return false;
+    }
+
+    private static bool IsAllyDeclared(PlayerDefinition player, string otherId)
+    {
+        if (player.alliesWith == null) return false;
+        foreach (var id in player.alliesWith)
             if (id?.ToLowerInvariant() == otherId) return true;
         return false;
     }

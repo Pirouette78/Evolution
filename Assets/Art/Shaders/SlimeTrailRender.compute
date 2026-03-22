@@ -53,6 +53,7 @@ struct SpeciesSettings {
     float loadingTime;          // time to wait at Source
     float unloadingTime;        // time to wait at Destination
     float waitForStock;         // 1 = attend le stock disponible avant de partir
+    float trailErasePower;      // unités de traînée ennemie effacées/sec à la position de l'agent
 };
 
 struct Waypoint {
@@ -63,6 +64,7 @@ struct Waypoint {
 
 StructuredBuffer<SpeciesSettings> speciesSettings;
 RWStructuredBuffer<uint> speciesCounts;
+StructuredBuffer<float> interactionMatrix; // 16×16 = 256 floats — matrice d'interaction Particle Life sur traînées
 
 StructuredBuffer<Waypoint> waypoints;
 int numWaypoints;
@@ -367,20 +369,23 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
     }
     else
     {
-        // Default slime sensing
-        float weightForward = sense(agent, 0, settings);
-        float weightLeft    = sense(agent, settings.sensorAngleRad, settings);
-        float weightRight   = sense(agent, -settings.sensorAngleRad, settings);
-
-        // GlobuleBlanc (behaviorType 3): override sensing to track target species
-        if (settings.behaviorType == 3 && settings.warMask != 0) {
-            weightForward = 0; weightLeft = 0; weightRight = 0;
-            for (int ts = 0; ts < numActiveSlots; ts++) {
-                if ((settings.warMask & (1 << ts)) == 0) continue;
-                weightForward += senseSpecies(agent, 0,                        settings, ts);
-                weightLeft    += senseSpecies(agent,  settings.sensorAngleRad, settings, ts);
-                weightRight   += senseSpecies(agent, -settings.sensorAngleRad, settings, ts);
-            }
+        // Sensing générique via matrice d'interaction (Particle Life sur traînées)
+        // sense() pour la propre traînée (préserve l'évitement des murs)
+        // senseSpecies() pour les traînées étrangères (attraction/répulsion diplomatique)
+        float weightForward = 0, weightLeft = 0, weightRight = 0;
+        float selfW = interactionMatrix[agent.speciesIndex * 16 + agent.speciesIndex];
+        if (abs(selfW) > 0.001) {
+            weightForward += sense(agent, 0,                        settings) * selfW;
+            weightLeft    += sense(agent,  settings.sensorAngleRad, settings) * selfW;
+            weightRight   += sense(agent, -settings.sensorAngleRad, settings) * selfW;
+        }
+        for (int s = 0; s < numActiveSlots; s++) {
+            if (s == agent.speciesIndex) continue;
+            float w = interactionMatrix[agent.speciesIndex * 16 + s];
+            if (abs(w) < 0.001) continue;
+            weightForward += senseSpecies(agent, 0,                        settings, s) * w;
+            weightLeft    += senseSpecies(agent,  settings.sensorAngleRad, settings, s) * w;
+            weightRight   += senseSpecies(agent, -settings.sensorAngleRad, settings, s) * w;
         }
 
         if (weightForward >= weightLeft && weightForward >= weightRight) {
@@ -461,6 +466,16 @@ void DrawMap (uint3 id : SV_DispatchThreadID)
     
     if (cellCoords.x >= 0 && cellCoords.x < width && cellCoords.y >= 0 && cellCoords.y < height) {
         TrailMap[cellCoords] = saturate(TrailMap[cellCoords] + settings.trailWeight * deltaTime);
+    }
+
+    // Érosion de guerre : l'agent efface la traînée ennemie à sa position
+    if (settings.trailErasePower > 0 && settings.warMask != 0) {
+        for (int e = 0; e < numActiveSlots; e++) {
+            if ((settings.warMask & (1 << e)) == 0) continue;
+            int3 ec = int3((int)agent.position.x, (int)agent.position.y, e);
+            if (ec.x >= 0 && ec.x < width && ec.y >= 0 && ec.y < height)
+                TrailMap[ec] = max(0, TrailMap[ec] - settings.trailErasePower * deltaTime);
+        }
     }
 }
 

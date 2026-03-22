@@ -34,6 +34,7 @@ public class SpeciesDefinition
     public float decayRate;
     public float diffuseRate;
     public float warDamageRate;
+    public float trailErasePower;
 
     // ── Comportement ──────────────────────────────────────────────────
     /// <summary>Libellé libre, pour documentation JSON uniquement (ex: "GlobuleRouge").</summary>
@@ -78,6 +79,7 @@ public class SpeciesDefinition
         decayRate             = decayRate,
         diffuseRate           = diffuseRate,
         warDamageRate         = warDamageRate,
+        trailErasePower       = trailErasePower,
         behaviorType          = BehaviorTypeInt,
         energyConsumptionRate = energyConsumptionRate,
         energyReward          = energyReward,

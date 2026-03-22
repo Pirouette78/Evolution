@@ -15,7 +15,11 @@ public class UIController : MonoBehaviour
     private Button[] playerSelectButtons  = new Button[6];
     private Button[] typeButtons          = new Button[10];
     private string[] typeButtonBaseTexts  = new string[10];
-    private Button[] warButtons           = new Button[6];
+    private Button[] diploWarButtons       = new Button[6];
+    private Button[] diploPeaceButtons    = new Button[6];
+    private Button[] diploAllyButtons     = new Button[6];
+    private Label[]  diploLabels          = new Label[6];
+    private VisualElement[] diploCols     = new VisualElement[6];
     private Toggle toggleVisibility;
     private Toggle toggleSpeciesOverlay;
     private int    selectedPlayerIndex = 0; // index dans PlayerLibrary.GetAll()
@@ -211,13 +215,17 @@ public class UIController : MonoBehaviour
             }
         }
 
-        // War buttons
+        // Diplomatic state buttons
         for (int i = 0; i < 6; i++) {
-            warButtons[i] = root.Q<Button>($"BtnWar{i}");
             int enemyIndex = i;
-            if (warButtons[i] != null) {
-                warButtons[i].clicked += () => OnToggleWar(enemyIndex);
-            }
+            diploCols[i]       = root.Q<VisualElement>($"DiploCol{i}");
+            diploLabels[i]     = root.Q<Label>($"DiploLabel{i}");
+            diploWarButtons[i]   = root.Q<Button>($"BtnDiplo{i}War");
+            diploPeaceButtons[i] = root.Q<Button>($"BtnDiplo{i}Peace");
+            diploAllyButtons[i]  = root.Q<Button>($"BtnDiplo{i}Ally");
+            if (diploWarButtons[i]   != null) diploWarButtons[i].clicked   += () => OnSetDiplomaticState(enemyIndex, SlimeMapRenderer.DiplomaticState.War);
+            if (diploPeaceButtons[i] != null) diploPeaceButtons[i].clicked += () => OnSetDiplomaticState(enemyIndex, SlimeMapRenderer.DiplomaticState.Peace);
+            if (diploAllyButtons[i]  != null) diploAllyButtons[i].clicked  += () => OnSetDiplomaticState(enemyIndex, SlimeMapRenderer.DiplomaticState.Ally);
         }
 
         // Construction panel
@@ -362,7 +370,7 @@ public class UIController : MonoBehaviour
             speciesCountLabel.text = $"{pName} — {count} espèce{(count > 1 ? "s" : "")}";
         }
 
-        RefreshWarButtons();
+        RefreshDiploButtons();
         RefreshTypeButtons();
     }
 
@@ -424,7 +432,7 @@ public class UIController : MonoBehaviour
         }
     }
 
-    private void OnToggleWar(int enemyPlayerIndex)
+    private void OnSetDiplomaticState(int enemyPlayerIndex, SlimeMapRenderer.DiplomaticState state)
     {
         var lib = PlayerLibrary.Instance;
         var smr = SlimeMapRenderer.Instance;
@@ -437,12 +445,6 @@ public class UIController : MonoBehaviour
         var    enemySpecies = lib.GetSpeciesForPlayer(enemyId);
         if (mySpecies.Count == 0 || enemySpecies.Count == 0) return;
 
-        // Toggle based on current state of first slot pair
-        int myFirst    = lib.GetSlotIndex(selectedPlayerId, mySpecies[0]);
-        int enemyFirst = lib.GetSlotIndex(enemyId, enemySpecies[0]);
-        bool newWar = !smr.IsAtWar(myFirst, enemyFirst);
-
-        // Apply to all (my slot × enemy slot) pairs
         foreach (string ms in mySpecies)
         {
             int mSlot = lib.GetSlotIndex(selectedPlayerId, ms);
@@ -451,13 +453,13 @@ public class UIController : MonoBehaviour
             {
                 int eSlot = lib.GetSlotIndex(enemyId, es);
                 if (eSlot < 0) continue;
-                smr.SetWar(mSlot, eSlot, newWar);
+                smr.SetDiplomaticState(mSlot, eSlot, state);
             }
         }
-        RefreshWarButtons();
+        RefreshDiploButtons();
     }
 
-    private void RefreshWarButtons()
+    private void RefreshDiploButtons()
     {
         var lib = PlayerLibrary.Instance;
         var smr = SlimeMapRenderer.Instance;
@@ -466,34 +468,61 @@ public class UIController : MonoBehaviour
 
         for (int i = 0; i < 6; i++)
         {
-            if (warButtons[i] == null) continue;
-            if (i >= players.Count) { warButtons[i].SetEnabled(false); warButtons[i].style.opacity = 0f; continue; }
+            var col = diploCols[i];
+            if (col == null) continue;
 
-            if (i == selectedPlayerIndex) {
-                warButtons[i].SetEnabled(false);
-                warButtons[i].style.opacity = 0.2f;
-                warButtons[i].text = players[i].displayName;
+            if (i >= players.Count)
+            {
+                col.style.display = UnityEngine.UIElements.DisplayStyle.None;
                 continue;
             }
 
-            string enemyId      = players[i].id;
-            var    mySpecies    = lib.GetSpeciesForPlayer(selectedPlayerId);
-            var    enemySpecies = lib.GetSpeciesForPlayer(enemyId);
+            col.style.display = UnityEngine.UIElements.DisplayStyle.Flex;
 
-            bool atWar = false;
+            if (diploLabels[i] != null)
+                diploLabels[i].text = players[i].displayName;
+
+            // Joueur sélectionné : colonne grisée, boutons désactivés
+            if (i == selectedPlayerIndex)
+            {
+                col.style.opacity = 0.2f;
+                diploWarButtons[i]?.SetEnabled(false);
+                diploPeaceButtons[i]?.SetEnabled(false);
+                diploAllyButtons[i]?.SetEnabled(false);
+                continue;
+            }
+
+            col.style.opacity = 1f;
+            diploWarButtons[i]?.SetEnabled(true);
+            diploPeaceButtons[i]?.SetEnabled(true);
+            diploAllyButtons[i]?.SetEnabled(true);
+
+            // État diplomatique actuel
+            var state = SlimeMapRenderer.DiplomaticState.Neutral;
+            var mySpecies    = lib.GetSpeciesForPlayer(selectedPlayerId);
+            var enemySpecies = lib.GetSpeciesForPlayer(players[i].id);
             if (mySpecies.Count > 0 && enemySpecies.Count > 0)
             {
                 int ms = lib.GetSlotIndex(selectedPlayerId, mySpecies[0]);
-                int es = lib.GetSlotIndex(enemyId, enemySpecies[0]);
-                atWar = smr.IsAtWar(ms, es);
+                int es = lib.GetSlotIndex(players[i].id,   enemySpecies[0]);
+                state = smr.GetDiplomaticState(ms, es);
             }
 
-            warButtons[i].SetEnabled(true);
-            warButtons[i].text = players[i].displayName;
-            warButtons[i].style.opacity = atWar ? 1.0f : 0.4f;
-            warButtons[i].style.borderBottomWidth = atWar ? 3 : 0;
-            warButtons[i].style.borderBottomColor = Color.red;
+            // Highlight le bouton actif
+            StyleDiploButton(diploWarButtons[i],   state == SlimeMapRenderer.DiplomaticState.War,   new Color(0.8f, 0.1f, 0.1f));
+            StyleDiploButton(diploPeaceButtons[i], state == SlimeMapRenderer.DiplomaticState.Peace, new Color(0.1f, 0.3f, 0.7f));
+            StyleDiploButton(diploAllyButtons[i],  state == SlimeMapRenderer.DiplomaticState.Ally,  new Color(0.1f, 0.6f, 0.2f));
         }
+    }
+
+    private static void StyleDiploButton(Button btn, bool active, Color activeColor)
+    {
+        if (btn == null) return;
+        btn.style.opacity          = active ? 1.0f : 0.35f;
+        btn.style.borderBottomWidth = active ? 3 : 0;
+        btn.style.borderBottomColor = activeColor;
+        btn.style.borderLeftWidth   = active ? 2 : 0;
+        btn.style.borderLeftColor   = activeColor;
     }
 
     // ── Construction panel ─────────────────────────────────────────

@@ -93,9 +93,14 @@ public class SlimeMapRenderer : MonoBehaviour
         public float arrivalRadius;         // distance seuil pour considérer un waypoint "atteint"
         public float loadingTime;           // time to wait at Source waypoint
         public float unloadingTime;         // time to wait at Destination waypoint
-        public float waitForStock;          // 1 = attend le stock disponible avant de partir  → 76 bytes total
+        public float waitForStock;          // 1 = attend le stock disponible avant de partir
+        public float trailErasePower;       // unités de traînée ennemie effacées/sec à la position de l'agent  → 80 bytes total
     }
+
+    public enum DiplomaticState { Neutral, Ally, Peace, War }
     private ComputeBuffer speciesSettingsBuffer;
+    private ComputeBuffer interactionMatrixBuffer;
+    public  float[]       interactionMatrixData = new float[16 * 16];
     private ComputeBuffer speciesCountsBuffer;
     private ComputeBuffer slotColorsBuffer;
     private ComputeBuffer waypointBuffer;
@@ -134,7 +139,7 @@ public class SlimeMapRenderer : MonoBehaviour
 
         agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*5 + sizeof(int)*5);
         // struct size (40 bytes) = 5 floats (20) + 5 ints (20)
-        speciesSettingsBuffer = new ComputeBuffer(16, 76);
+        speciesSettingsBuffer = new ComputeBuffer(16, 80);
         speciesCountsBuffer   = new ComputeBuffer(16, sizeof(uint));
         slotColorsBuffer      = new ComputeBuffer(16, sizeof(float) * 4);
         waypointStockBuffer   = new ComputeBuffer(16, sizeof(float));
@@ -163,6 +168,7 @@ public class SlimeMapRenderer : MonoBehaviour
                 warDamageRate = 1f
             };
             speciesIds[i] = speciesTypes[i < 16 ? i : 0].ToString().ToLowerInvariant();
+            interactionMatrixData[i * 16 + i] = 1f; // chaque espèce suit sa propre traînée par défaut
         }
 
         if (DisplayTarget == null) DisplayTarget = GetComponent<MeshRenderer>();
@@ -259,6 +265,11 @@ public class SlimeMapRenderer : MonoBehaviour
         SlimeShader.SetBuffer(updateKernel, "waypointStockIn",  waypointStockBuffer);
         SlimeShader.SetBuffer(updateKernel, "deliveryCounters", deliveryCounterBuffer);
         SlimeShader.SetBuffer(clearDeliveryKernel, "deliveryCounters", deliveryCounterBuffer);
+
+        // Interaction matrix (16×16 = 256 floats) pour le Particle Life sur traînées
+        interactionMatrixBuffer = new ComputeBuffer(256, sizeof(float));
+        interactionMatrixBuffer.SetData(interactionMatrixData);
+        SlimeShader.SetBuffer(updateKernel, "interactionMatrix", interactionMatrixBuffer);
 
         // Waypoints buffer (max 16 × 16 bytes)
         waypointBuffer = new ComputeBuffer(16, 16);
@@ -422,6 +433,47 @@ public class SlimeMapRenderer : MonoBehaviour
     {
         if (a < 0 || a >= 16 || b < 0 || b >= 16) return false;
         return (speciesSettings[a].warMask & (1 << b)) != 0;
+    }
+
+    public DiplomaticState GetDiplomaticState(int slotA, int slotB)
+    {
+        if (slotA < 0 || slotA >= 16 || slotB < 0 || slotB >= 16) return DiplomaticState.Neutral;
+        if (IsAtWar(slotA, slotB)) return DiplomaticState.War;
+        float w = interactionMatrixData[slotA * 16 + slotB];
+        if (w >  0.01f) return DiplomaticState.Ally;
+        if (w < -0.01f) return DiplomaticState.Peace;
+        return DiplomaticState.Neutral;
+    }
+
+    public void SetInteraction(int slotA, int slotB, float weight)
+    {
+        if (slotA < 0 || slotA >= 16 || slotB < 0 || slotB >= 16) return;
+        interactionMatrixData[slotA * 16 + slotB] = weight;
+    }
+
+    /// <summary>Configure l'état diplomatique entre deux slots GPU et met à jour la matrice d'interaction.</summary>
+    public void SetDiplomaticState(int slotA, int slotB, DiplomaticState state)
+    {
+        if (slotA < 0 || slotA >= 16 || slotB < 0 || slotB >= 16 || slotA == slotB) return;
+
+        float ab = 0f, ba = 0f;
+        switch (state)
+        {
+            case DiplomaticState.Ally:  ab =  0.5f; ba =  0.5f; break;
+            case DiplomaticState.Peace: ab = -1.5f; ba = -1.5f; break;
+            case DiplomaticState.War:   ab =  2.5f; ba =  2.5f; break;
+        }
+        SetInteraction(slotA, slotB, ab);
+        SetInteraction(slotB, slotA, ba);
+
+        // warMask : mis à jour pour que warDamageRate et trailErasePower fonctionnent correctement
+        bool atWar = (state == DiplomaticState.War);
+        var sa = speciesSettings[slotA];
+        var sb = speciesSettings[slotB];
+        if (atWar) { sa.warMask |= (1 << slotB); sb.warMask |= (1 << slotA); }
+        else       { sa.warMask &= ~(1 << slotB); sb.warMask &= ~(1 << slotA); }
+        speciesSettings[slotA] = sa;
+        speciesSettings[slotB] = sb;
     }
 
     public void SetWaypoints(WaypointData[] data)
@@ -591,6 +643,8 @@ public class SlimeMapRenderer : MonoBehaviour
             SlimeShader.SetTexture(updateKernel, "FlowFieldMap", flowFieldMap);
             SlimeShader.SetBuffer(updateKernel, "smoothedPaths",    smoothedPathBuffer);
             SlimeShader.SetBuffer(updateKernel, "smoothedPathMeta", smoothedPathMetaBuffer);
+            interactionMatrixBuffer.SetData(interactionMatrixData);
+            SlimeShader.SetBuffer(updateKernel, "interactionMatrix", interactionMatrixBuffer);
 
             for (int step = 0; step < StepsPerFrame; step++)
             {
@@ -642,6 +696,7 @@ public class SlimeMapRenderer : MonoBehaviour
     {
         agentBuffer?.Release();
         speciesSettingsBuffer?.Release();
+        interactionMatrixBuffer?.Release();
         speciesCountsBuffer?.Release();
         slotColorsBuffer?.Release();
         waypointBuffer?.Release();

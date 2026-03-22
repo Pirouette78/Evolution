@@ -44,6 +44,9 @@ public class PlayerDefinition
     /// <summary>Liste des ids joueur avec qui ce joueur est en guerre.</summary>
     public string[] warsWith = new string[0];
 
+    /// <summary>Liste des ids joueur avec qui ce joueur est allié (attraction mutuelle des traînées).</summary>
+    public string[] alliesWith = new string[0];
+
     /// <summary>Liste des espèces (et leur couleur) que ce joueur contrôle.</summary>
     public PlayerSpeciesEntry[] species = new PlayerSpeciesEntry[0];
 }
