@@ -12,7 +12,7 @@
   "trailWeight": 20.0,
   "decayRate": 0.1,
   "diffuseRate": 6.0,
-  "warDamageRate": 0.0,
+  "warDamageRate": 8.0,
   "trailErasePower": 2.0,
   "behaviorType": "Plaquette",
   "behaviorTypeInt": 5

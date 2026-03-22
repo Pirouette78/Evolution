@@ -440,12 +440,17 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
         }
     }
 
-    // War: enemy trail presence accelerates aging
+    // War: enemy trail presence accelerates aging + instant kill on heavy contact
     if (settings.warMask != 0) {
         for (int e = 0; e < numActiveSlots; e++) {
             if ((settings.warMask & (1 << e)) != 0) {
                 float enemyTrail = TrailMap[int3((int)agent.position.x, (int)agent.position.y, e)];
                 agent.age += enemyTrail * settings.warDamageRate * deltaTime;
+                if (enemyTrail > 0.8 && settings.warDamageRate > 0) {
+                    agent.age = settings.maxAge + 1;
+                    agents[id.x] = agent;
+                    return;
+                }
             }
         }
     }
