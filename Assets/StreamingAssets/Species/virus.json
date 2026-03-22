@@ -1,6 +1,7 @@
 {
   "id": "virus",
   "displayName": "Virus",
+  "color": [0.314, 0.0, 0.392],
   "slotIndex": 3,
   "moveSpeed": 80.0,
   "turnSpeed": 30.0,

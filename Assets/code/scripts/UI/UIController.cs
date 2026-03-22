@@ -13,13 +13,15 @@ public class UIController : MonoBehaviour
     private Button pauseButton;
 
     private Button[] playerSelectButtons  = new Button[6];
+
     private Button[] typeButtons          = new Button[10];
     private string[] typeButtonBaseTexts  = new string[10];
-    private Button[] diploWarButtons       = new Button[6];
-    private Button[] diploPeaceButtons    = new Button[6];
-    private Button[] diploAllyButtons     = new Button[6];
-    private Label[]  diploLabels          = new Label[6];
-    private VisualElement[] diploCols     = new VisualElement[6];
+    private Button        btnDiplomatie;
+    private VisualElement diploMatrixPanel;
+    private bool          diploMatrixOpen = false;
+    private int           diploColPlayer  = 0;
+    private int           diploRowPlayer  = 0;
+    private Button[,]     diploMatrixCells;
     private Toggle toggleVisibility;
     private Toggle toggleSpeciesOverlay;
     private int    selectedPlayerIndex = 0; // index dans PlayerLibrary.GetAll()
@@ -215,18 +217,9 @@ public class UIController : MonoBehaviour
             }
         }
 
-        // Diplomatic state buttons
-        for (int i = 0; i < 6; i++) {
-            int enemyIndex = i;
-            diploCols[i]       = root.Q<VisualElement>($"DiploCol{i}");
-            diploLabels[i]     = root.Q<Label>($"DiploLabel{i}");
-            diploWarButtons[i]   = root.Q<Button>($"BtnDiplo{i}War");
-            diploPeaceButtons[i] = root.Q<Button>($"BtnDiplo{i}Peace");
-            diploAllyButtons[i]  = root.Q<Button>($"BtnDiplo{i}Ally");
-            if (diploWarButtons[i]   != null) diploWarButtons[i].clicked   += () => OnSetDiplomaticState(enemyIndex, SlimeMapRenderer.DiplomaticState.War);
-            if (diploPeaceButtons[i] != null) diploPeaceButtons[i].clicked += () => OnSetDiplomaticState(enemyIndex, SlimeMapRenderer.DiplomaticState.Peace);
-            if (diploAllyButtons[i]  != null) diploAllyButtons[i].clicked  += () => OnSetDiplomaticState(enemyIndex, SlimeMapRenderer.DiplomaticState.Ally);
-        }
+        // Diplomatic matrix panel
+        btnDiplomatie = root.Q<Button>("BtnDiplomatie");
+        if (btnDiplomatie != null) btnDiplomatie.clicked += ToggleDiploMatrixPanel;
 
         // Construction panel
         btnConstruction = root.Q<Button>("BtnConstruction");
@@ -259,13 +252,22 @@ public class UIController : MonoBehaviour
     private System.Collections.IEnumerator InitSelectionDeferred()
     {
         yield return null; // wait 1 frame
-        // Initialise selectedPlayerId et selectedSpeciesId depuis PlayerLibrary
         var lib = PlayerLibrary.Instance;
         if (lib != null && lib.GetAll().Count > 0)
         {
             selectedPlayerId = lib.GetAll()[0].id;
             var species = lib.GetSpeciesForPlayer(selectedPlayerId);
             if (species.Count > 0) selectedSpeciesId = species[0];
+
+            // Couleurs des boutons de sélection joueur depuis le JSON
+            var players = lib.GetAll();
+            for (int i = 0; i < playerSelectButtons.Length && i < players.Count; i++)
+            {
+                if (playerSelectButtons[i] == null) continue;
+                var c = players[i].color;
+                if (c != null && c.Length >= 3)
+                    playerSelectButtons[i].style.backgroundColor = new StyleColor(new Color(c[0], c[1], c[2]));
+            }
         }
         SelectPlayer(0);
     }
@@ -370,7 +372,7 @@ public class UIController : MonoBehaviour
             speciesCountLabel.text = $"{pName} — {count} espèce{(count > 1 ? "s" : "")}";
         }
 
-        RefreshDiploButtons();
+        if (diploMatrixOpen) RefreshDiploMatrixCells();
         RefreshTypeButtons();
     }
 
@@ -432,97 +434,342 @@ public class UIController : MonoBehaviour
         }
     }
 
-    private void OnSetDiplomaticState(int enemyPlayerIndex, SlimeMapRenderer.DiplomaticState state)
+    // ── Diplomatic matrix panel ────────────────────────────────────
+
+    private void ToggleDiploMatrixPanel()
     {
+        if (diploMatrixOpen) { CloseDiploMatrixPanel(); return; }
         var lib = PlayerLibrary.Instance;
-        var smr = SlimeMapRenderer.Instance;
-        if (lib == null || smr == null || enemyPlayerIndex == selectedPlayerIndex) return;
-        var players = lib.GetAll();
-        if (enemyPlayerIndex < 0 || enemyPlayerIndex >= players.Count) return;
-
-        string enemyId      = players[enemyPlayerIndex].id;
-        var    mySpecies    = lib.GetSpeciesForPlayer(selectedPlayerId);
-        var    enemySpecies = lib.GetSpeciesForPlayer(enemyId);
-        if (mySpecies.Count == 0 || enemySpecies.Count == 0) return;
-
-        foreach (string ms in mySpecies)
-        {
-            int mSlot = lib.GetSlotIndex(selectedPlayerId, ms);
-            if (mSlot < 0) continue;
-            foreach (string es in enemySpecies)
-            {
-                int eSlot = lib.GetSlotIndex(enemyId, es);
-                if (eSlot < 0) continue;
-                smr.SetDiplomaticState(mSlot, eSlot, state);
-            }
-        }
-        RefreshDiploButtons();
+        if (lib == null) return;
+        int count = lib.GetAll().Count;
+        diploColPlayer = Mathf.Clamp(diploColPlayer, 0, count - 1);
+        diploRowPlayer = Mathf.Clamp(diploRowPlayer, 0, count - 1);
+        BuildDiploMatrixPanel();
     }
 
-    private void RefreshDiploButtons()
+    private void CloseDiploMatrixPanel()
+    {
+        diploMatrixPanel?.RemoveFromHierarchy();
+        diploMatrixPanel = null;
+        diploMatrixOpen  = false;
+    }
+
+    private void BuildDiploMatrixPanel()
     {
         var lib = PlayerLibrary.Instance;
         var smr = SlimeMapRenderer.Instance;
         if (lib == null || smr == null) return;
-        var players = lib.GetAll();
 
-        for (int i = 0; i < 6; i++)
+        var players   = lib.GetAll();
+        int numPlayers = players.Count;
+        if (numPlayers == 0) return;
+
+        var colSpecies = lib.GetSpeciesForPlayer(players[diploColPlayer].id);
+        var rowSpecies = lib.GetSpeciesForPlayer(players[diploRowPlayer].id);
+        int nCols      = colSpecies.Count;
+        int nRows      = rowSpecies.Count;
+
+        const int CELL = 34;
+        const int PAD  = 10;
+
+        // ── Panel container ────────────────────────────────────────
+        diploMatrixPanel = new VisualElement();
+        diploMatrixPanel.style.position          = Position.Absolute;
+        diploMatrixPanel.style.top               = 120;
+        diploMatrixPanel.style.left              = 295;
+        diploMatrixPanel.style.backgroundColor   = new StyleColor(new Color(0.05f, 0.05f, 0.08f, 0.95f));
+        diploMatrixPanel.style.paddingTop        = PAD;
+        diploMatrixPanel.style.paddingBottom     = PAD;
+        diploMatrixPanel.style.paddingLeft       = PAD;
+        diploMatrixPanel.style.paddingRight      = PAD;
+        diploMatrixPanel.style.borderTopLeftRadius     = new StyleLength(8);
+        diploMatrixPanel.style.borderTopRightRadius    = new StyleLength(8);
+        diploMatrixPanel.style.borderBottomLeftRadius  = new StyleLength(8);
+        diploMatrixPanel.style.borderBottomRightRadius = new StyleLength(8);
+
+        // ── Titre ─────────────────────────────────────────────────
+        var titleRow = new VisualElement();
+        titleRow.style.flexDirection  = FlexDirection.Row;
+        titleRow.style.justifyContent = Justify.SpaceBetween;
+        titleRow.style.alignItems     = Align.Center;
+        titleRow.style.marginBottom   = 8;
+
+        var titleLbl = new Label("Matrice Diplomatique");
+        titleLbl.style.color               = new StyleColor(new Color(0.9f, 0.8f, 1f));
+        titleLbl.style.fontSize            = 13;
+        titleLbl.style.unityFontStyleAndWeight = FontStyle.Bold;
+
+        var closeBtn = new Button(CloseDiploMatrixPanel) { text = "✕" };
+        closeBtn.style.fontSize         = 12;
+        closeBtn.style.paddingLeft      = 6;
+        closeBtn.style.paddingRight     = 6;
+        closeBtn.style.paddingTop       = 2;
+        closeBtn.style.paddingBottom    = 2;
+        closeBtn.style.backgroundColor  = new StyleColor(new Color(0.4f, 0.1f, 0.1f));
+        closeBtn.style.color            = new StyleColor(Color.white);
+        closeBtn.style.borderTopLeftRadius     = new StyleLength(4);
+        closeBtn.style.borderTopRightRadius    = new StyleLength(4);
+        closeBtn.style.borderBottomLeftRadius  = new StyleLength(4);
+        closeBtn.style.borderBottomRightRadius = new StyleLength(4);
+
+        titleRow.Add(titleLbl);
+        titleRow.Add(closeBtn);
+        diploMatrixPanel.Add(titleRow);
+
+        // ── Sélecteur colonnes ─────────────────────────────────────
+        diploMatrixPanel.Add(MakePlayerSelectorRow("Colonnes :", numPlayers, players, diploColPlayer, i => {
+            diploColPlayer = i; CloseDiploMatrixPanel(); BuildDiploMatrixPanel();
+        }));
+
+        // ── Sélecteur lignes ──────────────────────────────────────
+        diploMatrixPanel.Add(MakePlayerSelectorRow("Lignes :", numPlayers, players, diploRowPlayer, i => {
+            diploRowPlayer = i; CloseDiploMatrixPanel(); BuildDiploMatrixPanel();
+        }));
+
+        // ── Légende ───────────────────────────────────────────────
+        var legend = new VisualElement();
+        legend.style.flexDirection = FlexDirection.Row;
+        legend.style.marginBottom  = 8;
+        legend.style.alignItems    = Align.Center;
+        AddLegendDot(legend, new Color(0.08f, 0.6f, 0.15f), "Allié");
+        AddLegendDot(legend, new Color(0.38f, 0.38f, 0.38f), "Paix");
+        AddLegendDot(legend, new Color(0.7f, 0.1f, 0.1f),  "Guerre");
+        diploMatrixPanel.Add(legend);
+
+        // ── Grille ────────────────────────────────────────────────
+        var grid = new VisualElement();
+        grid.style.flexDirection = FlexDirection.Column;
+
+        // En-tête colonnes
+        var headerRow = new VisualElement();
+        headerRow.style.flexDirection = FlexDirection.Row;
+        headerRow.Add(MakeCornerCell(CELL)); // coin vide
+        for (int c = 0; c < nCols; c++)
         {
-            var col = diploCols[i];
-            if (col == null) continue;
+            int colSlot = lib.GetSlotIndex(players[diploColPlayer].id, colSpecies[c]);
+            headerRow.Add(MakeSpeciesHeader(colSpecies[c], colSlot, smr, CELL));
+        }
+        grid.Add(headerRow);
 
-            if (i >= players.Count)
+        // Rangées données
+        diploMatrixCells = new Button[nRows, nCols];
+        for (int r = 0; r < nRows; r++)
+        {
+            int rowSlot = lib.GetSlotIndex(players[diploRowPlayer].id, rowSpecies[r]);
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.Add(MakeSpeciesHeader(rowSpecies[r], rowSlot, smr, CELL));
+            for (int c = 0; c < nCols; c++)
             {
-                col.style.display = UnityEngine.UIElements.DisplayStyle.None;
-                continue;
+                int colSlot   = lib.GetSlotIndex(players[diploColPlayer].id, colSpecies[c]);
+                int capturedR = rowSlot;
+                int capturedC = colSlot;
+
+                var cell = new Button();
+                cell.style.width  = CELL;
+                cell.style.height = CELL;
+                cell.style.marginTop    = 1;
+                cell.style.marginBottom = 1;
+                cell.style.marginLeft   = 1;
+                cell.style.marginRight  = 1;
+                cell.style.borderTopLeftRadius     = new StyleLength(3);
+                cell.style.borderTopRightRadius    = new StyleLength(3);
+                cell.style.borderBottomLeftRadius  = new StyleLength(3);
+                cell.style.borderBottomRightRadius = new StyleLength(3);
+
+                bool isDiag = (capturedR >= 0 && capturedR == capturedC);
+                if (isDiag)
+                {
+                    cell.style.backgroundColor = new StyleColor(new Color(0.1f, 0.1f, 0.1f));
+                    cell.SetEnabled(false);
+                }
+                else
+                {
+                    var state = (capturedR >= 0 && capturedC >= 0)
+                        ? smr.GetDiplomaticState(capturedR, capturedC)
+                        : SlimeMapRenderer.DiplomaticState.Neutral;
+                    cell.style.backgroundColor = new StyleColor(DiploStateToColor(state));
+                    if (capturedR >= 0 && capturedC >= 0)
+                    {
+                        cell.clicked += () =>
+                        {
+                            var cur  = smr.GetDiplomaticState(capturedR, capturedC);
+                            var next = CycleDiploState(cur);
+                            smr.SetInteractionOneWay(capturedR, capturedC, next);
+                            RefreshDiploMatrixCells();
+                        };
+                    }
+                }
+
+                diploMatrixCells[r, c] = cell;
+                row.Add(cell);
             }
+            grid.Add(row);
+        }
 
-            col.style.display = UnityEngine.UIElements.DisplayStyle.Flex;
+        diploMatrixPanel.Add(grid);
+        uiDocument.rootVisualElement.Add(diploMatrixPanel);
+        diploMatrixOpen = true;
+    }
 
-            if (diploLabels[i] != null)
-                diploLabels[i].text = players[i].displayName;
+    private VisualElement MakePlayerSelectorRow(string label, int numPlayers,
+        System.Collections.Generic.IReadOnlyList<PlayerDefinition> players,
+        int activeIndex, System.Action<int> onSelect)
+    {
+        var row = new VisualElement();
+        row.style.flexDirection = FlexDirection.Row;
+        row.style.alignItems    = Align.Center;
+        row.style.marginBottom  = 4;
 
-            // Joueur sélectionné : colonne grisée, boutons désactivés
-            if (i == selectedPlayerIndex)
+        var lbl = new Label(label);
+        lbl.style.color     = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
+        lbl.style.fontSize  = 11;
+        lbl.style.minWidth  = 60;
+        row.Add(lbl);
+
+        for (int i = 0; i < numPlayers; i++)
+        {
+            int captured = i;
+            var pc_arr = players[i].color;
+            Color pc = (pc_arr != null && pc_arr.Length >= 3)
+                ? new Color(pc_arr[0], pc_arr[1], pc_arr[2])
+                : new Color(0.25f, 0.25f, 0.35f);
+            var btn = new Button(() => onSelect(captured)) { text = $"Joueur {i + 1}" };
+            btn.style.fontSize        = 10;
+            btn.style.paddingTop      = 2;
+            btn.style.paddingBottom   = 2;
+            btn.style.paddingLeft     = 5;
+            btn.style.paddingRight    = 5;
+            btn.style.marginRight     = 3;
+            btn.style.color           = new StyleColor(Color.white);
+            btn.style.backgroundColor = new StyleColor(pc);
+            btn.style.borderTopLeftRadius     = new StyleLength(4);
+            btn.style.borderTopRightRadius    = new StyleLength(4);
+            btn.style.borderBottomLeftRadius  = new StyleLength(4);
+            btn.style.borderBottomRightRadius = new StyleLength(4);
+            btn.style.opacity         = (i == activeIndex) ? 1f : 0.45f;
+            btn.style.borderBottomWidth = (i == activeIndex) ? 2 : 0;
+            btn.style.borderBottomColor = new StyleColor(Color.white);
+            row.Add(btn);
+        }
+        return row;
+    }
+
+    private static VisualElement MakeCornerCell(int size)
+    {
+        var ve = new VisualElement();
+        ve.style.width  = size;
+        ve.style.height = size;
+        return ve;
+    }
+
+    private static VisualElement MakeSpeciesHeader(string specId, int slot,
+        SlimeMapRenderer smr, int size)
+    {
+        var ve = new VisualElement();
+        ve.style.width  = size;
+        ve.style.height = size;
+        ve.style.marginTop    = 1;
+        ve.style.marginBottom = 1;
+        ve.style.marginLeft   = 1;
+        ve.style.marginRight  = 1;
+        ve.style.alignItems     = Align.Center;
+        ve.style.justifyContent = Justify.Center;
+        ve.style.borderTopLeftRadius     = new StyleLength(3);
+        ve.style.borderTopRightRadius    = new StyleLength(3);
+        ve.style.borderBottomLeftRadius  = new StyleLength(3);
+        ve.style.borderBottomRightRadius = new StyleLength(3);
+
+        Color bg = new Color(0.15f, 0.15f, 0.2f);
+        var specDef = SpeciesLibrary.Instance?.Get(specId);
+        if (specDef?.color != null && specDef.color.Length >= 3)
+            bg = new Color(specDef.color[0], specDef.color[1], specDef.color[2]);
+        else if (slot >= 0 && smr.slotColors != null && slot < smr.slotColors.Length)
+        {
+            var v = smr.slotColors[slot];
+            bg = new Color(v.x, v.y, v.z);
+        }
+        ve.style.backgroundColor = new StyleColor(bg);
+
+        // Abréviation 2 chars
+        string abbrev = specId.Length >= 2 ? specId.Substring(0, 2).ToUpper() : specId.ToUpper();
+        var lbl = new Label(abbrev);
+        lbl.style.fontSize = 9;
+        lbl.style.color    = new StyleColor(Color.white);
+        lbl.style.unityFontStyleAndWeight = FontStyle.Bold;
+        lbl.style.unityTextAlign          = TextAnchor.MiddleCenter;
+        ve.Add(lbl);
+        return ve;
+    }
+
+    private static void AddLegendDot(VisualElement parent, Color color, string text)
+    {
+        var dot = new VisualElement();
+        dot.style.width  = 12;
+        dot.style.height = 12;
+        dot.style.borderTopLeftRadius     = new StyleLength(6);
+        dot.style.borderTopRightRadius    = new StyleLength(6);
+        dot.style.borderBottomLeftRadius  = new StyleLength(6);
+        dot.style.borderBottomRightRadius = new StyleLength(6);
+        dot.style.backgroundColor = new StyleColor(color);
+        dot.style.marginRight     = 4;
+
+        var lbl = new Label(text);
+        lbl.style.color       = new StyleColor(new Color(0.75f, 0.75f, 0.75f));
+        lbl.style.fontSize    = 10;
+        lbl.style.marginRight = 10;
+
+        parent.Add(dot);
+        parent.Add(lbl);
+    }
+
+    private void RefreshDiploMatrixCells()
+    {
+        var lib = PlayerLibrary.Instance;
+        var smr = SlimeMapRenderer.Instance;
+        if (lib == null || smr == null || diploMatrixCells == null) return;
+
+        var players    = lib.GetAll();
+        var colSpecies = lib.GetSpeciesForPlayer(players[diploColPlayer].id);
+        var rowSpecies = lib.GetSpeciesForPlayer(players[diploRowPlayer].id);
+
+        int nRows = diploMatrixCells.GetLength(0);
+        int nCols = diploMatrixCells.GetLength(1);
+
+        for (int r = 0; r < nRows && r < rowSpecies.Count; r++)
+        {
+            int rowSlot = lib.GetSlotIndex(players[diploRowPlayer].id, rowSpecies[r]);
+            for (int c = 0; c < nCols && c < colSpecies.Count; c++)
             {
-                col.style.opacity = 0.2f;
-                diploWarButtons[i]?.SetEnabled(false);
-                diploPeaceButtons[i]?.SetEnabled(false);
-                diploAllyButtons[i]?.SetEnabled(false);
-                continue;
+                int colSlot = lib.GetSlotIndex(players[diploColPlayer].id, colSpecies[c]);
+                var cell    = diploMatrixCells[r, c];
+                if (cell == null || rowSlot < 0 || colSlot < 0) continue;
+                if (rowSlot == colSlot) continue; // diagonal — static
+                var state = smr.GetDiplomaticState(rowSlot, colSlot);
+                cell.style.backgroundColor = new StyleColor(DiploStateToColor(state));
             }
-
-            col.style.opacity = 1f;
-            diploWarButtons[i]?.SetEnabled(true);
-            diploPeaceButtons[i]?.SetEnabled(true);
-            diploAllyButtons[i]?.SetEnabled(true);
-
-            // État diplomatique actuel
-            var state = SlimeMapRenderer.DiplomaticState.Neutral;
-            var mySpecies    = lib.GetSpeciesForPlayer(selectedPlayerId);
-            var enemySpecies = lib.GetSpeciesForPlayer(players[i].id);
-            if (mySpecies.Count > 0 && enemySpecies.Count > 0)
-            {
-                int ms = lib.GetSlotIndex(selectedPlayerId, mySpecies[0]);
-                int es = lib.GetSlotIndex(players[i].id,   enemySpecies[0]);
-                state = smr.GetDiplomaticState(ms, es);
-            }
-
-            // Highlight le bouton actif
-            StyleDiploButton(diploWarButtons[i],   state == SlimeMapRenderer.DiplomaticState.War,   new Color(0.8f, 0.1f, 0.1f));
-            StyleDiploButton(diploPeaceButtons[i], state == SlimeMapRenderer.DiplomaticState.Peace, new Color(0.1f, 0.3f, 0.7f));
-            StyleDiploButton(diploAllyButtons[i],  state == SlimeMapRenderer.DiplomaticState.Ally,  new Color(0.1f, 0.6f, 0.2f));
         }
     }
 
-    private static void StyleDiploButton(Button btn, bool active, Color activeColor)
+    private static Color DiploStateToColor(SlimeMapRenderer.DiplomaticState state)
     {
-        if (btn == null) return;
-        btn.style.opacity          = active ? 1.0f : 0.35f;
-        btn.style.borderBottomWidth = active ? 3 : 0;
-        btn.style.borderBottomColor = activeColor;
-        btn.style.borderLeftWidth   = active ? 2 : 0;
-        btn.style.borderLeftColor   = activeColor;
+        switch (state)
+        {
+            case SlimeMapRenderer.DiplomaticState.Ally:  return new Color(0.08f, 0.60f, 0.15f);
+            case SlimeMapRenderer.DiplomaticState.Peace: return new Color(0.38f, 0.38f, 0.38f);
+            case SlimeMapRenderer.DiplomaticState.War:   return new Color(0.70f, 0.10f, 0.10f);
+            default:                                     return new Color(0.15f, 0.22f, 0.32f);
+        }
+    }
+
+    private static SlimeMapRenderer.DiplomaticState CycleDiploState(SlimeMapRenderer.DiplomaticState s)
+    {
+        switch (s)
+        {
+            case SlimeMapRenderer.DiplomaticState.Ally:  return SlimeMapRenderer.DiplomaticState.Peace;
+            case SlimeMapRenderer.DiplomaticState.Peace: return SlimeMapRenderer.DiplomaticState.War;
+            default:                                     return SlimeMapRenderer.DiplomaticState.Ally;
+        }
     }
 
     // ── Construction panel ─────────────────────────────────────────

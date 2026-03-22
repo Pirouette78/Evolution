@@ -476,6 +476,23 @@ public class SlimeMapRenderer : MonoBehaviour
         speciesSettings[slotB] = sb;
     }
 
+    /// <summary>Change uniquement la direction fromSlot→toSlot, sans toucher à l'inverse.</summary>
+    public void SetInteractionOneWay(int fromSlot, int toSlot, DiplomaticState state)
+    {
+        if (fromSlot < 0 || fromSlot >= 16 || toSlot < 0 || toSlot >= 16) return;
+        float weight = 0f;
+        switch (state) {
+            case DiplomaticState.Ally:  weight =  0.5f; break;
+            case DiplomaticState.Peace: weight = -1.5f; break;
+            case DiplomaticState.War:   weight =  2.5f; break;
+        }
+        SetInteraction(fromSlot, toSlot, weight);
+        var s = speciesSettings[fromSlot];
+        if (state == DiplomaticState.War) s.warMask |=  (1 << toSlot);
+        else                               s.warMask &= ~(1 << toSlot);
+        speciesSettings[fromSlot] = s;
+    }
+
     public void SetWaypoints(WaypointData[] data)
     {
         if (waypointBuffer == null) return;

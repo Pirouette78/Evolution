@@ -35,6 +35,9 @@ public class PlayerDefinition
     /// <summary>Nom affiché dans l'UI.</summary>
     public string displayName;
 
+    /// <summary>Couleur UI du joueur [R, G, B] en 0-1. Utilisée pour les boutons de sélection et la matrice diplomatique.</summary>
+    public float[] color = new float[3];
+
     /// <summary>
     /// Indique si ce joueur est ennemi de tous les autres par défaut.
     /// Pour configurer finement, utiliser la section warsWith.

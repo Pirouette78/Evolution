@@ -130,6 +130,15 @@ public class PlayerLibrary : MonoBehaviour
             }
         }
 
+        // Intra-joueur : espèces différentes du même joueur → Allié par défaut
+        for (int a = 0; a < slots.Count; a++)
+            for (int b = 0; b < slots.Count; b++)
+            {
+                if (a == b) continue;
+                if (slots[a].player.id != slots[b].player.id) continue;
+                smr.SetInteraction(a, b, 0.5f);
+            }
+
         Debug.Log($"[PlayerLibrary] {slots.Count} slots configurés dans SlimeMapRenderer.");
     }
 

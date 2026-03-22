@@ -1,6 +1,7 @@
 {
   "id": "globulerouge",
   "displayName": "Globule Rouge",
+  "color": [0.549, 0.078, 0.078],
   "slotIndex": 0,
   "moveSpeed": 60.0,
   "turnSpeed": 20.0,
