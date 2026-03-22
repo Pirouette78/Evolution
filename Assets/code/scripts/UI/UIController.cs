@@ -428,6 +428,10 @@ public class UIController : MonoBehaviour
             bool inPlayer = playerSpecies.Contains(typeId);
             typeButtons[i].style.display            = inPlayer ? UnityEngine.UIElements.DisplayStyle.Flex
                                                                : UnityEngine.UIElements.DisplayStyle.None;
+            // Couleur depuis le species JSON
+            var specDef = SpeciesLibrary.Instance?.Get(typeId);
+            if (specDef?.color != null && specDef.color.Length >= 3)
+                typeButtons[i].style.backgroundColor = new StyleColor(new Color(specDef.color[0], specDef.color[1], specDef.color[2]));
             typeButtons[i].style.opacity            = (typeId == selectedSpeciesId) ? 1.0f : 0.6f;
             typeButtons[i].style.borderBottomWidth  = (typeId == selectedSpeciesId) ? 3 : 0;
             typeButtons[i].style.borderBottomColor  = Color.white;

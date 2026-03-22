@@ -105,8 +105,13 @@ public class PlayerLibrary : MonoBehaviour
             if (def != null)
                 smr.speciesSettings[s] = def.ToSpeciesSettings();
 
-            // Couleur
-            smr.SetSlotColor(s, info.speciesEntry.ToVector4());
+            // Couleur : species JSON en priorité, player JSON en fallback
+            Vector4 slotColor;
+            if (def?.color != null && def.color.Length >= 3)
+                slotColor = new Vector4(def.color[0], def.color[1], def.color[2], 1f);
+            else
+                slotColor = info.speciesEntry.ToVector4();
+            smr.SetSlotColor(s, slotColor);
         }
 
         // Matrice d'interaction diplomatique : Guerre / Allié / Paix entre joueurs différents

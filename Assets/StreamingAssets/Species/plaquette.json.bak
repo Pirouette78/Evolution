@@ -1,7 +1,7 @@
 {
   "id": "plaquette",
   "displayName": "Plaquette",
-  "color": [1.0, 0.0, 0.0],
+  "color": [1.0, 0.2, 0.2],
   "slotIndex": 4,
   "moveSpeed": 25.0,
   "turnSpeed": 5.0,
