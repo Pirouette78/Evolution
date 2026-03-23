@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using Unity.Entities;
 
 /// <summary>
 /// Core GPU simulation manager. Owns the agent buffer and drives
@@ -679,6 +680,18 @@ public class SlimeMapRenderer : MonoBehaviour
 
     // ================== Simulation loop ============================
 
+    private float GetScaledDeltaTime()
+    {
+        var world = World.DefaultGameObjectInjectionWorld;
+        if (world == null) return Time.deltaTime;
+        var em = world.EntityManager;
+        var q  = em.CreateEntityQuery(typeof(GameTime));
+        if (q.IsEmpty) { q.Dispose(); return Time.deltaTime; }
+        float sdt = em.GetComponentData<GameTime>(q.GetSingletonEntity()).ScaledDeltaTime;
+        q.Dispose();
+        return sdt;
+    }
+
     private int countFrameAccum = 0;
     private void Update()
     {
@@ -694,7 +707,7 @@ public class SlimeMapRenderer : MonoBehaviour
                 CacheTerrainData(TerrainMapRenderer.Instance);
             }
 
-            float dt = Time.deltaTime;
+            float dt = GetScaledDeltaTime();
 
             // Per-frame global uniforms
             SlimeShader.SetFloat("time",             Time.time);
