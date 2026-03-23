@@ -95,7 +95,8 @@ public class SlimeMapRenderer : MonoBehaviour
         public float loadingTime;           // time to wait at Source waypoint
         public float unloadingTime;         // time to wait at Destination waypoint
         public float waitForStock;          // 1 = attend le stock disponible avant de partir
-        public float trailErasePower;       // unités de traînée ennemie effacées/sec à la position de l'agent  → 80 bytes total
+        public float trailErasePower;       // unités de traînée ennemie effacées/sec à la position de l'agent
+        public float maxHealth;             // Points de vie max combat (indépendant de maxAge) → 84 bytes total
     }
 
     public enum DiplomaticState { Neutral, Ally, Peace, War }
@@ -117,13 +118,14 @@ public class SlimeMapRenderer : MonoBehaviour
         public Vector2 position;     // 8
         public float   angle;        // 4
         public int     speciesIndex; // 4
-        public float   age;          // 4
+        public float   age;          // 4 : vieillissement naturel
+        public float   health;       // 4 : points de vie combat
         public float   hunger;       // 4
         public int     navState;     // 4 : 0=cherche Source, 1→Source, 2=chargement, 3→Dest, 4=déchargement
         public int     targetWp;     // 4 : index waypoint cible (-1=aucun)
         public int     pathIdx;      // 4 : index chemin lissé (-1=flow field)
         public int     cargo;        // 4 : 0=vide, 1=chargé
-    } // total 40 bytes
+    } // total 44 bytes
 
     // ================== Unity lifecycle ============================
 
@@ -140,9 +142,9 @@ public class SlimeMapRenderer : MonoBehaviour
         slotColors        = new Vector4[16];
         AliveSpeciesCounts= new uint[16];
 
-        agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*5 + sizeof(int)*5);
-        // struct size (40 bytes) = 5 floats (20) + 5 ints (20)
-        speciesSettingsBuffer = new ComputeBuffer(16, 80);
+        agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*6 + sizeof(int)*5);
+        // struct size (44 bytes) = 6 floats (24) + 5 ints (20)
+        speciesSettingsBuffer = new ComputeBuffer(16, 84);
         speciesCountsBuffer   = new ComputeBuffer(16, sizeof(uint));
         slotColorsBuffer      = new ComputeBuffer(16, sizeof(float) * 4);
         waypointStockBuffer   = new ComputeBuffer(16, sizeof(float));
@@ -259,6 +261,7 @@ public class SlimeMapRenderer : MonoBehaviour
         SlimeShader.SetTexture(clearAgentMapKernel,"AgentMap",         AgentMap);
         SlimeShader.SetTexture(composeKernel, "DiffusedTrailMap", DiffusedMap);
         SlimeShader.SetTexture(composeKernel, "DisplayMap",       DisplayMap);
+        SlimeShader.SetTexture(composeKernel, "AgentMap",         AgentMap);
         SlimeShader.SetTexture(composeKernel, "DisplayMap",       DisplayMap);
         SlimeShader.SetInt("width",  Width);
         SlimeShader.SetInt("height", Height);
@@ -502,10 +505,10 @@ public class SlimeMapRenderer : MonoBehaviour
         }
         SetInteraction(fromSlot, toSlot, weight);
         if (fromSlot == toSlot) return; // diagonal : pas de warMask sur soi-même
-        var s = speciesSettings[fromSlot];
-        if (state == DiplomaticState.War) s.warMask |=  (1 << toSlot);
-        else                               s.warMask &= ~(1 << toSlot);
-        speciesSettings[fromSlot] = s;
+        var s = speciesSettings[toSlot];                               // la CIBLE reçoit le warMask
+        if (state == DiplomaticState.War) s.warMask |=  (1 << fromSlot); // cible vulnérable à l'attaquant
+        else                               s.warMask &= ~(1 << fromSlot);
+        speciesSettings[toSlot] = s;
     }
 
     // ── API data-driven (DiplomacyLibrary) ───────────────────────────
@@ -519,10 +522,10 @@ public class SlimeMapRenderer : MonoBehaviour
         if (fromSlot != toSlot)
             agentInteractionMatrixData[fromSlot * 16 + toSlot] = level.agentSenseWeight;
         if (fromSlot == toSlot) return;
-        var s = speciesSettings[fromSlot];
-        if (level.isWar) s.warMask |=  (1 << toSlot);
-        else             s.warMask &= ~(1 << toSlot);
-        speciesSettings[fromSlot] = s;
+        var s = speciesSettings[toSlot];                    // la CIBLE reçoit le warMask
+        if (level.isWar) s.warMask |=  (1 << fromSlot);    // cible vulnérable à l'attaquant
+        else             s.warMask &= ~(1 << fromSlot);
+        speciesSettings[toSlot] = s;
     }
 
     /// <summary>Setter symétrique (pour init PlayerLibrary).</summary>
@@ -546,7 +549,6 @@ public class SlimeMapRenderer : MonoBehaviour
     {
         var lib = DiplomacyLibrary.Instance;
         if (lib == null) return null;
-        if (slotA >= 0 && slotB >= 0 && IsAtWar(slotA, slotB)) return lib.WarLevel;
         float w = (slotA >= 0 && slotB >= 0) ? interactionMatrixData[slotA * 16 + slotB] : 0f;
         return lib.GetByValue(w);
     }
@@ -597,6 +599,7 @@ public class SlimeMapRenderer : MonoBehaviour
                 angle        = Random.value * Mathf.PI * 2f,
                 speciesIndex = speciesIndex,
                 age          = 0f,
+                health       = speciesSettings[speciesIndex].maxHealth,
                 hunger       = speciesSettings[speciesIndex].startingEnergy,
             };
         }
@@ -636,6 +639,7 @@ public class SlimeMapRenderer : MonoBehaviour
                 angle       = angle,
                 speciesIndex= pid,
                 age         = 0f,
+                health      = speciesSettings[pid].maxHealth,
                 hunger      = speciesSettings[pid].startingEnergy,
             };
         }

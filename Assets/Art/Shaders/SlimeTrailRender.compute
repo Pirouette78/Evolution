@@ -13,7 +13,8 @@ struct Agent {
     float2 position;
     float  angle;
     int    speciesIndex;
-    float  age;      // Time alive in seconds
+    float  age;      // Temps vécu (vieillissement naturel)
+    float  health;   // Points de vie combat (séparé de age)
     float  hunger;
     int    navState; // 0=cherche Source, 1→Source, 2=chargement, 3→Dest, 4=déchargement
     int    targetWp; // index waypoint cible (-1=aucun)
@@ -56,6 +57,7 @@ struct SpeciesSettings {
     float unloadingTime;        // time to wait at Destination
     float waitForStock;         // 1 = attend le stock disponible avant de partir
     float trailErasePower;      // unités de traînée ennemie effacées/sec à la position de l'agent
+    float maxHealth;            // Points de vie max (combat, indépendant du vieillissement)
 };
 
 struct Waypoint {
@@ -469,18 +471,18 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
         }
     }
 
-    // War: enemy trail presence accelerates aging + instant kill on heavy contact
-    if (settings.warMask != 0) {
+    // War: la traînée ennemie draine health (vieillissement naturel inchangé)
+    if (settings.warMask != 0 && settings.warDamageRate > 0) {
         for (int e = 0; e < numActiveSlots; e++) {
             if ((settings.warMask & (1 << e)) != 0) {
                 float enemyTrail = TrailMap[int3((int)agent.position.x, (int)agent.position.y, e)];
-                agent.age += enemyTrail * settings.warDamageRate * deltaTime;
-                if (enemyTrail > 0.8 && settings.warDamageRate > 0) {
-                    agent.age = settings.maxAge + 1;
-                    agents[id.x] = agent;
-                    return;
-                }
+                agent.health -= enemyTrail * settings.warDamageRate * deltaTime;
             }
+        }
+        if (agent.health <= 0) {
+            agent.age = -1;
+            agents[id.x] = agent;
+            return;
         }
     }
 
@@ -599,10 +601,16 @@ void ComposeDisplay (uint3 id : SV_DispatchThreadID)
         totalDensity += blurredDensity;
     }
     
-    // Normalize or cap the color if totalDensity > 0
+    // Agent dots : affiche les agents directement (utile si trailWeight = 0)
+    for (int j = 0; j < numActiveSlots; j++) {
+        if ((playerVisibilityMask & (1 << j)) == 0) continue;
+        if (AgentMap[int3(id.xy, j)] > 0) {
+            finalColor.rgb = max(finalColor.rgb, slotColors[j].rgb);
+            totalDensity   = max(totalDensity, 1.0);
+        }
+    }
+
     if (totalDensity > 0.01) {
-        // Alternatively we can intensify it slightly but keep the mixing smooth
-        // A saturated value looks better than a completely flat mix.
         DisplayMap[id.xy] = float4(finalColor.rgb, 1.0);
     } else {
         DisplayMap[id.xy] = float4(0, 0, 0, 1);

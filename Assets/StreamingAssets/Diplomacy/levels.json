@@ -1,8 +1,49 @@
 {
   "levels": [
-    { "id": "guerre", "displayName": "Guerre", "value":  2.5, "color": [1.0, 0.0, 0.0], "isWar": true, "agentSenseWeight": 3.0 },
-    { "id": "neutre", "displayName": "Neutre", "value":  0.0, "color": [0.7, 0.7, 0.7], "isWar": false },
-    { "id": "paix",   "displayName": "Paix",   "value": -1.5, "color": [0.4, 0.8, 0.4], "isWar": false },
-    { "id": "allie",  "displayName": "Allié",  "value":  1.5, "color": [0.0, 1.0, 0.0], "isWar": false }
+    {
+      "id": "guerre",
+      "displayName": "Guerre",
+      "value": 2.5,
+      "color": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "isWar": true,
+      "agentSenseWeight": 20.0
+    },
+    {
+      "id": "neutre",
+      "displayName": "Neutre",
+      "value": 0.0,
+      "color": [
+        0.7,
+        0.7,
+        0.7
+      ],
+      "isWar": false
+    },
+    {
+      "id": "paix",
+      "displayName": "Paix",
+      "value": -1.5,
+      "color": [
+        0.4,
+        0.8,
+        0.4
+      ],
+      "isWar": false
+    },
+    {
+      "id": "allie",
+      "displayName": "Allié",
+      "value": 1.5,
+      "color": [
+        0.0,
+        1.0,
+        0.0
+      ],
+      "isWar": false
+    }
   ]
 }

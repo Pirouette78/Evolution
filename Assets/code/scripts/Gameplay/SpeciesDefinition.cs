@@ -33,6 +33,7 @@ public class SpeciesDefinition
 
     // ── Cycle de vie ──────────────────────────────────────────────────
     public float maxAge;
+    public float maxHealth = 100f;  // Points de vie max (combat). 0 dans le JSON = utilise cette valeur par défaut.
     public float trailWeight;
     public float decayRate;
     public float diffuseRate;
@@ -83,6 +84,7 @@ public class SpeciesDefinition
         diffuseRate           = diffuseRate,
         warDamageRate         = warDamageRate,
         trailErasePower       = trailErasePower,
+        maxHealth             = maxHealth > 0 ? maxHealth : 100f,
         behaviorType          = BehaviorTypeInt,
         energyConsumptionRate = energyConsumptionRate,
         energyReward          = energyReward,
