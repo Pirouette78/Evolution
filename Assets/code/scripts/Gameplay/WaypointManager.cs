@@ -225,7 +225,7 @@ public class WaypointManager : MonoBehaviour
                 int     wpi = hive.waypointIndex;
                 Vector2 pos = (wpi >= 0 && wpi < waypointList.Count)
                     ? waypointList[wpi].position
-                    : new Vector2(smr.Width * 0.5f, smr.Height * 0.5f);
+                    : new Vector2(smr.MapWidth * 0.5f, smr.MapHeight * 0.5f);
                 smr.AddAgentsAt(1, hive.speciesSlot, pos);
                 hive.totalAgentsSpawned++;
                 hive.level = Mathf.Min(1 + (int)(hive.totalAgentsSpawned / 500f), 10);

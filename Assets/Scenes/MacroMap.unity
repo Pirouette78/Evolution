@@ -152,8 +152,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SlimeMapRenderer
   SlimeShader: {fileID: 7200000, guid: 1e2bbf2f985345f4da6320ea9dcb187c, type: 3}
-  Width: 512
-  Height: 512
+  Width: 1024
+  Height: 1024
   StepsPerFrame: 1
   InitialAgentCount: 5000
   DisplayTarget: {fileID: 104352733}

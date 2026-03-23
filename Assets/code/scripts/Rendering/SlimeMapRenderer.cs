@@ -46,6 +46,10 @@ public class SlimeMapRenderer : MonoBehaviour
     public ComputeBuffer AgentBuffer => agentBuffer;
     public bool IsReady              => isInitialized;
     public int  AgentCount           => currentAgentCount;
+    /// <summary>Largeur de l'espace simulation (= Width). Identique à TerrainMapRenderer.Width en pratique.</summary>
+    public int MapWidth  => Width;
+    /// <summary>Hauteur de l'espace simulation (= Height). Identique à TerrainMapRenderer.Height en pratique.</summary>
+    public int MapHeight => Height;
 
     public SpeciesSettings[] speciesSettings = new SpeciesSettings[MaxSlots];
     public uint[]   AliveSpeciesCounts = new uint[MaxSlots];
@@ -673,11 +677,19 @@ public class SlimeMapRenderer : MonoBehaviour
         if (heightMapCache == null)
             return new Vector2(Random.Range(5f, Width - 5f), Random.Range(5f, Height - 5f));
 
+        // Les agents vivent dans l'espace simulation [0..Width, 0..Height].
+        // Si le terrain a une résolution différente, on scale les coordonnées
+        // pour que la vérification eau reste correcte.
+        int hmW = heightMapCache.GetLength(0);
+        int hmH = heightMapCache.GetLength(1);
+        float scaleX = hmW / (float)Width;
+        float scaleY = hmH / (float)Height;
+
         for (int attempt = 0; attempt < 100; attempt++)
         {
             var p = new Vector2(Random.Range(5f, Width - 5f), Random.Range(5f, Height - 5f));
-            int ix = Mathf.Clamp((int)p.x, 0, Width  - 1);
-            int iy = Mathf.Clamp((int)p.y, 0, Height - 1);
+            int ix = Mathf.Clamp((int)(p.x * scaleX), 0, hmW - 1);
+            int iy = Mathf.Clamp((int)(p.y * scaleY), 0, hmH - 1);
             if (heightMapCache[ix, iy] >= waterThresholdCache) return p;
         }
         return new Vector2(Width / 2f, Height / 2f);
