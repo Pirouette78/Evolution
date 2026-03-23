@@ -1,0 +1,20 @@
+{
+  "id": "plaquette",
+  "displayName": "Plaquette",
+  "color": [1.0, 0.0, 0.0],
+  "slotIndex": 5,
+  "moveSpeed": 25.0,
+  "turnSpeed": 0.0,
+  "sensorAngleDeg": 0.0,
+  "sensorOffsetDst": 0.0,
+  "sensorSize": 0,
+  "maxAge": 1000000.0,
+  "maxHealth": 0.1,
+  "trailWeight": 0.0,
+  "decayRate": 1.0,
+  "diffuseRate": 0.0,
+  "warDamageRate": 0.0,
+  "trailErasePower": 0.0,
+  "behaviorType": "Oxygene",
+  "behaviorTypeInt": 5
+}

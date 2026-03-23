@@ -8,6 +8,8 @@
 #pragma kernel ClearDeliveryCounters
 #pragma kernel ClearAgentMap
 
+#define MAX_SLOTS 32
+
 
 struct Agent {
     float2 position;
@@ -68,8 +70,8 @@ struct Waypoint {
 
 StructuredBuffer<SpeciesSettings> speciesSettings;
 RWStructuredBuffer<uint> speciesCounts;
-StructuredBuffer<float> interactionMatrix;      // 16×16 — trail sensing (attraction/répulsion chimique)
-StructuredBuffer<float> agentInteractionMatrix; // 16×16 — agent sensing (présence directe)
+StructuredBuffer<float> interactionMatrix;      // MAX_SLOTS×MAX_SLOTS — trail sensing (attraction/répulsion chimique)
+StructuredBuffer<float> agentInteractionMatrix; // MAX_SLOTS×MAX_SLOTS — agent sensing (présence directe)
 
 StructuredBuffer<Waypoint> waypoints;
 int numWaypoints;
@@ -79,7 +81,7 @@ RWStructuredBuffer<int>   deliveryCounters;  // compteur atomique de livraisons 
 
 Texture2DArray<float2> FlowFieldMap;
 
-StructuredBuffer<float2> smoothedPaths;    // flat 16×64 : waypoint w → [w*64 .. w*64+count-1]
+StructuredBuffer<float2> smoothedPaths;    // flat MAX_SLOTS×64 : waypoint w → [w*64 .. w*64+count-1]
 StructuredBuffer<int2>   smoothedPathMeta; // [speciesIdx] = (startIndex, count), count=0 = pas de chemin
 
 float deltaTime;
@@ -395,7 +397,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
         // sense() pour la propre traînée (préserve l'évitement des murs)
         // senseSpecies() pour les traînées étrangères (attraction/répulsion diplomatique)
         float weightForward = 0, weightLeft = 0, weightRight = 0;
-        float selfW = interactionMatrix[agent.speciesIndex * 16 + agent.speciesIndex];
+        float selfW = interactionMatrix[agent.speciesIndex * MAX_SLOTS + agent.speciesIndex];
         if (abs(selfW) > 0.001) {
             weightForward += sense(agent, 0,                        settings) * selfW;
             weightLeft    += sense(agent,  settings.sensorAngleRad, settings) * selfW;
@@ -403,7 +405,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
         }
         for (int s = 0; s < numActiveSlots; s++) {
             if (s == agent.speciesIndex) continue;
-            float w = interactionMatrix[agent.speciesIndex * 16 + s];
+            float w = interactionMatrix[agent.speciesIndex * MAX_SLOTS + s];
             if (abs(w) < 0.001) continue;
             weightForward += senseSpecies(agent, 0,                        settings, s) * w;
             weightLeft    += senseSpecies(agent,  settings.sensorAngleRad, settings, s) * w;
@@ -412,7 +414,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
 
         // Sensing direct de présence d'agents (AgentMap) — non-diffus, temps-réel
         for (int sa = 0; sa < numActiveSlots; sa++) {
-            float aw = agentInteractionMatrix[agent.speciesIndex * 16 + sa];
+            float aw = agentInteractionMatrix[agent.speciesIndex * MAX_SLOTS + sa];
             if (abs(aw) < 0.001) continue;
             weightForward += senseAgents(agent, 0,                        settings, sa) * aw;
             weightLeft    += senseAgents(agent,  settings.sensorAngleRad, settings, sa) * aw;
@@ -545,7 +547,7 @@ void Diffuse (uint3 id : SV_DispatchThreadID)
 [numthreads(16, 1, 1)]
 void ClearCounts(uint3 id : SV_DispatchThreadID)
 {
-    if (id.x < 16)
+    if (id.x < MAX_SLOTS)
         speciesCounts[id.x] = 0;
 }
 [numthreads(64, 1, 1)]
@@ -565,7 +567,7 @@ void CountAlive(uint3 id : SV_DispatchThreadID)
 void ClearAgentMap (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)width || id.y >= (uint)height) return;
-    for (int slice = 0; slice < 16; slice++)
+    for (int slice = 0; slice < MAX_SLOTS; slice++)
         AgentMap[int3(id.xy, slice)] = 0.0;
 }
 
@@ -573,7 +575,7 @@ void ClearAgentMap (uint3 id : SV_DispatchThreadID)
 void ResetMap (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)width || id.y >= (uint)height) return;
-    for (int slice = 0; slice < 16; slice++) {
+    for (int slice = 0; slice < MAX_SLOTS; slice++) {
         TrailMap[int3(id.xy, slice)] = 0.0;
         DiffusedTrailMap[int3(id.xy, slice)] = 0.0;
         AgentMap[int3(id.xy, slice)] = 0.0;
@@ -620,5 +622,5 @@ void ComposeDisplay (uint3 id : SV_DispatchThreadID)
 [numthreads(16,1,1)]
 void ClearDeliveryCounters(uint3 id : SV_DispatchThreadID)
 {
-    if (id.x < 16) deliveryCounters[id.x] = 0;
+    if (id.x < MAX_SLOTS) deliveryCounters[id.x] = 0;
 }

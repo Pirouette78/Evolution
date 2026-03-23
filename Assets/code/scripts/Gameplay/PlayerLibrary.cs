@@ -75,9 +75,9 @@ public class PlayerLibrary : MonoBehaviour
                 if (entry == null || string.IsNullOrEmpty(entry.speciesId)) continue;
                 string key = MakeKey(player.id, entry.speciesId.ToLowerInvariant());
                 if (slotIndex.ContainsKey(key)) continue;
-                if (slots.Count >= 16)
+                if (slots.Count >= SlimeMapRenderer.MaxSlots)
                 {
-                    Debug.LogWarning("[PlayerLibrary] Limite de 16 slots GPU atteinte — espèces supplémentaires ignorées.");
+                    Debug.LogWarning($"[PlayerLibrary] Limite de {SlimeMapRenderer.MaxSlots} slots GPU atteinte — espèces supplémentaires ignorées.");
                     break;
                 }
                 slotIndex[key] = slots.Count;

@@ -21,6 +21,8 @@ public class SlimeMapRenderer : MonoBehaviour
 {
     public static SlimeMapRenderer Instance { get; private set; }
 
+    public const int MaxSlots = 32;
+
     // ── Inspector ──────────────────────────────────────────────────
     [Header("Compute Shader (assign in Inspector)")]
     public ComputeShader SlimeShader;
@@ -45,15 +47,15 @@ public class SlimeMapRenderer : MonoBehaviour
     public bool IsReady              => isInitialized;
     public int  AgentCount           => currentAgentCount;
 
-    public SpeciesSettings[] speciesSettings = new SpeciesSettings[16];
-    public uint[]   AliveSpeciesCounts = new uint[16];
-    public SpeciesType[] speciesTypes  = new SpeciesType[16];
+    public SpeciesSettings[] speciesSettings = new SpeciesSettings[MaxSlots];
+    public uint[]   AliveSpeciesCounts = new uint[MaxSlots];
+    public SpeciesType[] speciesTypes  = new SpeciesType[MaxSlots];
     /// <summary>ID d'espèce pour chaque slot GPU. Géré par PlayerLibrary.</summary>
-    public string[] speciesIds         = new string[16];
+    public string[] speciesIds         = new string[MaxSlots];
     /// <summary>Nombre de slots GPU actifs (configuré par PlayerLibrary).</summary>
     public int numActiveSlots = 16;
     /// <summary>Couleur de rendu par slot GPU (envoyée au shader via slotColorsBuffer).</summary>
-    public Vector4[] slotColors = new Vector4[16];
+    public Vector4[] slotColors = new Vector4[MaxSlots];
 
     // ── Private ─────────────────────────────────────────────────────
     private ComputeBuffer agentBuffer;
@@ -62,10 +64,10 @@ public class SlimeMapRenderer : MonoBehaviour
     private int nextSpawnIndex = 0;   // index circulaire pour réutiliser les slots morts
     private bool isInitialized = false;
     private bool initialSpawnDone = false;
-    private int playerVisibilityMask = 0xFFFF; // all 16 slots visible by default
+    private int playerVisibilityMask = ~0; // all 32 slots visible by default
 
     private int updateKernel, drawKernel, diffuseKernel, clearKernel, composeKernel, clearCountsKernel, countAliveKernel, clearDeliveryKernel, clearAgentMapKernel;
-    public  int[] DeliveryCounts = new int[16];
+    public  int[] DeliveryCounts = new int[MaxSlots];
     private ComputeBuffer waypointStockBuffer;
     private ComputeBuffer deliveryCounterBuffer;
 
@@ -103,9 +105,9 @@ public class SlimeMapRenderer : MonoBehaviour
     public enum DiplomaticState { Neutral, Ally, Peace, War }
     private ComputeBuffer speciesSettingsBuffer;
     private ComputeBuffer interactionMatrixBuffer;
-    public  float[]       interactionMatrixData      = new float[16 * 16];
+    public  float[]       interactionMatrixData      = new float[MaxSlots * MaxSlots];
     private ComputeBuffer agentInteractionMatrixBuffer;
-    public  float[]       agentInteractionMatrixData = new float[16 * 16];
+    public  float[]       agentInteractionMatrixData = new float[MaxSlots * MaxSlots];
     private ComputeBuffer speciesCountsBuffer;
     private ComputeBuffer slotColorsBuffer;
     private ComputeBuffer waypointBuffer;
@@ -137,30 +139,33 @@ public class SlimeMapRenderer : MonoBehaviour
 
         // Réinitialise les tableaux à la bonne taille (les données sérialisées Unity
         // peuvent avoir l'ancienne taille 6 si la scène n'a pas été re-sauvegardée)
-        speciesSettings   = new SpeciesSettings[16];
-        speciesIds        = new string[16];
-        speciesTypes      = new SpeciesType[16];
-        slotColors        = new Vector4[16];
-        AliveSpeciesCounts= new uint[16];
+        speciesSettings        = new SpeciesSettings[MaxSlots];
+        speciesIds             = new string[MaxSlots];
+        speciesTypes           = new SpeciesType[MaxSlots];
+        slotColors             = new Vector4[MaxSlots];
+        AliveSpeciesCounts     = new uint[MaxSlots];
+        interactionMatrixData      = new float[MaxSlots * MaxSlots];
+        agentInteractionMatrixData = new float[MaxSlots * MaxSlots];
+        DeliveryCounts         = new int[MaxSlots];
 
         agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*6 + sizeof(int)*5);
         // struct size (44 bytes) = 6 floats (24) + 5 ints (20)
-        speciesSettingsBuffer = new ComputeBuffer(16, 84);
-        speciesCountsBuffer   = new ComputeBuffer(16, sizeof(uint));
-        slotColorsBuffer      = new ComputeBuffer(16, sizeof(float) * 4);
-        waypointStockBuffer   = new ComputeBuffer(16, sizeof(float));
-        deliveryCounterBuffer = new ComputeBuffer(16, sizeof(int));
-        waypointStockBuffer.SetData(new float[16]);
-        deliveryCounterBuffer.SetData(new int[16]);
+        speciesSettingsBuffer = new ComputeBuffer(MaxSlots, 84);
+        speciesCountsBuffer   = new ComputeBuffer(MaxSlots, sizeof(uint));
+        slotColorsBuffer      = new ComputeBuffer(MaxSlots, sizeof(float) * 4);
+        waypointStockBuffer   = new ComputeBuffer(MaxSlots, sizeof(float));
+        deliveryCounterBuffer = new ComputeBuffer(MaxSlots, sizeof(int));
+        waypointStockBuffer.SetData(new float[MaxSlots]);
+        deliveryCounterBuffer.SetData(new int[MaxSlots]);
 
-        // Default colors: spread across hue for the 16 slots
-        for (int i = 0; i < 16; i++) {
-            float hue = i / 16f;
+        // Default colors: spread across hue for all slots
+        for (int i = 0; i < MaxSlots; i++) {
+            float hue = i / (float)MaxSlots;
             Color c = Color.HSVToRGB(hue, 1f, 1f);
             slotColors[i] = new Vector4(c.r, c.g, c.b, 1f);
         }
 
-        for (int i = 0; i < 16; i++) {
+        for (int i = 0; i < MaxSlots; i++) {
             speciesSettings[i] = new SpeciesSettings {
                 moveSpeed = 75f,
                 turnSpeed = 10f,
@@ -173,8 +178,8 @@ public class SlimeMapRenderer : MonoBehaviour
                 diffuseRate = 2f,
                 warDamageRate = 1f
             };
-            speciesIds[i] = speciesTypes[i < 16 ? i : 0].ToString().ToLowerInvariant();
-            interactionMatrixData[i * 16 + i] = 1f; // chaque espèce suit sa propre traînée par défaut
+            speciesIds[i] = speciesTypes[i].ToString().ToLowerInvariant();
+            interactionMatrixData[i * MaxSlots + i] = 1f; // chaque espèce suit sa propre traînée par défaut
         }
 
         if (DisplayTarget == null) DisplayTarget = GetComponent<MeshRenderer>();
@@ -228,7 +233,7 @@ public class SlimeMapRenderer : MonoBehaviour
             var rt = new RenderTexture(Width, Height, 0, UnityEngine.Experimental.Rendering.GraphicsFormat.R16_SFloat)
             { 
                 dimension = UnityEngine.Rendering.TextureDimension.Tex2DArray,
-                volumeDepth = 16,
+                volumeDepth = MaxSlots,
                 enableRandomWrite = true, 
                 name = name
             };
@@ -279,39 +284,39 @@ public class SlimeMapRenderer : MonoBehaviour
         SlimeShader.SetBuffer(updateKernel, "deliveryCounters", deliveryCounterBuffer);
         SlimeShader.SetBuffer(clearDeliveryKernel, "deliveryCounters", deliveryCounterBuffer);
 
-        // Interaction matrix (16×16 = 256 floats) pour le Particle Life sur traînées
-        interactionMatrixBuffer = new ComputeBuffer(256, sizeof(float));
+        // Interaction matrix (MaxSlots×MaxSlots) pour le Particle Life sur traînées
+        interactionMatrixBuffer = new ComputeBuffer(MaxSlots * MaxSlots, sizeof(float));
         interactionMatrixBuffer.SetData(interactionMatrixData);
         SlimeShader.SetBuffer(updateKernel, "interactionMatrix", interactionMatrixBuffer);
 
-        // Agent interaction matrix (16×16 = 256 floats) pour le sensing direct de présence d'agents
-        agentInteractionMatrixBuffer = new ComputeBuffer(256, sizeof(float));
+        // Agent interaction matrix (MaxSlots×MaxSlots) pour le sensing direct de présence d'agents
+        agentInteractionMatrixBuffer = new ComputeBuffer(MaxSlots * MaxSlots, sizeof(float));
         agentInteractionMatrixBuffer.SetData(agentInteractionMatrixData);
         SlimeShader.SetBuffer(updateKernel, "agentInteractionMatrix", agentInteractionMatrixBuffer);
 
-        // Waypoints buffer (max 16 × 16 bytes)
-        waypointBuffer = new ComputeBuffer(16, 16);
-        waypointBuffer.SetData(new WaypointData[16]);
+        // Waypoints buffer (max MaxSlots × 16 bytes)
+        waypointBuffer = new ComputeBuffer(MaxSlots, 16);
+        waypointBuffer.SetData(new WaypointData[MaxSlots]);
         SlimeShader.SetBuffer(updateKernel, "waypoints", waypointBuffer);
         SlimeShader.SetInt("numWaypoints", 0);
 
-        // Smooth path buffers (string pulling) — indexés par waypoint (0-15), pas par espèce
-        smoothedPathBuffer = new ComputeBuffer(16 * 64, sizeof(float) * 2); // float2 × 1024
-        smoothedPathBuffer.SetData(new Vector2[16 * 64]);
+        // Smooth path buffers (string pulling) — indexés par waypoint, pas par espèce
+        smoothedPathBuffer = new ComputeBuffer(MaxSlots * 64, sizeof(float) * 2);
+        smoothedPathBuffer.SetData(new Vector2[MaxSlots * 64]);
         SlimeShader.SetBuffer(updateKernel, "smoothedPaths", smoothedPathBuffer);
 
-        smoothedPathMetaBuffer = new ComputeBuffer(16, sizeof(int) * 2); // int2 × 16
-        smoothedPathMetaBuffer.SetData(new Vector2Int[16]);
+        smoothedPathMetaBuffer = new ComputeBuffer(MaxSlots, sizeof(int) * 2);
+        smoothedPathMetaBuffer.SetData(new Vector2Int[MaxSlots]);
         SlimeShader.SetBuffer(updateKernel, "smoothedPathMeta", smoothedPathMetaBuffer);
 
-        // Flow field texture array (16 slices, one per waypoint, RG = direction)
-        flowFieldMap = new Texture2DArray(Width, Height, 16, TextureFormat.RGHalf, false)
+        // Flow field texture array (MaxSlots slices, one per waypoint, RG = direction)
+        flowFieldMap = new Texture2DArray(Width, Height, MaxSlots, TextureFormat.RGHalf, false)
         {
             filterMode = FilterMode.Point,
             wrapMode   = TextureWrapMode.Clamp
         };
         Color[] emptySlice = new Color[Width * Height];
-        for (int s = 0; s < 16; s++) flowFieldMap.SetPixels(emptySlice, s);
+        for (int s = 0; s < MaxSlots; s++) flowFieldMap.SetPixels(emptySlice, s);
         flowFieldMap.Apply();
         flowFieldMapIsOwned = true;
         SlimeShader.SetTexture(updateKernel, "FlowFieldMap", flowFieldMap);
@@ -382,7 +387,7 @@ public class SlimeMapRenderer : MonoBehaviour
 
     public void SetPlayerVisibility(int index, bool isVisible)
     {
-        if (index >= 0 && index < 16)
+        if (index >= 0 && index < MaxSlots)
         {
             if (isVisible) playerVisibilityMask |= (1 << index);
             else           playerVisibilityMask &= ~(1 << index);
@@ -391,7 +396,7 @@ public class SlimeMapRenderer : MonoBehaviour
 
     public bool GetPlayerVisibility(int index)
     {
-        if (index >= 0 && index < 16)
+        if (index >= 0 && index < MaxSlots)
             return (playerVisibilityMask & (1 << index)) != 0;
         return false;
     }
@@ -399,7 +404,7 @@ public class SlimeMapRenderer : MonoBehaviour
     /// <summary>Définit la couleur de rendu d'un slot GPU et l'envoie au shader.</summary>
     public void SetSlotColor(int slot, Vector4 color)
     {
-        if (slot < 0 || slot >= 16) return;
+        if (slot < 0 || slot >= MaxSlots) return;
         slotColors[slot] = color;
         slotColorsBuffer?.SetData(slotColors);
     }
@@ -424,7 +429,7 @@ public class SlimeMapRenderer : MonoBehaviour
 
     public void SetSpeciesType(int index, SpeciesType type)
     {
-        if (index < 0 || index >= 16) return;
+        if (index < 0 || index >= MaxSlots) return;
         speciesTypes[index] = type;
         string id = type.ToString().ToLowerInvariant();
         speciesIds[index] = id; // toujours synchronisé avec speciesTypes
@@ -438,7 +443,7 @@ public class SlimeMapRenderer : MonoBehaviour
 
     public void SetWar(int a, int b, bool atWar)
     {
-        if (a < 0 || a >= 16 || b < 0 || b >= 16 || a == b) return;
+        if (a < 0 || a >= MaxSlots || b < 0 || b >= MaxSlots || a == b) return;
         var sa = speciesSettings[a];
         var sb = speciesSettings[b];
         if (atWar) { sa.warMask |= (1 << b); sb.warMask |= (1 << a); }
@@ -449,15 +454,15 @@ public class SlimeMapRenderer : MonoBehaviour
 
     public bool IsAtWar(int a, int b)
     {
-        if (a < 0 || a >= 16 || b < 0 || b >= 16) return false;
+        if (a < 0 || a >= MaxSlots || b < 0 || b >= MaxSlots) return false;
         return (speciesSettings[a].warMask & (1 << b)) != 0;
     }
 
     public DiplomaticState GetDiplomaticState(int slotA, int slotB)
     {
-        if (slotA < 0 || slotA >= 16 || slotB < 0 || slotB >= 16) return DiplomaticState.Neutral;
+        if (slotA < 0 || slotA >= MaxSlots || slotB < 0 || slotB >= MaxSlots) return DiplomaticState.Neutral;
         if (IsAtWar(slotA, slotB)) return DiplomaticState.War;
-        float w = interactionMatrixData[slotA * 16 + slotB];
+        float w = interactionMatrixData[slotA * MaxSlots + slotB];
         if (w >  0.01f) return DiplomaticState.Ally;
         if (w < -0.01f) return DiplomaticState.Peace;
         return DiplomaticState.Neutral;
@@ -465,14 +470,14 @@ public class SlimeMapRenderer : MonoBehaviour
 
     public void SetInteraction(int slotA, int slotB, float weight)
     {
-        if (slotA < 0 || slotA >= 16 || slotB < 0 || slotB >= 16) return;
-        interactionMatrixData[slotA * 16 + slotB] = weight;
+        if (slotA < 0 || slotA >= MaxSlots || slotB < 0 || slotB >= MaxSlots) return;
+        interactionMatrixData[slotA * MaxSlots + slotB] = weight;
     }
 
     /// <summary>Configure l'état diplomatique entre deux slots GPU et met à jour la matrice d'interaction.</summary>
     public void SetDiplomaticState(int slotA, int slotB, DiplomaticState state)
     {
-        if (slotA < 0 || slotA >= 16 || slotB < 0 || slotB >= 16 || slotA == slotB) return;
+        if (slotA < 0 || slotA >= MaxSlots || slotB < 0 || slotB >= MaxSlots || slotA == slotB) return;
 
         float ab = 0f, ba = 0f;
         switch (state)
@@ -497,7 +502,7 @@ public class SlimeMapRenderer : MonoBehaviour
     /// <summary>Change uniquement la direction fromSlot→toSlot, sans toucher à l'inverse.</summary>
     public void SetInteractionOneWay(int fromSlot, int toSlot, DiplomaticState state)
     {
-        if (fromSlot < 0 || fromSlot >= 16 || toSlot < 0 || toSlot >= 16) return;
+        if (fromSlot < 0 || fromSlot >= MaxSlots || toSlot < 0 || toSlot >= MaxSlots) return;
         float weight = 0f;
         switch (state) {
             case DiplomaticState.Ally:  weight =  0.5f; break;
@@ -517,11 +522,11 @@ public class SlimeMapRenderer : MonoBehaviour
     /// <summary>Setter asymétrique prenant un DiplomacyLevelDefinition (data-driven).</summary>
     public void SetInteractionOneWay(int fromSlot, int toSlot, DiplomacyLevelDefinition level)
     {
-        if (fromSlot < 0 || fromSlot >= 16 || toSlot < 0 || toSlot >= 16 || level == null) return;
+        if (fromSlot < 0 || fromSlot >= MaxSlots || toSlot < 0 || toSlot >= MaxSlots || level == null) return;
         SetInteraction(fromSlot, toSlot, level.value);
         // Agent sensing matrix
         if (fromSlot != toSlot)
-            agentInteractionMatrixData[fromSlot * 16 + toSlot] = level.agentSenseWeight;
+            agentInteractionMatrixData[fromSlot * MaxSlots + toSlot] = level.agentSenseWeight;
         if (fromSlot == toSlot) return;
         var s = speciesSettings[toSlot];                    // la CIBLE reçoit le warMask
         if (level.isWar) s.warMask |=  (1 << fromSlot);    // cible vulnérable à l'attaquant
@@ -532,11 +537,11 @@ public class SlimeMapRenderer : MonoBehaviour
     /// <summary>Setter symétrique (pour init PlayerLibrary).</summary>
     public void SetInteractionSymmetric(int slotA, int slotB, DiplomacyLevelDefinition level)
     {
-        if (slotA < 0 || slotA >= 16 || slotB < 0 || slotB >= 16 || slotA == slotB || level == null) return;
+        if (slotA < 0 || slotA >= MaxSlots || slotB < 0 || slotB >= MaxSlots || slotA == slotB || level == null) return;
         SetInteraction(slotA, slotB, level.value);
         SetInteraction(slotB, slotA, level.value);
-        agentInteractionMatrixData[slotA * 16 + slotB] = level.agentSenseWeight;
-        agentInteractionMatrixData[slotB * 16 + slotA] = level.agentSenseWeight;
+        agentInteractionMatrixData[slotA * MaxSlots + slotB] = level.agentSenseWeight;
+        agentInteractionMatrixData[slotB * MaxSlots + slotA] = level.agentSenseWeight;
         var sa = speciesSettings[slotA];
         var sb = speciesSettings[slotB];
         if (level.isWar) { sa.warMask |= (1 << slotB); sb.warMask |= (1 << slotA); }
@@ -550,15 +555,15 @@ public class SlimeMapRenderer : MonoBehaviour
     {
         var lib = DiplomacyLibrary.Instance;
         if (lib == null) return null;
-        float w = (slotA >= 0 && slotB >= 0) ? interactionMatrixData[slotA * 16 + slotB] : 0f;
+        float w = (slotA >= 0 && slotB >= 0) ? interactionMatrixData[slotA * MaxSlots + slotB] : 0f;
         return lib.GetByValue(w);
     }
 
     public void SetWaypoints(WaypointData[] data)
     {
         if (waypointBuffer == null) return;
-        int count = Mathf.Min(data.Length, 16);
-        WaypointData[] padded = new WaypointData[16];
+        int count = Mathf.Min(data.Length, MaxSlots);
+        WaypointData[] padded = new WaypointData[MaxSlots];
         System.Array.Copy(data, padded, count);
         waypointBuffer.SetData(padded);
         SlimeShader.SetInt("numWaypoints", count);
@@ -576,8 +581,8 @@ public class SlimeMapRenderer : MonoBehaviour
     {
         if (smoothedPathBuffer == null || smoothedPathMetaBuffer == null) return;
         smoothedPathBuffer.SetData(flatPaths);
-        var meta = new Vector2Int[16]; // indexé par waypoint (0-15)
-        for (int i = 0; i < 16; i++) meta[i] = new Vector2Int(starts[i], counts[i]);
+        var meta = new Vector2Int[MaxSlots];
+        for (int i = 0; i < MaxSlots; i++) meta[i] = new Vector2Int(starts[i], counts[i]);
         smoothedPathMetaBuffer.SetData(meta);
     }
 

@@ -58,12 +58,12 @@ public class WaypointManager : MonoBehaviour
     private readonly List<string>       waypointNames = new List<string>();
     private readonly List<HiveData>     hiveList      = new List<HiveData>();
 
-    // Shared flow field texture (16 slices, reused across recomputations)
+    // Shared flow field texture (MaxSlots slices, reused across recomputations)
     private Texture2DArray flowFieldTexture;
     private bool           flowFieldReady = false;
 
-    // Smoothed paths (string pulling) — indexés par waypoint de destination (0-15)
-    private Vector2[][] smoothPaths = new Vector2[16][];
+    // Smoothed paths (string pulling) — indexés par waypoint de destination
+    private Vector2[][] smoothPaths = new Vector2[SlimeMapRenderer.MaxSlots][];
     private const int   MaxSmoothedWaypoints = 64;
 
     private void Awake()
@@ -87,7 +87,7 @@ public class WaypointManager : MonoBehaviour
         foreach (var wp in InitialWaypoints) waypointList.Add(wp);
         foreach (var h  in InitialHives)     hiveList.Add(h);
 
-        // Create the flow field texture (always 16 slices regardless of current count)
+        // Create the flow field texture (MaxSlots slices)
         AllocFlowFieldTexture();
 
         if (waypointList.Count > 0)
@@ -128,12 +128,12 @@ public class WaypointManager : MonoBehaviour
 
         // ── Phase B : Livraison (lecture des compteurs GPU) ───────────────
         // Upload des stocks actuels vers le GPU (lu par les agents au chargement)
-        float[] wpStocks = new float[16];
+        float[] wpStocks = new float[SlimeMapRenderer.MaxSlots];
         foreach (var hive in hiveList)
         {
             if (!hive.processResources) continue;
             int wi = hive.waypointIndex;
-            if (wi >= 0 && wi < 16) wpStocks[wi] = hive.localStock;
+            if (wi >= 0 && wi < SlimeMapRenderer.MaxSlots) wpStocks[wi] = hive.localStock;
         }
         smr.SetWaypointStocks(wpStocks);
 
@@ -141,7 +141,7 @@ public class WaypointManager : MonoBehaviour
         foreach (var dest in hiveList)
         {
             int dWi = dest.waypointIndex;
-            if (dWi < 0 || dWi >= 16) continue;
+            if (dWi < 0 || dWi >= SlimeMapRenderer.MaxSlots) continue;
             if (dWi >= waypointList.Count) continue;
             if (waypointList[dWi].type != 1) continue;
 
@@ -241,9 +241,9 @@ public class WaypointManager : MonoBehaviour
     /// </summary>
     public void AddWaypoint(WaypointData wp, string buildingName = "", bool autoHive = true)
     {
-        if (waypointList.Count >= 16)
+        if (waypointList.Count >= SlimeMapRenderer.MaxSlots)
         {
-            Debug.LogWarning("[WAYPOINTS] Max 16 waypoints reached.");
+            Debug.LogWarning($"[WAYPOINTS] Max {SlimeMapRenderer.MaxSlots} waypoints reached.");
             return;
         }
 
@@ -290,7 +290,7 @@ public class WaypointManager : MonoBehaviour
                     }
                     else
                     {
-                        if (waypointList.Count >= 16) { Debug.LogWarning("[WAYPOINTS] Max 16 waypoints reached."); break; }
+                        if (waypointList.Count >= SlimeMapRenderer.MaxSlots) { Debug.LogWarning($"[WAYPOINTS] Max {SlimeMapRenderer.MaxSlots} waypoints reached."); break; }
                         waypointList.Add(new WaypointData { position = wp.position, type = 0, speciesIndex = slot });
                         waypointNames.Add(buildingName);
                         wpIndex = waypointList.Count - 1;
@@ -405,19 +405,19 @@ public class WaypointManager : MonoBehaviour
         int W = TerrainMapRenderer.Instance.Width;
         int H = TerrainMapRenderer.Instance.Height;
 
-        flowFieldTexture = new Texture2DArray(W, H, 16, TextureFormat.RGHalf, false)
+        flowFieldTexture = new Texture2DArray(W, H, SlimeMapRenderer.MaxSlots, TextureFormat.RGHalf, false)
         {
             filterMode = FilterMode.Point,
             wrapMode   = TextureWrapMode.Clamp
         };
         Color[] empty = new Color[W * H];
-        for (int s = 0; s < 16; s++) flowFieldTexture.SetPixels(empty, s);
+        for (int s = 0; s < SlimeMapRenderer.MaxSlots; s++) flowFieldTexture.SetPixels(empty, s);
         flowFieldTexture.Apply();
     }
 
     private void RecomputeAllFlowFields()
     {
-        int count = Mathf.Min(waypointList.Count, 16);
+        int count = Mathf.Min(waypointList.Count, SlimeMapRenderer.MaxSlots);
         for (int i = 0; i < count; i++) ComputeFlowFieldForIndex(i, applyTexture: false);
         flowFieldTexture.Apply();
     }
@@ -450,7 +450,7 @@ public class WaypointManager : MonoBehaviour
     public List<Vector2[]> GetSmoothedPathsForSpecies(int speciesIndex)
     {
         var result = new List<Vector2[]>();
-        for (int wi = 0; wi < Mathf.Min(waypointList.Count, 16); wi++)
+        for (int wi = 0; wi < Mathf.Min(waypointList.Count, SlimeMapRenderer.MaxSlots); wi++)
         {
             if (waypointList[wi].speciesIndex != speciesIndex) continue;
             if (waypointList[wi].type != 1) continue;
@@ -579,11 +579,11 @@ public class WaypointManager : MonoBehaviour
         int W = terrain.Width, H = terrain.Height;
         bool[,] walkable = terrain.WalkabilityGrid;
 
-        var flatBuffer = new Vector2[16 * MaxSmoothedWaypoints];
-        var starts     = new int[16];
-        var counts     = new int[16];
+        var flatBuffer = new Vector2[SlimeMapRenderer.MaxSlots * MaxSmoothedWaypoints];
+        var starts     = new int[SlimeMapRenderer.MaxSlots];
+        var counts     = new int[SlimeMapRenderer.MaxSlots];
 
-        for (int i = 0; i < 16; i++)
+        for (int i = 0; i < SlimeMapRenderer.MaxSlots; i++)
         {
             smoothPaths[i] = null;
             starts[i]      = i * MaxSmoothedWaypoints;
@@ -591,7 +591,7 @@ public class WaypointManager : MonoBehaviour
         }
 
         // Un chemin lissé par waypoint de destination
-        for (int wi = 0; wi < Mathf.Min(waypointList.Count, 16); wi++)
+        for (int wi = 0; wi < Mathf.Min(waypointList.Count, SlimeMapRenderer.MaxSlots); wi++)
         {
             if (waypointList[wi].type != 1) continue; // destinations seulement
 

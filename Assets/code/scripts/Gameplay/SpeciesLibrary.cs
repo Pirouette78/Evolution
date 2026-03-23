@@ -55,7 +55,7 @@ public class SpeciesLibrary : MonoBehaviour
         // pour rester synchronisé avec ce que le joueur a choisi dans l'UI.
         foreach (var def in byId.Values)
         {
-            if (def.slotIndex < 0 || def.slotIndex >= 16) continue;
+            if (def.slotIndex < 0 || def.slotIndex >= SlimeMapRenderer.MaxSlots) continue;
             // N'applique les settings JSON que si le slot a déjà ce type assigné
             string currentId = smr.speciesIds[def.slotIndex];
             if (currentId == def.id)

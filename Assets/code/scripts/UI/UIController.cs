@@ -1149,7 +1149,7 @@ public class UIController : MonoBehaviour
                 foreach (string s in species)
                 {
                     int slot = lib.GetSlotIndex(players[i].id, s);
-                    if (slot >= 0 && slot < 16)
+                    if (slot >= 0 && slot < SlimeMapRenderer.MaxSlots)
                         alive += SlimeMapRenderer.Instance.AliveSpeciesCounts[slot];
                 }
                 totalAlive += alive;
@@ -1164,7 +1164,7 @@ public class UIController : MonoBehaviour
                 if (typeButtons[i] == null) continue;
                 string speciesId = ((SpeciesType)i).ToString().ToLowerInvariant();
                 int slot = lib != null ? lib.GetSlotIndex(selectedPlayerId, speciesId) : -1;
-                if (slot >= 0 && slot < 16)
+                if (slot >= 0 && slot < SlimeMapRenderer.MaxSlots)
                 {
                     uint count = SlimeMapRenderer.Instance.AliveSpeciesCounts[slot];
                     typeButtons[i].text = $"{typeButtonBaseTexts[i]}\n<size=9>{count:N0}</size>";

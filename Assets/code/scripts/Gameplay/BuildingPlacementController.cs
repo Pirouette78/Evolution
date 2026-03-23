@@ -61,7 +61,7 @@ public class BuildingPlacementController : MonoBehaviour
             return new Color(c.x, c.y, c.z, 0.85f);
         }
         // Fallback HSV
-        float hue = (slotIndex % 16) / 16f;
+        float hue = (slotIndex % SlimeMapRenderer.MaxSlots) / (float)SlimeMapRenderer.MaxSlots;
         return Color.HSVToRGB(hue, 1f, 1f);
     }
 

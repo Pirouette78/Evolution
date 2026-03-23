@@ -18,7 +18,7 @@ public class WaypointOverlayRenderer : MonoBehaviour
         DontDestroyOnLoad(go);
     }
 
-    public bool[] ShowSpeciesOverlay = new bool[16];
+    public bool[] ShowSpeciesOverlay = new bool[SlimeMapRenderer.MaxSlots];
     public bool   ShowPOI = true; // toggle global — contrôlé par le bouton "Afficher POI"
 
     // Images POI : id du bâtiment (JSON) → texture chargée depuis Resources/
@@ -31,7 +31,7 @@ public class WaypointOverlayRenderer : MonoBehaviour
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
 
-        for (int i = 0; i < 16; i++) ShowSpeciesOverlay[i] = true;
+        for (int i = 0; i < SlimeMapRenderer.MaxSlots; i++) ShowSpeciesOverlay[i] = true;
 
         LoadPoiImages();
 
@@ -74,7 +74,7 @@ public class WaypointOverlayRenderer : MonoBehaviour
         for (int i = 0; i < waypoints.Length; i++)
         {
             var wp = waypoints[i];
-            if (wp.speciesIndex < 0 || wp.speciesIndex >= 16) continue;
+            if (wp.speciesIndex < 0 || wp.speciesIndex >= SlimeMapRenderer.MaxSlots) continue;
 
             string name = WaypointManager.Instance.GetWaypointName(i);
             if (!poiImages.TryGetValue(name, out Texture2D tex) || tex == null) continue;
@@ -108,7 +108,7 @@ public class WaypointOverlayRenderer : MonoBehaviour
         for (int i = 0; i < waypoints.Length; i++)
         {
             var wp = waypoints[i];
-            if (wp.speciesIndex < 0 || wp.speciesIndex >= 16) continue;
+            if (wp.speciesIndex < 0 || wp.speciesIndex >= SlimeMapRenderer.MaxSlots) continue;
 
             Color col = GetSlotColor(wp.speciesIndex);
             // Source = full color, Destination = 50% alpha
@@ -165,7 +165,7 @@ public class WaypointOverlayRenderer : MonoBehaviour
             var v = smr.slotColors[slot];
             return new Color(v.x, v.y, v.z, 1f);
         }
-        float hue = (slot % 16) / 16f;
+        float hue = (slot % SlimeMapRenderer.MaxSlots) / (float)SlimeMapRenderer.MaxSlots;
         return Color.HSVToRGB(hue, 1f, 1f);
     }
 
