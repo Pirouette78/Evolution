@@ -2,7 +2,6 @@
   "id": "plaquette",
   "displayName": "Plaquette",
   "color": [1.0, 0.0, 0.0],
-  "slotIndex": 5,
   "moveSpeed": 25.0,
   "turnSpeed": 0.0,
   "sensorAngleDeg": 0.0,

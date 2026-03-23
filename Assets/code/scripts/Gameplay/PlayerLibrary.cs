@@ -103,7 +103,10 @@ public class PlayerLibrary : MonoBehaviour
             // Paramètres comportement (depuis SpeciesLibrary JSON)
             var def = SpeciesLibrary.Instance?.Get(specId);
             if (def != null)
+            {
+                def.slotIndex = s; // calculé à l'exécution — inutile de le mettre dans le JSON
                 smr.speciesSettings[s] = def.ToSpeciesSettings();
+            }
 
             // Couleur : species JSON en priorité, player JSON en fallback
             Vector4 slotColor;

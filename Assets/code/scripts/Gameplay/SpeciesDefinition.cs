@@ -19,8 +19,11 @@ public class SpeciesDefinition
     /// <summary>Couleur canonique UI [R, G, B] en 0-1. Utilisée pour les boutons et la matrice diplomatique.</summary>
     public float[] color = new float[3];
 
-    /// <summary>Slot GPU 0-5 occupé par cette espèce.</summary>
-    public int slotIndex;
+    /// <summary>
+    /// Slot GPU assigné à cette espèce. NE PAS mettre dans le JSON —
+    /// calculé automatiquement à l'exécution par PlayerLibrary.ApplyToRenderer().
+    /// </summary>
+    [System.NonSerialized] public int slotIndex = -1;
 
     // ── Mouvement ─────────────────────────────────────────────────────
     public float moveSpeed;

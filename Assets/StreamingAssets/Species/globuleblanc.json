@@ -2,7 +2,6 @@
   "id": "globuleblanc",
   "displayName": "Globule Blanc",
   "color": [0.706, 0.706, 0.706],
-  "slotIndex": 1,
   "moveSpeed": 120.0,
   "turnSpeed": 20.0,
   "sensorAngleDeg": 30.0,

@@ -2,7 +2,6 @@
   "id": "bacterie",
   "displayName": "Bactérie",
   "color": [0.471, 0.078, 0.078],
-  "slotIndex": 2,
   "moveSpeed": 50.0,
   "turnSpeed": 20.0,
   "sensorAngleDeg": 45.0,
