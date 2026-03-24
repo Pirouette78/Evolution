@@ -60,6 +60,9 @@ struct SpeciesSettings {
     float waitForStock;         // 1 = attend le stock disponible avant de partir
     float trailErasePower;      // unités de traînée ennemie effacées/sec à la position de l'agent
     float maxHealth;            // Points de vie max (combat, indépendant du vieillissement)
+    float repulsionStrength;    // force répulsion intra-espèce courte portée (0 = désactivé)
+    float repulsionRadius;      // rayon de détection pour la répulsion (pixels)
+    float densityLimit;         // seuil de densité locale avant affaiblissement (0 = désactivé)
 };
 
 struct Waypoint {
@@ -168,6 +171,23 @@ float senseAgents(Agent agent, float sensorAngleOffset, SpeciesSettings settings
     float sum = 0;
     for (int offsetX = -settings.sensorSize; offsetX <= settings.sensorSize; offsetX++)
         for (int offsetY = -settings.sensorSize; offsetY <= settings.sensorSize; offsetY++) {
+            int sampleX = min(width-1, max(0, sensorCentreX + offsetX));
+            int sampleY = min(height-1, max(0, sensorCentreY + offsetY));
+            sum += AgentMap[int3(sampleX, sampleY, targetSlice)];
+        }
+    return sum;
+}
+
+// Like senseAgents() but avec rayon et taille de kernel explicites — utilisé pour la répulsion courte portée.
+float senseAgentsAt(Agent agent, float sensorAngleOffset, float dist, int kernelSize, int targetSlice) {
+    float sensorAngle = agent.angle + sensorAngleOffset;
+    float2 sensorDir  = float2(cos(sensorAngle), sin(sensorAngle));
+    float2 sensorPos  = agent.position + sensorDir * dist;
+    int sensorCentreX = (int)sensorPos.x;
+    int sensorCentreY = (int)sensorPos.y;
+    float sum = 0;
+    for (int offsetX = -kernelSize; offsetX <= kernelSize; offsetX++)
+        for (int offsetY = -kernelSize; offsetY <= kernelSize; offsetY++) {
             int sampleX = min(width-1, max(0, sensorCentreX + offsetX));
             int sampleY = min(height-1, max(0, sensorCentreY + offsetY));
             sum += AgentMap[int3(sampleX, sampleY, targetSlice)];
@@ -421,6 +441,38 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
             weightRight   += senseAgents(agent, -settings.sensorAngleRad, settings, sa) * aw;
         }
 
+        // ── Density limit ────────────────────────────────────────────
+        // Réduit l'attraction quand la zone locale est déjà surpeuplée.
+        float density_factor = 1.0;
+        if (settings.densityLimit > 0.0) {
+            float local_density = 0.0;
+            int cx = (int)agent.position.x;
+            int cy = (int)agent.position.y;
+            for (int dx = -1; dx <= 1; dx++)
+                for (int dy = -1; dy <= 1; dy++) {
+                    int sx = min(width-1, max(0, cx + dx));
+                    int sy = min(height-1, max(0, cy + dy));
+                    local_density += AgentMap[int3(sx, sy, agent.speciesIndex)];
+                }
+            if (local_density > settings.densityLimit)
+                density_factor = max(0.0, 1.0 - (local_density - settings.densityLimit) / settings.densityLimit);
+        }
+        weightForward *= density_factor;
+        weightLeft    *= density_factor;
+        weightRight   *= density_factor;
+
+        // ── Répulsion courte portée ───────────────────────────────────
+        // Pousse l'agent à l'écart des directions encombrées (intra-espèce).
+        if (settings.repulsionStrength > 0.0) {
+            float repF = senseAgentsAt(agent, 0,                        settings.repulsionRadius, 1, agent.speciesIndex);
+            float repL = senseAgentsAt(agent,  settings.sensorAngleRad, settings.repulsionRadius, 1, agent.speciesIndex);
+            float repR = senseAgentsAt(agent, -settings.sensorAngleRad, settings.repulsionRadius, 1, agent.speciesIndex);
+            weightForward -= repF * settings.repulsionStrength;
+            weightLeft    -= repL * settings.repulsionStrength;
+            weightRight   -= repR * settings.repulsionStrength;
+        }
+
+        // ── Décision de direction ─────────────────────────────────────
         if (weightForward >= weightLeft && weightForward >= weightRight) {
             // go straight
         } else if (weightRight > weightLeft) {

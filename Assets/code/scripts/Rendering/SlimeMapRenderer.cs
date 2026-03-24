@@ -103,7 +103,10 @@ public class SlimeMapRenderer : MonoBehaviour
         public float unloadingTime;         // time to wait at Destination waypoint
         public float waitForStock;          // 1 = attend le stock disponible avant de partir
         public float trailErasePower;       // unités de traînée ennemie effacées/sec à la position de l'agent
-        public float maxHealth;             // Points de vie max combat (indépendant de maxAge) → 84 bytes total
+        public float maxHealth;             // Points de vie max combat (indépendant de maxAge)
+        public float repulsionStrength;     // force répulsion intra-espèce (0 = désactivé)
+        public float repulsionRadius;       // rayon de détection courte pour la répulsion (pixels)
+        public float densityLimit;          // seuil de densité locale (0 = désactivé) → 96 bytes total
     }
 
     public enum DiplomaticState { Neutral, Ally, Peace, War }
@@ -154,7 +157,7 @@ public class SlimeMapRenderer : MonoBehaviour
 
         agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*6 + sizeof(int)*5);
         // struct size (44 bytes) = 6 floats (24) + 5 ints (20)
-        speciesSettingsBuffer = new ComputeBuffer(MaxSlots, 84);
+        speciesSettingsBuffer = new ComputeBuffer(MaxSlots, 96);
         speciesCountsBuffer   = new ComputeBuffer(MaxSlots, sizeof(uint));
         slotColorsBuffer      = new ComputeBuffer(MaxSlots, sizeof(float) * 4);
         waypointStockBuffer   = new ComputeBuffer(MaxSlots, sizeof(float));
@@ -759,14 +762,14 @@ public class SlimeMapRenderer : MonoBehaviour
 
             for (int step = 0; step < StepsPerFrame; step++)
             {
-                // 0. Clear AgentMap (présence réelle d'agents du step précédent)
-                SlimeShader.Dispatch(clearAgentMapKernel, texGroupsX, texGroupsY, 1);
-
-                // 1. Move agents (lit TrailMap + AgentMap du step précédent)
+                // 1. Move agents (lit AgentMap du step précédent — avant de l'effacer)
                 SlimeShader.SetBuffer(updateKernel, "agents", agentBuffer);
                 SlimeShader.Dispatch(updateKernel, agentGroups, 1, 1);
 
-                // 2. Draw agent positions into trail map + AgentMap
+                // 2. Clear AgentMap maintenant que UpdateAgents l'a lue
+                SlimeShader.Dispatch(clearAgentMapKernel, texGroupsX, texGroupsY, 1);
+
+                // 3. Draw agent positions into trail map + AgentMap
                 SlimeShader.SetBuffer(drawKernel, "agents", agentBuffer);
                 SlimeShader.Dispatch(drawKernel, agentGroups, 1, 1);
 

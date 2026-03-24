@@ -133,6 +133,27 @@
                 <ui:Label name="SensorSizeLabel" text="2" style="font-size:13px; color:white; min-width:28px; -unity-text-align: middle-right; margin-left:6px;" />
             </ui:VisualElement>
 
+            <!-- ── Répulsion / Densité ───────────────── -->
+            <ui:Label text="⟳  Répulsion / Densité" style="font-size: 13px; color: rgb(255,200,140); -unity-font-style: bold; margin-top:6px; margin-bottom:5px;" />
+
+            <ui:Label text="Repulsion Strength" style="font-size: 12px; color: rgb(180,180,180); margin-bottom:2px;" />
+            <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 8px;">
+                <ui:Slider name="RepulsionStrengthSlider" low-value="0" high-value="20" value="0" style="flex-grow:1;" />
+                <ui:Label name="RepulsionStrengthLabel" text="0" style="font-size:13px; color:white; min-width:38px; -unity-text-align: middle-right; margin-left:6px;" />
+            </ui:VisualElement>
+
+            <ui:Label text="Repulsion Radius" style="font-size: 12px; color: rgb(180,180,180); margin-bottom:2px;" />
+            <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 8px;">
+                <ui:Slider name="RepulsionRadiusSlider" low-value="1" high-value="30" value="5" style="flex-grow:1;" />
+                <ui:Label name="RepulsionRadiusLabel" text="5" style="font-size:13px; color:white; min-width:38px; -unity-text-align: middle-right; margin-left:6px;" />
+            </ui:VisualElement>
+
+            <ui:Label text="Density Limit" style="font-size: 12px; color: rgb(180,180,180); margin-bottom:2px;" />
+            <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 12px;">
+                <ui:Slider name="DensityLimitSlider" low-value="0" high-value="20" value="0" style="flex-grow:1;" />
+                <ui:Label name="DensityLimitLabel" text="0" style="font-size:13px; color:white; min-width:38px; -unity-text-align: middle-right; margin-left:6px;" />
+            </ui:VisualElement>
+
             <!-- ── Map ────────────────────────────── -->
             <ui:Label text="🗺  Carte" style="font-size: 13px; color: rgb(140,200,255); -unity-font-style: bold; margin-bottom:5px;" />
             <ui:Button name="ToggleStrategyMapButton" text="Cacher Strategy Map" style="font-size: 14px; padding: 7px 10px; background-color: rgb(80,50,120); color: white; border-radius: 5px; margin-bottom: 6px;" />

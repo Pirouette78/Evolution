@@ -14,5 +14,8 @@
   "warDamageRate": 4.0,
   "behaviorType": "Scavenger",
   "energyConsumptionRate": 5.0,
-  "startingEnergy": 100.0
+  "startingEnergy": 100.0,
+  "repulsionStrength": 5.0,
+  "repulsionRadius": 5.0,
+  "densityLimit": 3.0
 }

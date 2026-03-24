@@ -152,8 +152,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SlimeMapRenderer
   SlimeShader: {fileID: 7200000, guid: 1e2bbf2f985345f4da6320ea9dcb187c, type: 3}
-  Width: 1024
-  Height: 1024
+  Width: 512
+  Height: 512
   StepsPerFrame: 1
   InitialAgentCount: 5000
   DisplayTarget: {fileID: 104352733}
@@ -179,6 +179,9 @@ MonoBehaviour:
     waitForStock: 0
     trailErasePower: 0
     maxHealth: 0
+    repulsionStrength: 0
+    repulsionRadius: 0
+    densityLimit: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -200,6 +203,9 @@ MonoBehaviour:
     waitForStock: 0
     trailErasePower: 0
     maxHealth: 0
+    repulsionStrength: 0
+    repulsionRadius: 0
+    densityLimit: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -221,6 +227,9 @@ MonoBehaviour:
     waitForStock: 0
     trailErasePower: 0
     maxHealth: 0
+    repulsionStrength: 0
+    repulsionRadius: 0
+    densityLimit: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -242,6 +251,9 @@ MonoBehaviour:
     waitForStock: 0
     trailErasePower: 0
     maxHealth: 0
+    repulsionStrength: 0
+    repulsionRadius: 0
+    densityLimit: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -263,6 +275,9 @@ MonoBehaviour:
     waitForStock: 0
     trailErasePower: 0
     maxHealth: 0
+    repulsionStrength: 0
+    repulsionRadius: 0
+    densityLimit: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -284,6 +299,9 @@ MonoBehaviour:
     waitForStock: 0
     trailErasePower: 0
     maxHealth: 0
+    repulsionStrength: 0
+    repulsionRadius: 0
+    densityLimit: 0
   AliveSpeciesCounts: 000000000000000000000000000000000000000000000000
   speciesTypes: 000000000000000000000000000000000000000000000000
   speciesIds:

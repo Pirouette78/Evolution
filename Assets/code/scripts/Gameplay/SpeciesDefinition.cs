@@ -79,6 +79,16 @@ public class SpeciesDefinition
     /// <summary>Si true, l'agent attend en navState 2 jusqu'à ce que le stock soit disponible.</summary>
     public bool waitForStock;
 
+    // ── Répulsion et densité ──────────────────────────────────────────
+    /// <summary>Force de répulsion intra-espèce courte portée. 0 = désactivé.</summary>
+    public float repulsionStrength;
+
+    /// <summary>Rayon de détection pour la répulsion (pixels). Ex: 5.</summary>
+    public float repulsionRadius = 5f;
+
+    /// <summary>Seuil de densité locale avant affaiblissement de l'attraction. 0 = désactivé.</summary>
+    public float densityLimit;
+
     // ── Conversion ───────────────────────────────────────────────────
 
     public int BehaviorTypeInt => System.Enum.TryParse<AgentBehavior>(behaviorType, true, out var b) ? (int)b : 0;
@@ -106,5 +116,8 @@ public class SpeciesDefinition
         loadingTime           = loadingTime,
         unloadingTime         = unloadingTime,
         waitForStock          = waitForStock ? 1f : 0f,
+        repulsionStrength     = repulsionStrength,
+        repulsionRadius       = repulsionRadius,
+        densityLimit          = densityLimit,
     };
 }

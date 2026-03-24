@@ -15,5 +15,8 @@
   "warDamageRate": 15.0,
   "trailErasePower": 1.0,
   "behaviorType": "Defender",
-  "startingEnergy": 0.0
+  "startingEnergy": 0.0,
+  "repulsionStrength": 3.0,
+  "repulsionRadius": 5.0,
+  "densityLimit": 4.0
 }

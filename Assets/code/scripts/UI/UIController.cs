@@ -56,6 +56,11 @@ public class UIController : MonoBehaviour
     private Slider    sensorOffsetSlider; private Label sensorOffsetLabel;
     private SliderInt sensorSizeSlider;   private Label sensorSizeLabel;
 
+    // ── Répulsion / Densité ────────────────────────────────────────
+    private Slider repulsionStrengthSlider; private Label repulsionStrengthLabel;
+    private Slider repulsionRadiusSlider;   private Label repulsionRadiusLabel;
+    private Slider densityLimitSlider;      private Label densityLimitLabel;
+
     // ── Species count ──────────────────────────────────────────────
     private Label speciesCountLabel;
 
@@ -133,6 +138,11 @@ public class UIController : MonoBehaviour
         sensorOffsetSlider = root.Q<Slider>   ("SensorOffsetSlider"); sensorOffsetLabel = root.Q<Label>   ("SensorOffsetLabel");
         sensorSizeSlider   = root.Q<SliderInt>("SensorSizeSlider");   sensorSizeLabel   = root.Q<Label>   ("SensorSizeLabel");
 
+        // Répulsion / Densité
+        repulsionStrengthSlider = root.Q<Slider>("RepulsionStrengthSlider"); repulsionStrengthLabel = root.Q<Label>("RepulsionStrengthLabel");
+        repulsionRadiusSlider   = root.Q<Slider>("RepulsionRadiusSlider");   repulsionRadiusLabel   = root.Q<Label>("RepulsionRadiusLabel");
+        densityLimitSlider      = root.Q<Slider>("DensityLimitSlider");      densityLimitLabel      = root.Q<Label>("DensityLimitLabel");
+
         // Map
         toggleStrategyMapButton = root.Q<Button>("ToggleStrategyMapButton");
         overlayModeButton       = root.Q<Button>("OverlayModeButton");
@@ -171,6 +181,11 @@ public class UIController : MonoBehaviour
             if (sensorSizeLabel  != null) sensorSizeLabel.text  = e.newValue.ToString();
             var smr = SlimeMapRenderer.Instance; if (smr != null) { int sl = GetCurrentSpeciesSlot(); smr.speciesSettings[sl].sensorSize = e.newValue; }
         });
+
+        // Répulsion / Densité
+        BindSlider(repulsionStrengthSlider, repulsionStrengthLabel, "F1", v => { var smr = SlimeMapRenderer.Instance; if (smr != null) { int sl = GetCurrentSpeciesSlot(); smr.speciesSettings[sl].repulsionStrength = v; } });
+        BindSlider(repulsionRadiusSlider,   repulsionRadiusLabel,   "F1", v => { var smr = SlimeMapRenderer.Instance; if (smr != null) { int sl = GetCurrentSpeciesSlot(); smr.speciesSettings[sl].repulsionRadius   = v; } });
+        BindSlider(densityLimitSlider,      densityLimitLabel,      "F1", v => { var smr = SlimeMapRenderer.Instance; if (smr != null) { int sl = GetCurrentSpeciesSlot(); smr.speciesSettings[sl].densityLimit      = v; } });
 
         // Maps and Toggles
         playerSelectButtons[0] = root.Q<Button>("BtnSelectP1");
@@ -348,6 +363,13 @@ public class UIController : MonoBehaviour
             sensorSizeSlider?.SetValueWithoutNotify(settings.sensorSize);
             if (sensorSizeLabel != null) sensorSizeLabel.text = settings.sensorSize.ToString();
 
+            repulsionStrengthSlider?.SetValueWithoutNotify(settings.repulsionStrength);
+            if (repulsionStrengthLabel != null) repulsionStrengthLabel.text = settings.repulsionStrength.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+            repulsionRadiusSlider?.SetValueWithoutNotify(settings.repulsionRadius);
+            if (repulsionRadiusLabel != null) repulsionRadiusLabel.text = settings.repulsionRadius.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+            densityLimitSlider?.SetValueWithoutNotify(settings.densityLimit);
+            if (densityLimitLabel != null) densityLimitLabel.text = settings.densityLimit.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+
             if (toggleVisibility != null) {
                 toggleVisibility.SetValueWithoutNotify(SlimeMapRenderer.Instance.GetPlayerVisibility(firstSlot));
             }
@@ -407,6 +429,12 @@ public class UIController : MonoBehaviour
             if (sensorOffsetLabel != null) sensorOffsetLabel.text = s.sensorOffsetDst.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
             sensorSizeSlider?.SetValueWithoutNotify(s.sensorSize);
             if (sensorSizeLabel != null) sensorSizeLabel.text = s.sensorSize.ToString();
+            repulsionStrengthSlider?.SetValueWithoutNotify(s.repulsionStrength);
+            if (repulsionStrengthLabel != null) repulsionStrengthLabel.text = s.repulsionStrength.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+            repulsionRadiusSlider?.SetValueWithoutNotify(s.repulsionRadius);
+            if (repulsionRadiusLabel != null) repulsionRadiusLabel.text = s.repulsionRadius.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+            densityLimitSlider?.SetValueWithoutNotify(s.densityLimit);
+            if (densityLimitLabel != null) densityLimitLabel.text = s.densityLimit.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
             toggleVisibility?.SetValueWithoutNotify(smr.GetPlayerVisibility(slot));
         }
         if (toggleSpeciesOverlay != null && WaypointOverlayRenderer.Instance != null)
