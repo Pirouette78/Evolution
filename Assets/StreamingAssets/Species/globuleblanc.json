@@ -14,7 +14,6 @@
   "diffuseRate": 0.5,
   "warDamageRate": 15.0,
   "trailErasePower": 1.0,
-  "behaviorType": "GlobuleBlanc",
-  "behaviorTypeInt": 3,
+  "behaviorType": "Defender",
   "startingEnergy": 0.0
 }

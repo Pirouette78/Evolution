@@ -14,6 +14,5 @@
   "diffuseRate": 0.5,
   "warDamageRate": 50.0,
   "trailErasePower": 2.0,
-  "behaviorType": "Plaquette",
-  "behaviorTypeInt": 5
+  "behaviorType": "Eraser"
 }

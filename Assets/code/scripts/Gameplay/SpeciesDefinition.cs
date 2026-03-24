@@ -2,6 +2,20 @@ using System;
 using UnityEngine;
 
 /// <summary>
+/// Comportement GPU d'un agent. La valeur int correspond au case dans UpdateAgents.compute.
+/// Ajouter un comportement = ajouter une valeur ici + un case dans le shader.
+/// </summary>
+public enum AgentBehavior
+{
+    Wanderer    = 0, // errance phéromonale pure (suit/fuit les traînées)
+    Scavenger   = 1, // consomme de l'énergie, absorbe les traînées des Transporters
+    Transporter = 2, // navigue entre waypoints Source et Destination
+    Defender    = 3, // (à implémenter)
+    Parasite    = 4, // (à implémenter)
+    Eraser      = 5, // (à implémenter)
+}
+
+/// <summary>
 /// Paramètres complets d'une espèce d'agent.
 /// Chargé depuis StreamingAssets/Species/*.json au démarrage via SpeciesLibrary.
 /// Ajouter une espèce = créer un fichier JSON, sans modifier le code.
@@ -44,15 +58,11 @@ public class SpeciesDefinition
     public float trailErasePower;
 
     // ── Comportement ──────────────────────────────────────────────────
-    /// <summary>Libellé libre, pour documentation JSON uniquement (ex: "GlobuleRouge").</summary>
-    public string behaviorType;
-
     /// <summary>
-    /// Code GPU du comportement, défini directement dans le JSON de l'espèce.
-    /// 0=défaut, 1=Bacterie, 2=GlobuleRouge, 3=GlobuleBlanc, 4=Virus, 5=Plaquette, …
-    /// Ajouter un nouveau comportement = ajouter un case dans UpdateAgents.compute + choisir un entier libre ici.
+    /// Comportement de l'agent. Correspond à l'enum AgentBehavior.
+    /// JSON : "behaviorType": "Transporter"  (nom de l'enum, insensible à la casse)
     /// </summary>
-    public int behaviorTypeInt;
+    public string behaviorType;
 
     public float energyConsumptionRate;
     public float energyReward;
@@ -71,7 +81,7 @@ public class SpeciesDefinition
 
     // ── Conversion ───────────────────────────────────────────────────
 
-    public int BehaviorTypeInt => behaviorTypeInt;
+    public int BehaviorTypeInt => System.Enum.TryParse<AgentBehavior>(behaviorType, true, out var b) ? (int)b : 0;
 
     /// <summary>Construit le struct GPU correspondant.</summary>
     public SlimeMapRenderer.SpeciesSettings ToSpeciesSettings() => new SlimeMapRenderer.SpeciesSettings

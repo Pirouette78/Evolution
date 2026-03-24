@@ -50,7 +50,7 @@ struct SpeciesSettings {
 
     float warDamageRate;        // damage rate from enemy trails
     int   warMask;              // bitmask of enemy species
-    int   behaviorType;         // 0=default,1=Bacterie,2=GlobRouge,3=GlobBlanc,4=Virus,5=Plaquette
+    int   behaviorType;         // AgentBehavior enum: 0=Wanderer,1=Scavenger,2=Transporter,3=Defender,4=Parasite,5=Eraser
     float energyConsumptionRate;// energy drained per second (Bacterie)
     float energyReward;         // energy released via trail (GlobuleRouge)
     float startingEnergy;       // initial agent.hunger value at spawn

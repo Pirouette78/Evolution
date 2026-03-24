@@ -14,6 +14,5 @@
   "diffuseRate": 0.0,
   "warDamageRate": 0.0,
   "trailErasePower": 0.0,
-  "behaviorType": "Oxygene",
-  "behaviorTypeInt": 5
+  "behaviorType": "Eraser"
 }
