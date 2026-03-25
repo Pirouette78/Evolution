@@ -89,6 +89,9 @@ public class SpeciesDefinition
     /// <summary>Seuil de densité locale avant affaiblissement de l'attraction. 0 = désactivé.</summary>
     public float densityLimit;
 
+    /// <summary>Rayon visuel de l'agent en pixels (disque dans AgentMap). 0 = pixel unique (défaut). 1 = croix 5px. 3 = disque ~29px.</summary>
+    public int agentRadius = 0;
+
     // ── Conversion ───────────────────────────────────────────────────
 
     public int BehaviorTypeInt => System.Enum.TryParse<AgentBehavior>(behaviorType, true, out var b) ? (int)b : 0;
@@ -119,5 +122,6 @@ public class SpeciesDefinition
         repulsionStrength     = repulsionStrength,
         repulsionRadius       = repulsionRadius,
         densityLimit          = densityLimit,
+        agentRadius           = Mathf.Max(0, agentRadius),
     };
 }

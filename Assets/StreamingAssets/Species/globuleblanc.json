@@ -18,5 +18,6 @@
   "startingEnergy": 0.0,
   "repulsionStrength": 3.0,
   "repulsionRadius": 5.0,
-  "densityLimit": 4.0
+  "densityLimit": 4.0,
+   "agentRadius": 5
 }

@@ -152,8 +152,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SlimeMapRenderer
   SlimeShader: {fileID: 7200000, guid: 1e2bbf2f985345f4da6320ea9dcb187c, type: 3}
-  Width: 512
-  Height: 512
+  Width: 1024
+  Height: 1024
   StepsPerFrame: 1
   InitialAgentCount: 5000
   DisplayTarget: {fileID: 104352733}
@@ -182,6 +182,7 @@ MonoBehaviour:
     repulsionStrength: 0
     repulsionRadius: 0
     densityLimit: 0
+    agentRadius: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -206,6 +207,7 @@ MonoBehaviour:
     repulsionStrength: 0
     repulsionRadius: 0
     densityLimit: 0
+    agentRadius: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -230,6 +232,7 @@ MonoBehaviour:
     repulsionStrength: 0
     repulsionRadius: 0
     densityLimit: 0
+    agentRadius: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -254,6 +257,7 @@ MonoBehaviour:
     repulsionStrength: 0
     repulsionRadius: 0
     densityLimit: 0
+    agentRadius: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -278,6 +282,7 @@ MonoBehaviour:
     repulsionStrength: 0
     repulsionRadius: 0
     densityLimit: 0
+    agentRadius: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -302,6 +307,7 @@ MonoBehaviour:
     repulsionStrength: 0
     repulsionRadius: 0
     densityLimit: 0
+    agentRadius: 0
   AliveSpeciesCounts: 000000000000000000000000000000000000000000000000
   speciesTypes: 000000000000000000000000000000000000000000000000
   speciesIds:
@@ -979,7 +985,7 @@ MonoBehaviour:
     Lacunarity: 2
     Seed: 42
     Offset: {x: 0, y: 0}
-  WaterThreshold: 0.35
+  WaterThreshold: 0.104
   DisplayTarget: {fileID: 338005912}
   DeepWater: {r: 0.05, g: 0.15, b: 0.4, a: 1}
   ShallowWater: {r: 0.1, g: 0.35, b: 0.6, a: 1}

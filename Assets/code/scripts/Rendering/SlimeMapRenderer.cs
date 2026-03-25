@@ -106,7 +106,8 @@ public class SlimeMapRenderer : MonoBehaviour
         public float maxHealth;             // Points de vie max combat (indépendant de maxAge)
         public float repulsionStrength;     // force répulsion intra-espèce (0 = désactivé)
         public float repulsionRadius;       // rayon de détection courte pour la répulsion (pixels)
-        public float densityLimit;          // seuil de densité locale (0 = désactivé) → 96 bytes total
+        public float densityLimit;          // seuil de densité locale (0 = désactivé)
+        public int   agentRadius;           // rayon visuel en pixels → 100 bytes total
     }
 
     public enum DiplomaticState { Neutral, Ally, Peace, War }
@@ -157,7 +158,7 @@ public class SlimeMapRenderer : MonoBehaviour
 
         agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*6 + sizeof(int)*5);
         // struct size (44 bytes) = 6 floats (24) + 5 ints (20)
-        speciesSettingsBuffer = new ComputeBuffer(MaxSlots, 96);
+        speciesSettingsBuffer = new ComputeBuffer(MaxSlots, 100);
         speciesCountsBuffer   = new ComputeBuffer(MaxSlots, sizeof(uint));
         slotColorsBuffer      = new ComputeBuffer(MaxSlots, sizeof(float) * 4);
         waypointStockBuffer   = new ComputeBuffer(MaxSlots, sizeof(float));
