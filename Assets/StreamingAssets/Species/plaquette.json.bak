@@ -2,7 +2,6 @@
   "id": "plaquette",
   "displayName": "Plaquette",
   "color": [1.0, 0.0, 0.0],
-  "slotIndex": 4,
   "moveSpeed": 25.0,
   "turnSpeed": 5.0,
   "sensorAngleDeg": 45.0,
@@ -10,11 +9,14 @@
   "sensorSize": 4,
   "maxAge": 1000.0,
   "maxHealth": 0.1,
-  "trailWeight": 0.0,
+  "trailWeight": 0.01,
   "decayRate": 1.0,
   "diffuseRate": 0.5,
   "warDamageRate": 50.0,
   "trailErasePower": 2.0,
-  "behaviorType": "Plaquette",
-  "behaviorTypeInt": 5
+  "behaviorType": "Eraser",
+    "startingEnergy": 0.0,
+  "repulsionStrength": 3.0,
+  "repulsionRadius": 5.0,
+  "densityLimit": 4.0
 }

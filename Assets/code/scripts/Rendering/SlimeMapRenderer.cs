@@ -566,6 +566,29 @@ public class SlimeMapRenderer : MonoBehaviour
         return lib.GetByValue(w);
     }
 
+    /// <summary>Lit la valeur agentInteractionMatrix pour la direction fromSlot→toSlot.</summary>
+    public float GetAgentInteraction(int fromSlot, int toSlot)
+    {
+        if (fromSlot < 0 || fromSlot >= MaxSlots || toSlot < 0 || toSlot >= MaxSlots) return 0f;
+        return agentInteractionMatrixData[fromSlot * MaxSlots + toSlot];
+    }
+
+    /// <summary>Écrit directement agentInteractionMatrix pour la direction fromSlot→toSlot.</summary>
+    public void SetAgentInteraction(int fromSlot, int toSlot, float weight)
+    {
+        if (fromSlot < 0 || fromSlot >= MaxSlots || toSlot < 0 || toSlot >= MaxSlots) return;
+        agentInteractionMatrixData[fromSlot * MaxSlots + toSlot] = weight;
+    }
+
+    /// <summary>Vide toutes les traînées (TrailMap, DiffusedMap, AgentMap) sans toucher aux agents.</summary>
+    public void ClearTrails()
+    {
+        if (SlimeShader == null) return;
+        int gx = Mathf.CeilToInt(Width  / 8f);
+        int gy = Mathf.CeilToInt(Height / 8f);
+        SlimeShader.Dispatch(clearKernel, gx, gy, 1);
+    }
+
     public void SetWaypoints(WaypointData[] data)
     {
         if (waypointBuffer == null) return;

@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UIElements;
 using UnityEngine.InputSystem;
 using Unity.Entities;
+using System.Collections.Generic;
 
 public class UIController : MonoBehaviour
 {
@@ -14,24 +15,31 @@ public class UIController : MonoBehaviour
 
     private Button[] playerSelectButtons  = new Button[6];
 
-    private Button[] typeButtons          = new Button[10];
-    private string[] typeButtonBaseTexts  = new string[10];
+    private VisualElement speciesButtonContainer;
+    private readonly Dictionary<string, Button> speciesButtonMap      = new Dictionary<string, Button>();
+    private readonly Dictionary<string, string> speciesButtonBaseText = new Dictionary<string, string>();
     private Button        btnDiplomatie;
     private VisualElement diploMatrixPanel;
     private bool          diploMatrixOpen = false;
     private int           diploColPlayer  = 0;
     private int           diploRowPlayer  = 0;
     private Button[,]     diploMatrixCells;
+
+    private Button        btnParticleLife;
+    private VisualElement plMatrixPanel;
+    private bool          plMatrixOpen   = false;
+    private int           plColPlayer    = 0;
+    private int           plRowPlayer    = 0;
+    private Button[,]     plMatrixCells;
+    private const float   PL_STEP = 2f;
+    private const float   PL_MIN  = -20f;
+    private const float   PL_MAX  = +20f;
     private Toggle toggleVisibility;
     private Toggle toggleSpeciesOverlay;
     private int    selectedPlayerIndex = 0; // index dans PlayerLibrary.GetAll()
     private string selectedPlayerId    = "";
     private string selectedSpeciesId   = ""; // espèce sélectionnée au sein du joueur
 
-    private static readonly string[] typeButtonNames = {
-        "BtnTypePlante","BtnTypeAnimal","BtnTypeChampignon","BtnTypeInsecte","BtnTypeBacterie","BtnTypeAlgue",
-        "BtnTypeGlobuleRouge","BtnTypeGlobuleBlanc","BtnTypeVirus","BtnTypePlaquette"
-    };
 
     // ── Game controls ──────────────────────────────────────────────
     private Slider    speedSlider;
@@ -125,6 +133,9 @@ public class UIController : MonoBehaviour
         stepsPerFrameLabel = root.Q<Label>    ("StepsPerFrameLabel");
 
         // Trail
+        var btnClearTrails = root.Q<Button>("BtnClearTrails");
+        if (btnClearTrails != null) btnClearTrails.clicked += () => SlimeMapRenderer.Instance?.ClearTrails();
+
         trailWeightSlider  = root.Q<Slider>("TrailWeightSlider");  trailWeightLabel  = root.Q<Label>("TrailWeightLabel");
         decayRateSlider    = root.Q<Slider>("DecayRateSlider");    decayRateLabel    = root.Q<Label>("DecayRateLabel");
         diffuseRateSlider  = root.Q<Slider>("DiffuseRateSlider");  diffuseRateLabel  = root.Q<Label>("DiffuseRateLabel");
@@ -221,20 +232,16 @@ public class UIController : MonoBehaviour
             }
         }
 
-        // Species buttons — sélecteur d'espèce au sein du joueur actif
-        for (int i = 0; i < 10; i++) {
-            typeButtons[i] = root.Q<Button>(typeButtonNames[i]);
-            typeButtonBaseTexts[i] = typeButtons[i]?.text ?? ((SpeciesType)i).ToString();
-            string typeId = ((SpeciesType)i).ToString().ToLowerInvariant();
-            if (typeButtons[i] != null) {
-                string capturedId = typeId;
-                typeButtons[i].clicked += () => OnSelectSpecies(capturedId);
-            }
-        }
+        // Species buttons — conteneur dynamique (rempli par RebuildSpeciesButtons)
+        speciesButtonContainer = root.Q<VisualElement>("SpeciesButtonContainer");
 
         // Diplomatic matrix panel
         btnDiplomatie = root.Q<Button>("BtnDiplomatie");
         if (btnDiplomatie != null) btnDiplomatie.clicked += ToggleDiploMatrixPanel;
+
+        // Particle Life matrix panel
+        btnParticleLife = root.Q<Button>("BtnParticleLife");
+        if (btnParticleLife != null) btnParticleLife.clicked += TogglePLMatrixPanel;
 
         // Construction panel
         btnConstruction = root.Q<Button>("BtnConstruction");
@@ -395,7 +402,8 @@ public class UIController : MonoBehaviour
         }
 
         if (diploMatrixOpen) RefreshDiploMatrixCells();
-        RefreshTypeButtons();
+        if (plMatrixOpen)    RefreshPLMatrixCells();
+        RebuildSpeciesButtons();
     }
 
     private void OnSelectSpecies(string speciesId)
@@ -440,30 +448,67 @@ public class UIController : MonoBehaviour
         if (toggleSpeciesOverlay != null && WaypointOverlayRenderer.Instance != null)
             toggleSpeciesOverlay.SetValueWithoutNotify(WaypointOverlayRenderer.Instance.ShowPOI);
 
-        RefreshTypeButtons();
+        RebuildSpeciesButtons();
     }
 
-    private void RefreshTypeButtons()
+    private void RebuildSpeciesButtons()
     {
-        var lib = PlayerLibrary.Instance;
-        var playerSpecies = lib != null
-            ? lib.GetSpeciesForPlayer(selectedPlayerId)
-            : new System.Collections.Generic.List<string>();
+        if (speciesButtonContainer == null) return;
+        speciesButtonContainer.Clear();
+        speciesButtonMap.Clear();
+        speciesButtonBaseText.Clear();
 
-        for (int i = 0; i < 10; i++) {
-            if (typeButtons[i] == null) continue;
-            string typeId = ((SpeciesType)i).ToString().ToLowerInvariant();
-            bool inPlayer = playerSpecies.Contains(typeId);
-            typeButtons[i].style.display            = inPlayer ? UnityEngine.UIElements.DisplayStyle.Flex
-                                                               : UnityEngine.UIElements.DisplayStyle.None;
-            // Couleur depuis le species JSON
-            var specDef = SpeciesLibrary.Instance?.Get(typeId);
+        var lib = PlayerLibrary.Instance;
+        if (lib == null) return;
+        var playerSpecies = lib.GetSpeciesForPlayer(selectedPlayerId);
+
+        foreach (var speciesId in playerSpecies)
+        {
+            var specDef  = SpeciesLibrary.Instance?.Get(speciesId);
+            string label = SpeciesShortName(specDef?.displayName ?? speciesId);
+
+            Color bg = new Color(0.25f, 0.25f, 0.3f);
             if (specDef?.color != null && specDef.color.Length >= 3)
-                typeButtons[i].style.backgroundColor = new StyleColor(new Color(specDef.color[0], specDef.color[1], specDef.color[2]));
-            typeButtons[i].style.opacity            = (typeId == selectedSpeciesId) ? 1.0f : 0.6f;
-            typeButtons[i].style.borderBottomWidth  = (typeId == selectedSpeciesId) ? 3 : 0;
-            typeButtons[i].style.borderBottomColor  = Color.white;
+                bg = new Color(specDef.color[0], specDef.color[1], specDef.color[2]);
+
+            float brightness = bg.r * 0.299f + bg.g * 0.587f + bg.b * 0.114f;
+            Color textColor  = brightness > 0.55f ? Color.black : Color.white;
+
+            string capturedId = speciesId;
+            var btn = new Button(() => OnSelectSpecies(capturedId)) { text = label };
+            btn.style.fontSize           = 11;
+            btn.style.paddingTop         = 3;
+            btn.style.paddingBottom      = 3;
+            btn.style.paddingLeft        = 5;
+            btn.style.paddingRight       = 5;
+            btn.style.minWidth           = 46;
+            btn.style.marginTop          = 1;
+            btn.style.marginBottom       = 1;
+            btn.style.marginLeft         = 1;
+            btn.style.marginRight        = 1;
+            btn.style.backgroundColor    = new StyleColor(bg);
+            btn.style.color              = new StyleColor(textColor);
+            btn.style.borderTopLeftRadius     = new StyleLength(4);
+            btn.style.borderTopRightRadius    = new StyleLength(4);
+            btn.style.borderBottomLeftRadius  = new StyleLength(4);
+            btn.style.borderBottomRightRadius = new StyleLength(4);
+            btn.style.opacity            = (speciesId == selectedSpeciesId) ? 1.0f : 0.6f;
+            btn.style.borderBottomWidth  = (speciesId == selectedSpeciesId) ? 3 : 0;
+            btn.style.borderBottomColor  = new StyleColor(Color.white);
+
+            speciesButtonContainer.Add(btn);
+            speciesButtonMap[speciesId]      = btn;
+            speciesButtonBaseText[speciesId] = label;
         }
+    }
+
+    private static string SpeciesShortName(string displayName)
+    {
+        if (string.IsNullOrEmpty(displayName)) return "?";
+        var words = displayName.Trim().Split(' ');
+        if (words.Length >= 2)
+            return words[0][0] + "." + words[1]; // "Globule Rouge" → "G.Rouge"
+        return displayName.Length <= 9 ? displayName : displayName.Substring(0, 8);
     }
 
     // ── Diplomatic matrix panel ────────────────────────────────────
@@ -471,6 +516,7 @@ public class UIController : MonoBehaviour
     private void ToggleDiploMatrixPanel()
     {
         if (diploMatrixOpen) { CloseDiploMatrixPanel(); return; }
+        ClosePLMatrixPanel();
         var lib = PlayerLibrary.Instance;
         if (lib == null) return;
         int count = lib.GetAll().Count;
@@ -812,6 +858,231 @@ public class UIController : MonoBehaviour
         if (cur == null) return levels[levels.Count - 1];
         int i = levels.IndexOf(cur);
         return (i > 0) ? levels[i - 1] : cur;
+    }
+
+    // ── Particle Life matrix panel ─────────────────────────────────
+
+    private void TogglePLMatrixPanel()
+    {
+        if (plMatrixOpen) { ClosePLMatrixPanel(); return; }
+        CloseDiploMatrixPanel();
+        var lib = PlayerLibrary.Instance;
+        if (lib == null) return;
+        int count = lib.GetAll().Count;
+        plColPlayer = Mathf.Clamp(plColPlayer, 0, count - 1);
+        plRowPlayer = Mathf.Clamp(plRowPlayer, 0, count - 1);
+        BuildPLMatrixPanel();
+    }
+
+    private void ClosePLMatrixPanel()
+    {
+        plMatrixPanel?.RemoveFromHierarchy();
+        plMatrixPanel = null;
+        plMatrixOpen  = false;
+    }
+
+    private void BuildPLMatrixPanel()
+    {
+        var lib = PlayerLibrary.Instance;
+        var smr = SlimeMapRenderer.Instance;
+        if (lib == null || smr == null) return;
+
+        var players    = lib.GetAll();
+        int numPlayers = players.Count;
+        if (numPlayers == 0) return;
+
+        var colSpecies = lib.GetSpeciesForPlayer(players[plColPlayer].id);
+        var rowSpecies = lib.GetSpeciesForPlayer(players[plRowPlayer].id);
+        int nCols = colSpecies.Count;
+        int nRows = rowSpecies.Count;
+
+        const int CELL = 42;
+        const int PAD  = 10;
+
+        plMatrixPanel = new VisualElement();
+        plMatrixPanel.style.position        = Position.Absolute;
+        plMatrixPanel.style.top             = 120;
+        plMatrixPanel.style.left            = 295;
+        plMatrixPanel.style.backgroundColor = new StyleColor(new Color(0.04f, 0.08f, 0.06f, 0.95f));
+        plMatrixPanel.style.paddingTop      = PAD;
+        plMatrixPanel.style.paddingBottom   = PAD;
+        plMatrixPanel.style.paddingLeft     = PAD;
+        plMatrixPanel.style.paddingRight    = PAD;
+        plMatrixPanel.style.borderTopLeftRadius     = new StyleLength(8);
+        plMatrixPanel.style.borderTopRightRadius    = new StyleLength(8);
+        plMatrixPanel.style.borderBottomLeftRadius  = new StyleLength(8);
+        plMatrixPanel.style.borderBottomRightRadius = new StyleLength(8);
+
+        // Titre
+        var titleRow = new VisualElement();
+        titleRow.style.flexDirection  = FlexDirection.Row;
+        titleRow.style.justifyContent = Justify.SpaceBetween;
+        titleRow.style.alignItems     = Align.Center;
+        titleRow.style.marginBottom   = 4;
+
+        var titleLbl = new Label("Interactions Directes (Particle Life)");
+        titleLbl.style.color               = new StyleColor(new Color(0.7f, 1f, 0.8f));
+        titleLbl.style.fontSize            = 13;
+        titleLbl.style.unityFontStyleAndWeight = FontStyle.Bold;
+
+        var closeBtn = new Button(ClosePLMatrixPanel) { text = "✕" };
+        closeBtn.style.fontSize        = 12;
+        closeBtn.style.paddingLeft     = 6;
+        closeBtn.style.paddingRight    = 6;
+        closeBtn.style.paddingTop      = 2;
+        closeBtn.style.paddingBottom   = 2;
+        closeBtn.style.backgroundColor = new StyleColor(new Color(0.4f, 0.1f, 0.1f));
+        closeBtn.style.color           = new StyleColor(Color.white);
+        closeBtn.style.borderTopLeftRadius     = new StyleLength(4);
+        closeBtn.style.borderTopRightRadius    = new StyleLength(4);
+        closeBtn.style.borderBottomLeftRadius  = new StyleLength(4);
+        closeBtn.style.borderBottomRightRadius = new StyleLength(4);
+        titleRow.Add(titleLbl);
+        titleRow.Add(closeBtn);
+        plMatrixPanel.Add(titleRow);
+
+        // Sous-titre explicatif
+        var subLbl = new Label("Clic gauche : +1 | Clic droit : -1 | Vert = attire, Rouge = repousse");
+        subLbl.style.color         = new StyleColor(new Color(0.55f, 0.65f, 0.55f));
+        subLbl.style.fontSize      = 10;
+        subLbl.style.marginBottom  = 6;
+        plMatrixPanel.Add(subLbl);
+
+        // Sélecteurs de joueurs
+        plMatrixPanel.Add(MakePlayerSelectorRow("Colonnes :", numPlayers, players, plColPlayer, i => {
+            plColPlayer = i; ClosePLMatrixPanel(); BuildPLMatrixPanel();
+        }));
+        plMatrixPanel.Add(MakePlayerSelectorRow("Lignes :", numPlayers, players, plRowPlayer, i => {
+            plRowPlayer = i; ClosePLMatrixPanel(); BuildPLMatrixPanel();
+        }));
+
+        // Grille
+        var grid = new VisualElement();
+        grid.style.flexDirection = FlexDirection.Column;
+
+        // En-tête colonnes
+        var headerRow = new VisualElement();
+        headerRow.style.flexDirection = FlexDirection.Row;
+        headerRow.Add(MakeCornerCell(CELL));
+        for (int c = 0; c < nCols; c++)
+        {
+            int colSlot = lib.GetSlotIndex(players[plColPlayer].id, colSpecies[c]);
+            headerRow.Add(MakeSpeciesHeader(colSpecies[c], colSlot, smr, CELL));
+        }
+        grid.Add(headerRow);
+
+        // Lignes de données
+        plMatrixCells = new Button[nRows, nCols];
+        for (int r = 0; r < nRows; r++)
+        {
+            int rowSlot = lib.GetSlotIndex(players[plRowPlayer].id, rowSpecies[r]);
+            var row = new VisualElement();
+            row.style.flexDirection = FlexDirection.Row;
+            row.Add(MakeSpeciesHeader(rowSpecies[r], rowSlot, smr, CELL));
+
+            for (int c = 0; c < nCols; c++)
+            {
+                int colSlot   = lib.GetSlotIndex(players[plColPlayer].id, colSpecies[c]);
+                int capR = rowSlot;
+                int capC = colSlot;
+
+                var cell = new Button();
+                cell.style.width  = CELL;
+                cell.style.height = CELL;
+                cell.style.marginTop    = 1;
+                cell.style.marginBottom = 1;
+                cell.style.marginLeft   = 1;
+                cell.style.marginRight  = 1;
+                cell.style.fontSize     = 10;
+                cell.style.color        = new StyleColor(Color.white);
+                cell.style.unityFontStyleAndWeight = FontStyle.Bold;
+                cell.style.borderTopLeftRadius     = new StyleLength(3);
+                cell.style.borderTopRightRadius    = new StyleLength(3);
+                cell.style.borderBottomLeftRadius  = new StyleLength(3);
+                cell.style.borderBottomRightRadius = new StyleLength(3);
+
+                if (capR >= 0 && capC >= 0)
+                {
+                    float v0 = smr.GetAgentInteraction(capR, capC);
+                    cell.text = PLValueText(v0);
+                    cell.style.backgroundColor = new StyleColor(PLValueColor(v0));
+
+                    cell.clicked += () =>
+                    {
+                        float cur  = smr.GetAgentInteraction(capR, capC);
+                        float next = Mathf.Clamp(cur + PL_STEP, PL_MIN, PL_MAX);
+                        smr.SetAgentInteraction(capR, capC, next);
+                        RefreshPLMatrixCells();
+                    };
+                    cell.RegisterCallback<PointerDownEvent>(evt =>
+                    {
+                        if (evt.button != 1) return;
+                        float cur  = smr.GetAgentInteraction(capR, capC);
+                        float next = Mathf.Clamp(cur - PL_STEP, PL_MIN, PL_MAX);
+                        smr.SetAgentInteraction(capR, capC, next);
+                        RefreshPLMatrixCells();
+                        evt.StopPropagation();
+                    });
+                }
+                else
+                {
+                    cell.text = "—";
+                    cell.style.backgroundColor = new StyleColor(new Color(0.12f, 0.12f, 0.12f));
+                }
+
+                plMatrixCells[r, c] = cell;
+                row.Add(cell);
+            }
+            grid.Add(row);
+        }
+
+        plMatrixPanel.Add(grid);
+        uiDocument.rootVisualElement.Add(plMatrixPanel);
+        plMatrixOpen = true;
+    }
+
+    private void RefreshPLMatrixCells()
+    {
+        var lib = PlayerLibrary.Instance;
+        var smr = SlimeMapRenderer.Instance;
+        if (lib == null || smr == null || plMatrixCells == null) return;
+
+        var players    = lib.GetAll();
+        var colSpecies = lib.GetSpeciesForPlayer(players[plColPlayer].id);
+        var rowSpecies = lib.GetSpeciesForPlayer(players[plRowPlayer].id);
+        int nRows = plMatrixCells.GetLength(0);
+        int nCols = plMatrixCells.GetLength(1);
+
+        for (int r = 0; r < nRows && r < rowSpecies.Count; r++)
+        {
+            int rowSlot = lib.GetSlotIndex(players[plRowPlayer].id, rowSpecies[r]);
+            for (int c = 0; c < nCols && c < colSpecies.Count; c++)
+            {
+                int colSlot = lib.GetSlotIndex(players[plColPlayer].id, colSpecies[c]);
+                var cell = plMatrixCells[r, c];
+                if (cell == null || rowSlot < 0 || colSlot < 0) continue;
+                float v = smr.GetAgentInteraction(rowSlot, colSlot);
+                cell.text = PLValueText(v);
+                cell.style.backgroundColor = new StyleColor(PLValueColor(v));
+            }
+        }
+    }
+
+    private static string PLValueText(float v)
+    {
+        if (Mathf.Abs(v) < 0.05f) return "0";
+        return (v > 0 ? "+" : "") + v.ToString("F0");
+    }
+
+    private static Color PLValueColor(float v)
+    {
+        // Neutre=gris foncé, positif=vert, négatif=rouge
+        Color neutral  = new Color(0.13f, 0.15f, 0.13f);
+        Color positive = new Color(0.1f,  0.5f,  0.15f);
+        Color negative = new Color(0.5f,  0.1f,  0.1f);
+        float t = v / PL_MAX; // -1..+1
+        if (t >= 0) return Color.Lerp(neutral, positive, Mathf.Clamp01(t));
+        else        return Color.Lerp(neutral, negative, Mathf.Clamp01(-t));
     }
 
     // ── Construction panel ─────────────────────────────────────────
@@ -1187,19 +1458,21 @@ public class UIController : MonoBehaviour
                 entityCountLabel.text = $"Agents (Vivants) : {totalAlive:N0}";
 
             // Compteur par espèce dans les boutons de type
-            for (int i = 0; i < 10; i++)
+            foreach (var kvp in speciesButtonMap)
             {
-                if (typeButtons[i] == null) continue;
-                string speciesId = ((SpeciesType)i).ToString().ToLowerInvariant();
+                string speciesId = kvp.Key;
+                var    btn       = kvp.Value;
+                if (btn == null) continue;
                 int slot = lib != null ? lib.GetSlotIndex(selectedPlayerId, speciesId) : -1;
+                string baseLabel = speciesButtonBaseText.TryGetValue(speciesId, out var bl) ? bl : speciesId;
                 if (slot >= 0 && slot < SlimeMapRenderer.MaxSlots)
                 {
                     uint count = SlimeMapRenderer.Instance.AliveSpeciesCounts[slot];
-                    typeButtons[i].text = $"{typeButtonBaseTexts[i]}\n<size=9>{count:N0}</size>";
+                    btn.text = $"{baseLabel}\n<size=9>{count:N0}</size>";
                 }
                 else
                 {
-                    typeButtons[i].text = typeButtonBaseTexts[i];
+                    btn.text = baseLabel;
                 }
             }
         }

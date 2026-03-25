@@ -14,5 +14,9 @@
   "diffuseRate": 0.5,
   "warDamageRate": 50.0,
   "trailErasePower": 2.0,
-  "behaviorType": "Eraser"
+  "behaviorType": "Defender",
+    "startingEnergy": 0.0,
+  "repulsionStrength": 3.0,
+  "repulsionRadius": 5.0,
+  "densityLimit": 4.0
 }

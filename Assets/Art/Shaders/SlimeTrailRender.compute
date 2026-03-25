@@ -432,13 +432,41 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
             weightRight   += senseSpecies(agent, -settings.sensorAngleRad, settings, s) * w;
         }
 
-        // Sensing direct de présence d'agents (AgentMap) — non-diffus, temps-réel
+        // ── Particle Life : balayage circulaire de présence directe (AgentMap) ──
+        // Contrairement à senseAgents (capteur à sensorOffsetDst fixe),
+        // on balaie un disque de 20px autour de l'agent et on calcule
+        // une force résultante — réaction immédiate à la proximité réelle.
         for (int sa = 0; sa < numActiveSlots; sa++) {
             float aw = agentInteractionMatrix[agent.speciesIndex * MAX_SLOTS + sa];
             if (abs(aw) < 0.001) continue;
-            weightForward += senseAgents(agent, 0,                        settings, sa) * aw;
-            weightLeft    += senseAgents(agent,  settings.sensorAngleRad, settings, sa) * aw;
-            weightRight   += senseAgents(agent, -settings.sensorAngleRad, settings, sa) * aw;
+
+            float2 forceDir = float2(0.0, 0.0);
+            int scanR = 20;
+            for (int dx = -scanR; dx <= scanR; dx += 4) {
+                for (int dy = -scanR; dy <= scanR; dy += 4) {
+                    float d = length(float2(dx, dy));
+                    if (d < 2.0 || d > (float)scanR) continue;
+                    int sx = clamp((int)agent.position.x + dx, 0, width  - 1);
+                    int sy = clamp((int)agent.position.y + dy, 0, height - 1);
+                    float presence = AgentMap[int3(sx, sy, sa)];
+                    if (presence < 0.5) continue;
+                    forceDir += (float2(dx, dy) / d) * (1.0 - d / (float)scanR);
+                }
+            }
+
+            float fl = length(forceDir);
+            if (fl > 0.001) {
+                float targetAngle = atan2(forceDir.y, forceDir.x);
+                float angleDiff   = fmod(targetAngle - agent.angle + 3.14159 * 3.0, 6.28318) - 3.14159;
+                float bias = aw * fl;
+                if (abs(angleDiff) < settings.sensorAngleRad) {
+                    weightForward += bias;
+                } else if (angleDiff > 0) {
+                    weightLeft    += bias;
+                } else {
+                    weightRight   += bias;
+                }
+            }
         }
 
         // ── Density limit ────────────────────────────────────────────
