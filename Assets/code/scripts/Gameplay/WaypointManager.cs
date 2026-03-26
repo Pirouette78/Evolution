@@ -402,8 +402,9 @@ public class WaypointManager : MonoBehaviour
     {
         if (flowFieldTexture != null) Destroy(flowFieldTexture);
 
-        int W = TerrainMapRenderer.Instance.Width;
-        int H = TerrainMapRenderer.Instance.Height;
+        // Texture en dimensions SIMULATION — le shader échantillonne aux positions des agents (espace sim)
+        int W = SlimeMapRenderer.Instance.Width;
+        int H = SlimeMapRenderer.Instance.Height;
 
         flowFieldTexture = new Texture2DArray(W, H, SlimeMapRenderer.MaxSlots, TextureFormat.RGHalf, false)
         {
@@ -427,15 +428,37 @@ public class WaypointManager : MonoBehaviour
     {
         if (wi < 0 || wi >= waypointList.Count) return;
         var terrain = TerrainMapRenderer.Instance;
-        int W = terrain.Width;
-        int H = terrain.Height;
+        int terrW = terrain.Width;
+        int terrH = terrain.Height;
+        int simW  = SlimeMapRenderer.Instance.Width;
+        int simH  = SlimeMapRenderer.Instance.Height;
 
+        // Scale waypoint position from sim space → terrain space for BFS
         Vector2 target = waypointList[wi].position;
-        int tx = Mathf.Clamp((int)target.x, 0, W - 1);
-        int ty = Mathf.Clamp((int)target.y, 0, H - 1);
+        int tx = Mathf.Clamp((int)(target.x * terrW / (float)simW), 0, terrW - 1);
+        int ty = Mathf.Clamp((int)(target.y * terrH / (float)simH), 0, terrH - 1);
 
-        Color[] slice = BFSFlowField(terrain.WalkabilityGrid, W, H, tx, ty);
-        flowFieldTexture.SetPixels(slice, wi);
+        Color[] terrSlice = BFSFlowField(terrain.WalkabilityGrid, terrW, terrH, tx, ty);
+
+        // Resize to sim dimensions if needed (nearest-neighbour — directions are unit vectors so no lerp needed)
+        Color[] simSlice;
+        if (terrW == simW && terrH == simH)
+        {
+            simSlice = terrSlice;
+        }
+        else
+        {
+            simSlice = new Color[simW * simH];
+            for (int sy = 0; sy < simH; sy++)
+            for (int sx = 0; sx < simW; sx++)
+            {
+                int terrX = Mathf.Clamp((int)(sx * terrW / (float)simW), 0, terrW - 1);
+                int terrY = Mathf.Clamp((int)(sy * terrH / (float)simH), 0, terrH - 1);
+                simSlice[sy * simW + sx] = terrSlice[terrY * terrW + terrX];
+            }
+        }
+
+        flowFieldTexture.SetPixels(simSlice, wi);
         if (applyTexture) flowFieldTexture.Apply();
     }
 
@@ -576,7 +599,9 @@ public class WaypointManager : MonoBehaviour
     {
         var terrain = TerrainMapRenderer.Instance;
         if (terrain == null) return;
-        int W = terrain.Width, H = terrain.Height;
+        int terrW = terrain.Width, terrH = terrain.Height;
+        int simW  = SlimeMapRenderer.Instance.Width;
+        int simH  = SlimeMapRenderer.Instance.Height;
         bool[,] walkable = terrain.WalkabilityGrid;
 
         var flatBuffer = new Vector2[SlimeMapRenderer.MaxSlots * MaxSmoothedWaypoints];
@@ -603,26 +628,29 @@ public class WaypointManager : MonoBehaviour
                 if (waypointList[w].speciesIndex == s && waypointList[w].type == 0) { srcWp = w; break; }
             if (srcWp < 0) continue;
 
+            // Scale sim positions → terrain space pour le BFS
             Vector2 srcPos = waypointList[srcWp].position;
             Vector2 dstPos = waypointList[wi].position;
-            int srcX = Mathf.Clamp((int)srcPos.x, 0, W - 1);
-            int srcY = Mathf.Clamp((int)srcPos.y, 0, H - 1);
-            int dstX = Mathf.Clamp((int)dstPos.x, 0, W - 1);
-            int dstY = Mathf.Clamp((int)dstPos.y, 0, H - 1);
+            int srcX = Mathf.Clamp((int)(srcPos.x * terrW / (float)simW), 0, terrW - 1);
+            int srcY = Mathf.Clamp((int)(srcPos.y * terrH / (float)simH), 0, terrH - 1);
+            int dstX = Mathf.Clamp((int)(dstPos.x * terrW / (float)simW), 0, terrW - 1);
+            int dstY = Mathf.Clamp((int)(dstPos.y * terrH / (float)simH), 0, terrH - 1);
 
-            // BFS depuis cette destination (flow field enraciné à la cible)
-            BFSFlowField(walkable, W, H, dstX, dstY, out int[] parent);
+            // BFS depuis cette destination (flow field enraciné à la cible) — en espace terrain
+            BFSFlowField(walkable, terrW, terrH, dstX, dstY, out int[] parent);
 
-            var raw      = ExtractRawPath(parent, W, srcY * W + srcX, dstY * W + dstX);
-            var smoothed = StringPull(raw, walkable, W, H);
+            var raw      = ExtractRawPath(parent, terrW, srcY * terrW + srcX, dstY * terrW + dstX);
+            var smoothed = StringPull(raw, walkable, terrW, terrH);
             if (smoothed == null || smoothed.Count == 0) continue;
 
             int count = Mathf.Min(smoothed.Count, MaxSmoothedWaypoints);
             smoothPaths[wi] = new Vector2[count];
             for (int i = 0; i < count; i++)
             {
-                var v = new Vector2(smoothed[i].x, smoothed[i].y);
-                smoothPaths[wi][i]              = v;
+                // Scale terrain → sim space pour le GPU (les agents naviguent en espace sim)
+                var v = new Vector2(smoothed[i].x * simW / (float)terrW,
+                                    smoothed[i].y * simH / (float)terrH);
+                smoothPaths[wi][i]         = v;
                 flatBuffer[starts[wi] + i] = v;
             }
             counts[wi] = count;

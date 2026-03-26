@@ -21,7 +21,7 @@
   "densityLimit": 0.0,
   "agentRadius": 3,
   "trailEmitRadius": 20,
-  "seedProbHigh": 0.005,
-  "seedProbLow": 0.00005,
+  "seedProbHigh": 0.00005,
+  "seedProbLow": 0.0000005,
   "seedInterval": 5.0
 }

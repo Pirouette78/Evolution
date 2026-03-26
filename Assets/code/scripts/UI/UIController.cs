@@ -1407,11 +1407,16 @@ public class UIController : MonoBehaviour
     private Vector2? ScreenToMapPixel(Vector2 screenPos)
     {
         var smr = SlimeMapRenderer.Instance;
-        if (smr == null || Camera.main == null) return null;
+        if (smr == null || Camera.main == null || smr.DisplayTarget == null) return null;
+
         float depth = -Camera.main.transform.position.z;
         Vector3 world = Camera.main.ScreenToWorldPoint(new Vector3(screenPos.x, screenPos.y, depth));
-        int px = (int)world.x;
-        int py = (int)world.y;
+
+        Bounds b = smr.DisplayTarget.bounds;
+        if (b.size.x <= 0 || b.size.y <= 0) return null;
+        int px = (int)((world.x - b.min.x) / b.size.x * smr.Width);
+        int py = (int)((world.y - b.min.y) / b.size.y * smr.Height);
+
         if (px < 0 || px >= smr.Width || py < 0 || py >= smr.Height) return null;
         return new Vector2(px, py);
     }

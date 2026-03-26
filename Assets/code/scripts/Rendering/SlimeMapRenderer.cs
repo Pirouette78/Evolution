@@ -839,7 +839,9 @@ public class SlimeMapRenderer : MonoBehaviour
                 SlimeShader.Dispatch(drawKernel, agentGroups, 1, 1);
 
                 // 3b. Ajouter l'émission végétale statique (O(W×H) au lieu de O(agents×radius²))
-                SlimeShader.SetBuffer(applyVegEmitKernel, "speciesSettings", speciesSettingsBuffer);
+                SlimeShader.SetTexture(applyVegEmitKernel, "VegetalEmissionMap", VegetalEmissionMap);
+                SlimeShader.SetTexture(applyVegEmitKernel, "TrailMap",           TrailMap);
+                SlimeShader.SetBuffer (applyVegEmitKernel, "speciesSettings",    speciesSettingsBuffer);
                 SlimeShader.Dispatch(applyVegEmitKernel, texGroupsX, texGroupsY, 1);
 
                 // 4. Diffuse + decay
@@ -904,6 +906,8 @@ public class SlimeMapRenderer : MonoBehaviour
     public void RebuildVegetalEmissionMap()
     {
         if (!isInitialized) return;
+        // Ensure GPU buffer is up-to-date (may be called before first Update frame)
+        speciesSettingsBuffer.SetData(speciesSettings);
         int gx = Mathf.CeilToInt(Width  / 8f);
         int gy = Mathf.CeilToInt(Height / 8f);
         // 1. Clear

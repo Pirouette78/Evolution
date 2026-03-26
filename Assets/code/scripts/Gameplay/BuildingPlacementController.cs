@@ -177,22 +177,34 @@ public class BuildingPlacementController : MonoBehaviour
     {
         walkable = false;
         var smr = SlimeMapRenderer.Instance;
-        if (smr == null || Camera.main == null) return null;
+        if (smr == null || Camera.main == null || smr.DisplayTarget == null) return null;
 
-        Vector2 screenPos = mouse.position.ReadValue();
-        // Profondeur : distance caméra → plan z=0 de la carte
+        // ScreenToWorldPoint → position monde au plan z=0 (suit la caméra si elle bouge)
+        // Puis inverse de PixelToWorld via les bounds du quad pour obtenir les coordonnées pixel
         float depth = -Camera.main.transform.position.z;
-        Vector3 worldPos = Camera.main.ScreenToWorldPoint(new Vector3(screenPos.x, screenPos.y, depth));
+        Vector3 worldPos = Camera.main.ScreenToWorldPoint(
+            new Vector3(mouse.position.ReadValue().x, mouse.position.ReadValue().y, depth));
 
-        int px = (int)worldPos.x;
-        int py = (int)worldPos.y;
+        Bounds b = smr.DisplayTarget.bounds;
+        if (b.size.x <= 0 || b.size.y <= 0) return null;
+        int px = (int)((worldPos.x - b.min.x) / b.size.x * smr.Width);
+        int py = (int)((worldPos.y - b.min.y) / b.size.y * smr.Height);
 
         if (px < 0 || px >= smr.Width || py < 0 || py >= smr.Height) return null;
 
         var terrain = TerrainMapRenderer.Instance;
-        walkable = (terrain != null && terrain.WalkabilityGrid != null)
-            ? terrain.WalkabilityGrid[px, py]
-            : true;
+        if (terrain != null && terrain.WalkabilityGrid != null)
+        {
+            int gridW = terrain.WalkabilityGrid.GetLength(0);
+            int gridH = terrain.WalkabilityGrid.GetLength(1);
+            int gx = Mathf.Clamp((int)(px * gridW / (float)smr.Width),  0, gridW - 1);
+            int gy = Mathf.Clamp((int)(py * gridH / (float)smr.Height), 0, gridH - 1);
+            walkable = terrain.WalkabilityGrid[gx, gy];
+        }
+        else
+        {
+            walkable = true;
+        }
 
         return new Vector2(px, py);
     }
@@ -200,7 +212,7 @@ public class BuildingPlacementController : MonoBehaviour
     private Vector3 PixelToWorld(Vector2 pixelPos)
     {
         var smr = SlimeMapRenderer.Instance;
-        if (smr == null || Camera.main == null) return Vector3.zero;
+        if (smr == null) return Vector3.zero;
 
         if (smr.DisplayTarget != null)
         {
@@ -210,12 +222,8 @@ public class BuildingPlacementController : MonoBehaviour
                 b.min.y + (pixelPos.y / smr.Height) * b.size.y,
                 b.center.z - 0.02f);
         }
-        float vx = pixelPos.x / smr.Width;
-        float vy = pixelPos.y / smr.Height;
-        Vector3 world = Camera.main.ViewportToWorldPoint(
-            new Vector3(vx, vy, -Camera.main.transform.position.z));
-        world.z = -0.02f;
-        return world;
+        // Fallback : le monde == espace pixel (map à [0,Width]×[0,Height])
+        return new Vector3(pixelPos.x, pixelPos.y, -0.02f);
     }
 
     private void DrawCircle(Vector3 center, float pixelRadius, Color color, int segments)
