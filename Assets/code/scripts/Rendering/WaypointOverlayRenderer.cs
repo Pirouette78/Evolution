@@ -128,29 +128,17 @@ public class WaypointOverlayRenderer : MonoBehaviour
             Color lineCol = GetSlotColor(s);
             lineCol.a = 0.7f;
 
-            // Dessine un chemin lissé par destination (supporte plusieurs destinations)
-            var smoothPaths = WaypointManager.Instance.GetSmoothedPathsForSpecies(s);
-            if (smoothPaths != null && smoothPaths.Count > 0)
-            {
-                foreach (var path in smoothPaths)
-                    for (int p = 0; p < path.Length - 1; p++)
-                        DrawDashedLine(MapToWorld(path[p]), MapToWorld(path[p + 1]),
-                                       lineCol, dashOffset, 0.4f);
-            }
-            else
-            {
-                // Fallback : ligne droite Source → chaque Destination
-                Vector2? src = null;
-                for (int i = 0; i < waypoints.Length; i++)
-                    if (waypoints[i].speciesIndex == s && waypoints[i].type == 0) { src = waypoints[i].position; break; }
-                if (src == null) continue;
+            // Ligne droite Source → chaque Destination (flow field, pas de chemin lissé)
+            Vector2? src = null;
+            for (int i = 0; i < waypoints.Length; i++)
+                if (waypoints[i].speciesIndex == s && waypoints[i].type == 0) { src = waypoints[i].position; break; }
+            if (src == null) continue;
 
-                for (int i = 0; i < waypoints.Length; i++)
-                {
-                    if (waypoints[i].speciesIndex != s || waypoints[i].type != 1) continue;
-                    DrawDashedLine(MapToWorld(src.Value), MapToWorld(waypoints[i].position),
-                                   lineCol, dashOffset, 0.05f);
-                }
+            for (int i = 0; i < waypoints.Length; i++)
+            {
+                if (waypoints[i].speciesIndex != s || waypoints[i].type != 1) continue;
+                DrawDashedLine(MapToWorld(src.Value), MapToWorld(waypoints[i].position),
+                               lineCol, dashOffset, 0.05f);
             }
         }
 

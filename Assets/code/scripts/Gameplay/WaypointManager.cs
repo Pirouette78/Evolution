@@ -4,7 +4,7 @@ using UnityEngine;
 
 /// <summary>
 /// Manages waypoints (Sources and Destinations) for species navigation,
-/// computes CPU-side BFS flow fields for pathfinding, and handles hive spawning.
+/// computes CPU-side Dijkstra flow fields for pathfinding, and handles hive spawning.
 /// Waypoints are added at runtime via AddWaypoint() (called from BuildingPlacementController).
 /// </summary>
 public class WaypointManager : MonoBehaviour
@@ -61,10 +61,6 @@ public class WaypointManager : MonoBehaviour
     // Shared flow field texture (MaxSlots slices, reused across recomputations)
     private Texture2DArray flowFieldTexture;
     private bool           flowFieldReady = false;
-
-    // Smoothed paths (string pulling) — indexés par waypoint de destination
-    private Vector2[][] smoothPaths = new Vector2[SlimeMapRenderer.MaxSlots][];
-    private const int   MaxSmoothedWaypoints = 64;
 
     private void Awake()
     {
@@ -423,7 +419,7 @@ public class WaypointManager : MonoBehaviour
         flowFieldTexture.Apply();
     }
 
-    /// <summary>Compute BFS flow field for a single waypoint slice.</summary>
+    /// <summary>Compute Dijkstra flow field for a single waypoint slice.</summary>
     private void ComputeFlowFieldForIndex(int wi, bool applyTexture = true)
     {
         if (wi < 0 || wi >= waypointList.Count) return;
@@ -433,12 +429,12 @@ public class WaypointManager : MonoBehaviour
         int simW  = SlimeMapRenderer.Instance.Width;
         int simH  = SlimeMapRenderer.Instance.Height;
 
-        // Scale waypoint position from sim space → terrain space for BFS
+        // Scale waypoint position from sim space → terrain space for Dijkstra
         Vector2 target = waypointList[wi].position;
         int tx = Mathf.Clamp((int)(target.x * terrW / (float)simW), 0, terrW - 1);
         int ty = Mathf.Clamp((int)(target.y * terrH / (float)simH), 0, terrH - 1);
 
-        Color[] terrSlice = BFSFlowField(terrain.WalkabilityGrid, terrW, terrH, tx, ty);
+        Color[] terrSlice = DijkstraFlowField(terrain.WalkabilityGrid, terrW, terrH, tx, ty);
 
         // Resize to sim dimensions if needed (nearest-neighbour — directions are unit vectors so no lerp needed)
         Color[] simSlice;
@@ -466,197 +462,97 @@ public class WaypointManager : MonoBehaviour
     {
         SlimeMapRenderer.Instance.SetFlowFields(flowFieldTexture);
         SlimeMapRenderer.Instance.SetWaypoints(waypointList.ToArray());
-        ComputeSmoothedPaths();
     }
 
-    /// <summary>Retourne tous les chemins lissés (vers chaque destination) d'une espèce.</summary>
-    public List<Vector2[]> GetSmoothedPathsForSpecies(int speciesIndex)
+    // ── Dijkstra flow field ──────────────────────────────────────────
+
+    /// <summary>
+    /// Calcule le flow field Dijkstra depuis targetX/Y.
+    /// Coût cardinaux = 1.0, diagonaux = √2 — élimine le biais BFS vers les diagonales.
+    /// </summary>
+    private static Color[] DijkstraFlowField(bool[,] walkable, int W, int H, int targetX, int targetY)
     {
-        var result = new List<Vector2[]>();
-        for (int wi = 0; wi < Mathf.Min(waypointList.Count, SlimeMapRenderer.MaxSlots); wi++)
-        {
-            if (waypointList[wi].speciesIndex != speciesIndex) continue;
-            if (waypointList[wi].type != 1) continue;
-            if (smoothPaths[wi] != null) result.Add(smoothPaths[wi]);
-        }
-        return result;
-    }
-
-    // ── BFS ─────────────────────────────────────────────────────────
-
-    private static Color[] BFSFlowField(bool[,] walkable, int W, int H, int targetX, int targetY)
-        => BFSFlowField(walkable, W, H, targetX, targetY, out _);
-
-    private static Color[] BFSFlowField(bool[,] walkable, int W, int H,
-        int targetX, int targetY, out int[] parent)
-    {
-        parent = new int[W * H];
-        for (int i = 0; i < parent.Length; i++) parent[i] = -1;
+        float[] dist   = new float[W * H];
+        int[]   parent = new int[W * H];
+        for (int i = 0; i < dist.Length; i++) { dist[i] = float.MaxValue; parent[i] = -1; }
 
         int targetIdx = targetY * W + targetX;
+        dist[targetIdx]   = 0f;
         parent[targetIdx] = targetIdx;
 
-        Queue<int> queue = new Queue<int>();
-        queue.Enqueue(targetIdx);
+        // Min-heap : (cost, cellIndex)
+        var heap = new List<(float cost, int idx)>(W * H / 4);
+        heap.Add((0f, targetIdx));
 
-        int[] dx = { 1, -1, 0,  0, 1, -1,  1, -1 };
-        int[] dy = { 0,  0, 1, -1, 1, -1, -1,  1 };
+        int[]   dx    = { 1, -1,  0,  0,  1, -1,  1, -1 };
+        int[]   dy    = { 0,  0,  1, -1,  1, -1, -1,  1 };
+        float[] dcost = { 1f, 1f, 1f, 1f, 1.41421356f, 1.41421356f, 1.41421356f, 1.41421356f };
 
-        while (queue.Count > 0)
+        while (heap.Count > 0)
         {
-            int cur = queue.Dequeue();
-            int cx = cur % W;
-            int cy = cur / W;
+            var (curCost, cur) = heap[0];
+            HeapPop(heap);
+
+            if (curCost > dist[cur]) continue; // entrée périmée
+
+            int cx = cur % W, cy = cur / W;
             for (int d = 0; d < 8; d++)
             {
-                int nx = cx + dx[d]; int ny = cy + dy[d];
+                int nx = cx + dx[d], ny = cy + dy[d];
                 if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
                 if (!walkable[nx, ny]) continue;
-                int ni = ny * W + nx;
-                if (parent[ni] != -1) continue;
+                int   ni      = ny * W + nx;
+                float newCost = curCost + dcost[d];
+                if (newCost >= dist[ni]) continue;
+                dist[ni]   = newCost;
                 parent[ni] = cur;
-                queue.Enqueue(ni);
+                HeapPush(heap, (newCost, ni));
             }
         }
 
         Color[] slice = new Color[W * H];
         for (int y = 0; y < H; y++)
+        for (int x = 0; x < W; x++)
         {
-            for (int x = 0; x < W; x++)
-            {
-                int idx = y * W + x;
-                if (parent[idx] == -1) { slice[idx] = Color.black; continue; }
-                int px = parent[idx] % W;
-                int py = parent[idx] / W;
-                if (px == x && py == y) { slice[idx] = Color.black; continue; }
-                float dirX = px - x; float dirY = py - y;
-                float len  = Mathf.Sqrt(dirX * dirX + dirY * dirY);
-                slice[idx] = new Color(dirX / len, dirY / len, 0f, 0f);
-            }
+            int idx = y * W + x;
+            if (parent[idx] == -1) { slice[idx] = Color.black; continue; }
+            int px = parent[idx] % W, py = parent[idx] / W;
+            if (px == x && py == y) { slice[idx] = Color.black; continue; }
+            float dirX = px - x, dirY = py - y;
+            float len  = Mathf.Sqrt(dirX * dirX + dirY * dirY);
+            slice[idx] = new Color(dirX / len, dirY / len, 0f, 0f);
         }
         return slice;
     }
 
-    // ── String Pulling ───────────────────────────────────────────────
-
-    /// <summary>Trace le chemin brut de source vers destination via le tableau parent[] du BFS.</summary>
-    private static List<Vector2Int> ExtractRawPath(int[] parent, int W, int srcIdx, int dstIdx)
+    private static void HeapPush(List<(float, int)> heap, (float, int) item)
     {
-        var path  = new List<Vector2Int>();
-        int cur   = srcIdx;
-        int limit = parent.Length;
-        while (cur != dstIdx && limit-- > 0)
+        heap.Add(item);
+        int i = heap.Count - 1;
+        while (i > 0)
         {
-            if (parent[cur] == -1) return null; // source inaccessible
-            path.Add(new Vector2Int(cur % W, cur / W));
-            cur = parent[cur];
+            int p = (i - 1) / 2;
+            if (heap[p].Item1 <= heap[i].Item1) break;
+            (heap[p], heap[i]) = (heap[i], heap[p]);
+            i = p;
         }
-        path.Add(new Vector2Int(cur % W, cur / W)); // ajoute la destination
-        return path;
     }
 
-    /// <summary>Bresenham — retourne true si la ligne droite entre deux pixels est entièrement praticable.</summary>
-    private static bool HasLineOfSight(bool[,] walkable, int W, int H,
-        int x0, int y0, int x1, int y1)
+    private static void HeapPop(List<(float, int)> heap)
     {
-        int dx = Mathf.Abs(x1 - x0), dy = Mathf.Abs(y1 - y0);
-        int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
-        int err = dx - dy, x = x0, y = y0;
+        int last = heap.Count - 1;
+        heap[0] = heap[last];
+        heap.RemoveAt(last);
+        int i = 0, n = heap.Count;
         while (true)
         {
-            if (x < 0 || x >= W || y < 0 || y >= H || !walkable[x, y]) return false;
-            if (x == x1 && y == y1) return true;
-            int e2 = 2 * err;
-            if (e2 > -dy) { err -= dy; x += sx; }
-            if (e2 <  dx) { err += dx; y += sy; }
+            int s = i, l = 2*i+1, r = 2*i+2;
+            if (l < n && heap[l].Item1 < heap[s].Item1) s = l;
+            if (r < n && heap[r].Item1 < heap[s].Item1) s = r;
+            if (s == i) break;
+            (heap[i], heap[s]) = (heap[s], heap[i]);
+            i = s;
         }
-    }
-
-    /// <summary>Réduit rawPath en supprimant les points intermédiaires visibles en ligne droite.</summary>
-    private static List<Vector2Int> StringPull(List<Vector2Int> raw, bool[,] walkable, int W, int H)
-    {
-        if (raw == null || raw.Count <= 2) return raw;
-        var result = new List<Vector2Int> { raw[0] };
-        int anchor = 0;
-        for (int i = 2; i < raw.Count; i++)
-        {
-            var a = raw[anchor]; var b = raw[i];
-            if (!HasLineOfSight(walkable, W, H, a.x, a.y, b.x, b.y))
-            {
-                result.Add(raw[i - 1]);
-                anchor = i - 1;
-            }
-        }
-        result.Add(raw[raw.Count - 1]);
-        return result;
-    }
-
-    /// <summary>
-    /// Pour chaque waypoint de DESTINATION, calcule le chemin lissé depuis la Source de la même espèce.
-    /// Indexé par index de waypoint (0-15), pas par espèce — supporte plusieurs destinations par espèce.
-    /// </summary>
-    private void ComputeSmoothedPaths()
-    {
-        var terrain = TerrainMapRenderer.Instance;
-        if (terrain == null) return;
-        int terrW = terrain.Width, terrH = terrain.Height;
-        int simW  = SlimeMapRenderer.Instance.Width;
-        int simH  = SlimeMapRenderer.Instance.Height;
-        bool[,] walkable = terrain.WalkabilityGrid;
-
-        var flatBuffer = new Vector2[SlimeMapRenderer.MaxSlots * MaxSmoothedWaypoints];
-        var starts     = new int[SlimeMapRenderer.MaxSlots];
-        var counts     = new int[SlimeMapRenderer.MaxSlots];
-
-        for (int i = 0; i < SlimeMapRenderer.MaxSlots; i++)
-        {
-            smoothPaths[i] = null;
-            starts[i]      = i * MaxSmoothedWaypoints;
-            counts[i]      = 0;
-        }
-
-        // Un chemin lissé par waypoint de destination
-        for (int wi = 0; wi < Mathf.Min(waypointList.Count, SlimeMapRenderer.MaxSlots); wi++)
-        {
-            if (waypointList[wi].type != 1) continue; // destinations seulement
-
-            int s = waypointList[wi].speciesIndex;
-
-            // Trouver la source de la même espèce
-            int srcWp = -1;
-            for (int w = 0; w < waypointList.Count; w++)
-                if (waypointList[w].speciesIndex == s && waypointList[w].type == 0) { srcWp = w; break; }
-            if (srcWp < 0) continue;
-
-            // Scale sim positions → terrain space pour le BFS
-            Vector2 srcPos = waypointList[srcWp].position;
-            Vector2 dstPos = waypointList[wi].position;
-            int srcX = Mathf.Clamp((int)(srcPos.x * terrW / (float)simW), 0, terrW - 1);
-            int srcY = Mathf.Clamp((int)(srcPos.y * terrH / (float)simH), 0, terrH - 1);
-            int dstX = Mathf.Clamp((int)(dstPos.x * terrW / (float)simW), 0, terrW - 1);
-            int dstY = Mathf.Clamp((int)(dstPos.y * terrH / (float)simH), 0, terrH - 1);
-
-            // BFS depuis cette destination (flow field enraciné à la cible) — en espace terrain
-            BFSFlowField(walkable, terrW, terrH, dstX, dstY, out int[] parent);
-
-            var raw      = ExtractRawPath(parent, terrW, srcY * terrW + srcX, dstY * terrW + dstX);
-            var smoothed = StringPull(raw, walkable, terrW, terrH);
-            if (smoothed == null || smoothed.Count == 0) continue;
-
-            int count = Mathf.Min(smoothed.Count, MaxSmoothedWaypoints);
-            smoothPaths[wi] = new Vector2[count];
-            for (int i = 0; i < count; i++)
-            {
-                // Scale terrain → sim space pour le GPU (les agents naviguent en espace sim)
-                var v = new Vector2(smoothed[i].x * simW / (float)terrW,
-                                    smoothed[i].y * simH / (float)terrH);
-                smoothPaths[wi][i]         = v;
-                flatBuffer[starts[wi] + i] = v;
-            }
-            counts[wi] = count;
-        }
-
-        SlimeMapRenderer.Instance.SetSmoothedPaths(flatBuffer, starts, counts);
     }
 
     private void OnDestroy()

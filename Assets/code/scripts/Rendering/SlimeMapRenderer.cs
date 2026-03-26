@@ -133,8 +133,6 @@ public class SlimeMapRenderer : MonoBehaviour
     private ComputeBuffer speciesCountsBuffer;
     private ComputeBuffer slotColorsBuffer;
     private ComputeBuffer waypointBuffer;
-    private ComputeBuffer smoothedPathBuffer;
-    private ComputeBuffer smoothedPathMetaBuffer;
     private Texture2DArray flowFieldMap;
     private bool flowFieldMapIsOwned = false;
 
@@ -148,9 +146,8 @@ public class SlimeMapRenderer : MonoBehaviour
         public float   hunger;       // 4
         public int     navState;     // 4 : 0=cherche Source, 1→Source, 2=chargement, 3→Dest, 4=déchargement
         public int     targetWp;     // 4 : index waypoint cible (-1=aucun)
-        public int     pathIdx;      // 4 : index chemin lissé (-1=flow field)
         public int     cargo;        // 4 : 0=vide, 1=chargé
-    } // total 44 bytes
+    } // total 40 bytes
 
     // ================== Unity lifecycle ============================
 
@@ -170,8 +167,8 @@ public class SlimeMapRenderer : MonoBehaviour
         agentInteractionMatrixData = new float[MaxSlots * MaxSlots];
         DeliveryCounts         = new int[MaxSlots];
 
-        agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*6 + sizeof(int)*5);
-        // struct size (44 bytes) = 6 floats (24) + 5 ints (20)
+        agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*6 + sizeof(int)*4);
+        // struct size (40 bytes) = 6 floats (24) + 4 ints (16)
         speciesSettingsBuffer = new ComputeBuffer(MaxSlots, 112);
         speciesCountsBuffer   = new ComputeBuffer(MaxSlots, sizeof(uint));
         slotColorsBuffer      = new ComputeBuffer(MaxSlots, sizeof(float) * 4);
@@ -334,15 +331,6 @@ public class SlimeMapRenderer : MonoBehaviour
         waypointBuffer.SetData(new WaypointData[MaxSlots]);
         SlimeShader.SetBuffer(updateKernel, "waypoints", waypointBuffer);
         SlimeShader.SetInt("numWaypoints", 0);
-
-        // Smooth path buffers (string pulling) — indexés par waypoint, pas par espèce
-        smoothedPathBuffer = new ComputeBuffer(MaxSlots * 64, sizeof(float) * 2);
-        smoothedPathBuffer.SetData(new Vector2[MaxSlots * 64]);
-        SlimeShader.SetBuffer(updateKernel, "smoothedPaths", smoothedPathBuffer);
-
-        smoothedPathMetaBuffer = new ComputeBuffer(MaxSlots, sizeof(int) * 2);
-        smoothedPathMetaBuffer.SetData(new Vector2Int[MaxSlots]);
-        SlimeShader.SetBuffer(updateKernel, "smoothedPathMeta", smoothedPathMetaBuffer);
 
         // Flow field texture array (MaxSlots slices, one per waypoint, RG = direction)
         flowFieldMap = new Texture2DArray(Width, Height, MaxSlots, TextureFormat.RGHalf, false)
@@ -638,15 +626,6 @@ public class SlimeMapRenderer : MonoBehaviour
         SlimeShader.SetTexture(updateKernel, "FlowFieldMap", flowFieldMap);
     }
 
-    public void SetSmoothedPaths(Vector2[] flatPaths, int[] starts, int[] counts)
-    {
-        if (smoothedPathBuffer == null || smoothedPathMetaBuffer == null) return;
-        smoothedPathBuffer.SetData(flatPaths);
-        var meta = new Vector2Int[MaxSlots];
-        for (int i = 0; i < MaxSlots; i++) meta[i] = new Vector2Int(starts[i], counts[i]);
-        smoothedPathMetaBuffer.SetData(meta);
-    }
-
     public void AddAgentsAt(int count, int speciesIndex, Vector2 position)
     {
         if (!isInitialized) return;
@@ -818,8 +797,6 @@ public class SlimeMapRenderer : MonoBehaviour
             SlimeShader.SetBuffer(composeKernel, "slotColors", slotColorsBuffer);
             SlimeShader.SetBuffer(updateKernel, "waypoints", waypointBuffer);
             SlimeShader.SetTexture(updateKernel, "FlowFieldMap", flowFieldMap);
-            SlimeShader.SetBuffer(updateKernel, "smoothedPaths",    smoothedPathBuffer);
-            SlimeShader.SetBuffer(updateKernel, "smoothedPathMeta", smoothedPathMetaBuffer);
             interactionMatrixBuffer.SetData(interactionMatrixData);
             SlimeShader.SetBuffer(updateKernel, "interactionMatrix", interactionMatrixBuffer);
             agentInteractionMatrixBuffer.SetData(agentInteractionMatrixData);
@@ -967,8 +944,6 @@ public class SlimeMapRenderer : MonoBehaviour
         speciesCountsBuffer?.Release();
         slotColorsBuffer?.Release();
         waypointBuffer?.Release();
-        smoothedPathBuffer?.Release();
-        smoothedPathMetaBuffer?.Release();
         waypointStockBuffer?.Release();
         deliveryCounterBuffer?.Release();
         seedCandidateBuffer?.Release();

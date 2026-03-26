@@ -24,7 +24,6 @@ struct Agent {
     float  hunger;
     int    navState; // 0=cherche Source, 1→Source, 2=chargement, 3→Dest, 4=déchargement
     int    targetWp; // index waypoint cible (-1=aucun)
-    int    pathIdx;  // index dans le chemin lissé (-1=utiliser flow field)
     int    cargo;    // 0=vide, 1=chargé
 };
 
@@ -92,9 +91,6 @@ StructuredBuffer<float>   waypointStockIn;   // stock actuel par waypoint (CPU �
 RWStructuredBuffer<int>   deliveryCounters;  // compteur atomique de livraisons (GPU → CPU)
 
 Texture2DArray<float2> FlowFieldMap;
-
-StructuredBuffer<float2> smoothedPaths;    // flat MAX_SLOTS×64 : waypoint w → [w*64 .. w*64+count-1]
-StructuredBuffer<int2>   smoothedPathMeta; // [speciesIdx] = (startIndex, count), count=0 = pas de chemin
 
 float deltaTime;
 float time;
@@ -206,6 +202,8 @@ float senseAgentsAt(Agent agent, float sensorAngleOffset, float dist, int kernel
 
 // Navigate toward a waypoint using its flow field slice.
 // Returns true if the agent has arrived (distance < arrivalRadius).
+// Si flowDir == (0,0) (cellule inatteignable), l'agent tourne sur lui-même
+// pour sortir de la zone par collision terrain.
 bool navigateViaFlowField(inout Agent agent, SpeciesSettings settings, int waypointIdx)
 {
     float2 flowDir = FlowFieldMap.Load(int4((int)agent.position.x, (int)agent.position.y, waypointIdx, 0)).rg;
@@ -215,44 +213,17 @@ bool navigateViaFlowField(inout Agent agent, SpeciesSettings settings, int waypo
         float angleDiff   = fmod(targetAngle - agent.angle + 3.14159 * 3.0, 6.28318) - 3.14159;
         agent.angle += clamp(angleDiff, -settings.turnSpeed * deltaTime, settings.turnSpeed * deltaTime);
     }
+    else
+    {
+        // Cellule inatteignable : rotation continue pour sortir par rebond terrain
+        uint rngSpin = hash((uint)(agent.position.x * 1000.0) + (uint)(agent.position.y * 7919.0));
+        float spinDir = (rngSpin & 1u) ? 1.0 : -1.0;
+        agent.angle  += spinDir * settings.turnSpeed * deltaTime;
+    }
     float2 toWp = waypoints[waypointIdx].position - agent.position;
     return (length(toWp) < settings.arrivalRadius);
 }
 
-// Navigate agent along a pre-computed string-pulled path (smoothedPaths buffer).
-// pathIdx    = index courant dans le chemin (agent.pathIdx).
-// waypointIdx = index du waypoint de destination (targetIdx de l'agent).
-// Retourne true quand l'agent atteint le dernier waypoint (la Destination).
-bool navigateViaSmoothedPath(inout Agent agent, SpeciesSettings settings,
-                              inout int pathIdx, int waypointIdx)
-{
-    int2 meta  = smoothedPathMeta[waypointIdx]; // indexé par destination, pas par espèce
-    int  start = meta.x;
-    int  count = meta.y;
-    if (count == 0) return false; // pas de chemin, l'appelant doit utiliser le flow field
-
-    pathIdx = clamp(pathIdx, 0, count - 1);
-    float2 target   = smoothedPaths[start + pathIdx];
-    float2 toTarget = target - agent.position;
-    float  dist     = length(toTarget);
-
-    // Orienter vers le waypoint courant
-    if (dist > 0.001)
-    {
-        float targetAngle = atan2(toTarget.y, toTarget.x);
-        float angleDiff   = fmod(targetAngle - agent.angle + 3.14159 * 3.0, 6.28318) - 3.14159;
-        agent.angle      += clamp(angleDiff, -settings.turnSpeed * deltaTime,
-                                              settings.turnSpeed * deltaTime);
-    }
-
-    // Avancer vers le prochain waypoint si assez proche
-    if (dist < settings.arrivalRadius)
-    {
-        pathIdx++;
-        if (pathIdx >= count) { pathIdx = count - 1; return true; } // atteint la Destination
-    }
-    return false;
-}
 
 [numthreads(16,1,1)]
 void UpdateAgents (uint3 id : SV_DispatchThreadID)
@@ -363,17 +334,6 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
                     {
                         targetIdx = bestIdx;
                         navState  = 3;
-
-                        // Décider si l'agent doit suivre le chemin lissé ou le flow field.
-                        // Le chemin lissé part de path[0] = position de la Source principale de l'espèce.
-                        // Si l'agent est loin de cette position (ex : il est issu d'un 2ème Poumon),
-                        // on utilise le flow field qui est correct depuis n'importe quelle position.
-                        int2   smMeta      = smoothedPathMeta[bestIdx];
-                        bool   hasPath     = smMeta.y > 0;
-                        bool   nearStart   = hasPath &&
-                                            length(smoothedPaths[smMeta.x] - agent.position)
-                                                < settings.arrivalRadius * 4.0;
-                        agent.pathIdx = nearStart ? 0 : -1; // -1 = flow field
                     }
                     else
                     {
@@ -383,23 +343,10 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
             }
         }
 
-        // navState 3: navigate toward Destination via smoothed path (ou flow field en fallback)
+        // navState 3: navigate toward Destination via flow field
         else if (navState == 3 && targetIdx >= 0)
         {
-            bool arrived = false;
-            int  pathIdx = agent.pathIdx;
-            // pathIdx >= 0  : chemin lissé (agent issu de la source principale)
-            // pathIdx == -1 : flow field   (agent issu d'une autre source, ou pas de chemin)
-            if (pathIdx >= 0 && smoothedPathMeta[targetIdx].y > 0)
-            {
-                arrived = navigateViaSmoothedPath(agent, settings, pathIdx, targetIdx);
-                agent.pathIdx = pathIdx;
-            }
-            else
-            {
-                arrived = navigateViaFlowField(agent, settings, targetIdx);
-            }
-            if (arrived)
+            if (navigateViaFlowField(agent, settings, targetIdx))
             {
                 navState = 4;
                 agent.hunger = settings.unloadingTime;
