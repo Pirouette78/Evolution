@@ -7,6 +7,10 @@
 #pragma kernel CountAlive
 #pragma kernel ClearDeliveryCounters
 #pragma kernel ClearAgentMap
+#pragma kernel GatherSeeds
+#pragma kernel ClearVegetalEmission
+#pragma kernel RebuildVegetalDisks
+#pragma kernel ApplyVegetalEmission
 
 #define MAX_SLOTS 32
 
@@ -29,7 +33,8 @@ uint numAgents;
 
 RWTexture2DArray<float> TrailMap;
 RWTexture2DArray<float> DiffusedTrailMap;
-RWTexture2DArray<float> AgentMap; // présence d'agents temps-réel (reset chaque step)
+RWTexture2DArray<float> AgentMap;           // présence d'agents temps-réel (reset chaque step)
+RWTexture2DArray<float> VegetalEmissionMap; // masque statique des disques végétaux (reconstruit à chaque germination)
 RWTexture2D<float4> DisplayMap;
 Texture2D<float4> TerrainWalkabilityMap; // Used to block movement
 SamplerState sampler_TerrainWalkabilityMap;
@@ -63,7 +68,10 @@ struct SpeciesSettings {
     float repulsionStrength;    // force répulsion intra-espèce courte portée (0 = désactivé)
     float repulsionRadius;      // rayon de détection pour la répulsion (pixels)
     float densityLimit;         // seuil de densité locale avant affaiblissement (0 = désactivé)
-    int   agentRadius;          // rayon visuel de l'agent en pixels (1 = pixel unique)
+    int   agentRadius;          // rayon visuel de l'agent en pixels (0 = pixel unique)
+    int   trailEmitRadius;      // rayon d'émission de traînée (0 = pixel unique, >0 = disque pollen)
+    float seedProbHigh;         // probabilité de germination quand traînée = 1.0 (ex: 0.01 = 1%)
+    float seedProbLow;          // probabilité quand traînée = 0.25 (ex: 0.0025 = 0.25%)
 };
 
 struct Waypoint {
@@ -264,9 +272,14 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
     float randomSteer = scaleToRange01(random);
 
     bool useNavigation = (settings.behaviorType == 2);
+    bool isVegetal     = (settings.behaviorType == 6);
     bool stayPut = false;
 
-    if (useNavigation)
+    if (isVegetal)
+    {
+        stayPut = true; // aucun mouvement, aucune rotation, aucun sensing
+    }
+    else if (useNavigation)
     {
         int navState   = agent.navState;
         int targetIdx  = agent.targetWp;
@@ -593,10 +606,25 @@ void DrawMap (uint3 id : SV_DispatchThreadID)
     int px = (int)agent.position.x;
     int py = (int)agent.position.y;
 
-    // Dépôt de traînée : pixel central uniquement (physique inchangée)
-    if (px >= 0 && px < width && py >= 0 && py < height) {
-        int3 cellCoords = int3(px, py, agent.speciesIndex);
-        TrailMap[cellCoords] = saturate(TrailMap[cellCoords] + settings.trailWeight * deltaTime);
+    // Dépôt de traînée : les Végétaux passent par VegetalEmissionMap (ApplyVegetalEmission)
+    // Les autres agents émettent directement dans TrailMap
+    if (settings.behaviorType != 6) {
+        int te = settings.trailEmitRadius;
+        if (te <= 0) {
+            if (px >= 0 && px < width && py >= 0 && py < height)
+                TrailMap[int3(px, py, agent.speciesIndex)] =
+                    saturate(TrailMap[int3(px, py, agent.speciesIndex)] + settings.trailWeight * deltaTime);
+        } else {
+            for (int tx = -te; tx <= te; tx++)
+                for (int ty = -te; ty <= te; ty++) {
+                    if (tx*tx + ty*ty > te*te) continue;
+                    int sx = px + tx;
+                    int sy = py + ty;
+                    if (sx >= 0 && sx < width && sy >= 0 && sy < height)
+                        TrailMap[int3(sx, sy, agent.speciesIndex)] =
+                            saturate(TrailMap[int3(sx, sy, agent.speciesIndex)] + settings.trailWeight * deltaTime);
+                }
+        }
     }
 
     // AgentMap : disque de rayon agentRadius (rendu visuel + sensing)
@@ -680,9 +708,10 @@ void ResetMap (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)width || id.y >= (uint)height) return;
     for (int slice = 0; slice < MAX_SLOTS; slice++) {
-        TrailMap[int3(id.xy, slice)] = 0.0;
-        DiffusedTrailMap[int3(id.xy, slice)] = 0.0;
-        AgentMap[int3(id.xy, slice)] = 0.0;
+        TrailMap[int3(id.xy, slice)]           = 0.0;
+        DiffusedTrailMap[int3(id.xy, slice)]   = 0.0;
+        AgentMap[int3(id.xy, slice)]           = 0.0;
+        VegetalEmissionMap[int3(id.xy, slice)] = 0.0;
     }
 }
 
@@ -727,4 +756,101 @@ void ComposeDisplay (uint3 id : SV_DispatchThreadID)
 void ClearDeliveryCounters(uint3 id : SV_DispatchThreadID)
 {
     if (id.x < MAX_SLOTS) deliveryCounters[id.x] = 0;
+}
+
+// ── Germination végétale ──────────────────────────────────────────────────
+#define MAX_SEEDS 4096
+int seedSlotMask;                                   // bitmask des slots à vérifier ce tick
+RWStructuredBuffer<float4> seedCandidates;          // [MAX_SEEDS] positions gagnantes (w=1 = valide)
+RWStructuredBuffer<uint>   seedPriorities;          // [MAX_SEEDS] priorité aléatoire du gagnant actuel
+
+[numthreads(8,8,1)]
+void GatherSeeds(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)width || id.y >= (uint)height) return;
+
+    for (int s = 0; s < numActiveSlots; s++)
+    {
+        if ((seedSlotMask & (1 << s)) == 0) continue;
+
+        SpeciesSettings settings = speciesSettings[s];
+        if (settings.seedProbHigh <= 0.0) continue;
+
+        // Intensité de traînée diffusée à ce pixel
+        float trail = DiffusedTrailMap[int3(id.xy, s)];
+        if (trail < 0.25) continue;
+
+        // Pas d'agent végétal déjà présent
+        if (AgentMap[int3(id.xy, s)] > 0.0) continue;
+
+        // Probabilité interpolée entre seedProbLow (trail=0.25) et seedProbHigh (trail=1.0)
+        float prob = lerp(settings.seedProbLow, settings.seedProbHigh,
+                          saturate((trail - 0.25) / 0.75));
+
+        // Tirage pseudo-aléatoire (hash du pixel + temps + slot)
+        uint rng = hash(id.x + id.y * 1000003u + (uint)(time * 100000.0) + (uint)s * 7919u);
+        if (scaleToRange01(rng) >= prob) continue;
+
+        // Slot déterministe basé sur les coords (partitionnement spatial uniforme)
+        uint slotIdx = hash(id.x * 1234567u + id.y * 7654321u + (uint)s * 99991u) % (uint)MAX_SEEDS;
+
+        // Compétition : seul le candidat avec la priorité random la plus haute gagne ce slot
+        // → distribution uniforme indépendante de l'ordre d'exécution GPU
+        uint priority = hash(rng + 13337u);
+        uint prev;
+        InterlockedMax(seedPriorities[slotIdx], priority, prev);
+        if (priority > prev)
+            seedCandidates[slotIdx] = float4((float)id.x, (float)id.y, (float)s, 1.0);
+    }
+}
+
+// ── VegetalEmissionMap ─────────────────────────────────────────────────────
+// Masque statique reconstruit lors de chaque germination.
+// Avantages vs DrawMap per-agent :
+//   • Pas de race condition (écriture idempotente = 1.0)
+//   • O(Width×Height) par frame au lieu de O(agents×radius²)
+//   • Les lignes verticales dues aux conflits d'écriture GPU disparaissent
+
+[numthreads(8,8,1)]
+void ClearVegetalEmission(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)width || id.y >= (uint)height) return;
+    for (int s = 0; s < numActiveSlots; s++)
+        VegetalEmissionMap[int3(id.xy, s)] = 0.0;
+}
+
+[numthreads(16,1,1)]
+void RebuildVegetalDisks(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= numAgents) return;
+    Agent agent = agents[id.x];
+    if (agent.age < 0) return;
+    SpeciesSettings settings = speciesSettings[agent.speciesIndex];
+    if (settings.behaviorType != 6) return;
+    if (agent.age > settings.maxAge) return;
+
+    int px = (int)agent.position.x;
+    int py = (int)agent.position.y;
+    int te = settings.trailEmitRadius;
+
+    // Écriture idempotente (= 1.0, pas +=) : pas de race condition sur les pixels partagés
+    for (int tx = -te; tx <= te; tx++)
+        for (int ty = -te; ty <= te; ty++) {
+            if (tx*tx + ty*ty > te*te) continue;
+            int sx = px + tx, sy = py + ty;
+            if (sx >= 0 && sx < width && sy >= 0 && sy < height)
+                VegetalEmissionMap[int3(sx, sy, agent.speciesIndex)] = 1.0;
+        }
+}
+
+[numthreads(8,8,1)]
+void ApplyVegetalEmission(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)width || id.y >= (uint)height) return;
+    for (int s = 0; s < numActiveSlots; s++) {
+        SpeciesSettings settings = speciesSettings[s];
+        if (settings.behaviorType != 6) continue;
+        if (VegetalEmissionMap[int3(id.xy, s)] <= 0) continue;
+        TrailMap[int3(id.xy, s)] = saturate(TrailMap[int3(id.xy, s)] + settings.trailWeight * deltaTime);
+    }
 }

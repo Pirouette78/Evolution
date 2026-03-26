@@ -462,8 +462,21 @@ public class UIController : MonoBehaviour
         if (lib == null) return;
         var playerSpecies = lib.GetSpeciesForPlayer(selectedPlayerId);
 
+        const int BUTTONS_PER_ROW = 4;
+        VisualElement currentRow = null;
+        int col = 0;
+
         foreach (var speciesId in playerSpecies)
         {
+            // Nouvelle rangée tous les BUTTONS_PER_ROW boutons
+            if (col % BUTTONS_PER_ROW == 0)
+            {
+                currentRow = new VisualElement();
+                currentRow.style.flexDirection = FlexDirection.Row;
+                currentRow.style.marginBottom  = 2;
+                speciesButtonContainer.Add(currentRow);
+            }
+
             var specDef  = SpeciesLibrary.Instance?.Get(speciesId);
             string label = SpeciesShortName(specDef?.displayName ?? speciesId);
 
@@ -496,9 +509,10 @@ public class UIController : MonoBehaviour
             btn.style.borderBottomWidth  = (speciesId == selectedSpeciesId) ? 3 : 0;
             btn.style.borderBottomColor  = new StyleColor(Color.white);
 
-            speciesButtonContainer.Add(btn);
+            currentRow.Add(btn);
             speciesButtonMap[speciesId]      = btn;
             speciesButtonBaseText[speciesId] = label;
+            col++;
         }
     }
 

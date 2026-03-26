@@ -13,6 +13,7 @@ public enum AgentBehavior
     Defender    = 3, // (à implémenter)
     Parasite    = 4, // (à implémenter)
     Eraser      = 5, // (à implémenter)
+    Vegetal     = 6, // Stationnaire, émet traînée en disque (arbre, fleur, pollen)
 }
 
 /// <summary>
@@ -92,6 +93,17 @@ public class SpeciesDefinition
     /// <summary>Rayon visuel de l'agent en pixels (disque dans AgentMap). 0 = pixel unique (défaut). 1 = croix 5px. 3 = disque ~29px.</summary>
     public int agentRadius = 0;
 
+    /// <summary>Rayon d'émission de traînée en pixels. 0 = pixel unique. >0 = disque de pollen (recommandé pour Vegetal).</summary>
+    public int trailEmitRadius = 0;
+
+    // ── Germination (Végétal) ──────────────────────────────────────────────
+    /// <summary>Probabilité de germination quand traînée = 1.0 (ex: 0.01 = 1%). 0 = désactivé.</summary>
+    public float seedProbHigh = 0f;
+    /// <summary>Probabilité de germination quand traînée = 0.25 (ex: 0.0025 = 0.25%).</summary>
+    public float seedProbLow = 0f;
+    /// <summary>Secondes entre chaque scan de germination (C# uniquement, pas dans le GPU struct).</summary>
+    public float seedInterval = 5f;
+
     // ── Conversion ───────────────────────────────────────────────────
 
     public int BehaviorTypeInt => System.Enum.TryParse<AgentBehavior>(behaviorType, true, out var b) ? (int)b : 0;
@@ -123,5 +135,8 @@ public class SpeciesDefinition
         repulsionRadius       = repulsionRadius,
         densityLimit          = densityLimit,
         agentRadius           = Mathf.Max(0, agentRadius),
+        trailEmitRadius       = Mathf.Max(0, trailEmitRadius),
+        seedProbHigh          = seedProbHigh,
+        seedProbLow           = seedProbLow,
     };
 }

@@ -19,5 +19,5 @@
   "repulsionStrength": 3.0,
   "repulsionRadius": 5.0,
   "densityLimit": 4.0,
-  agentRadius = 3
+  "agentRadius": 3
 }

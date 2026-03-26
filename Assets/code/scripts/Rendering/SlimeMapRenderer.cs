@@ -39,10 +39,11 @@ public class SlimeMapRenderer : MonoBehaviour
     public MeshRenderer DisplayTarget;
 
     // ── Public state ────────────────────────────────────────────────
-    public RenderTexture TrailMap    { get; private set; }
-    public RenderTexture DiffusedMap { get; private set; }
-    public RenderTexture DisplayMap  { get; private set; }
-    public RenderTexture AgentMap    { get; private set; }
+    public RenderTexture TrailMap           { get; private set; }
+    public RenderTexture DiffusedMap        { get; private set; }
+    public RenderTexture DisplayMap         { get; private set; }
+    public RenderTexture AgentMap           { get; private set; }
+    public RenderTexture VegetalEmissionMap { get; private set; }
     public ComputeBuffer AgentBuffer => agentBuffer;
     public bool IsReady              => isInitialized;
     public int  AgentCount           => currentAgentCount;
@@ -70,10 +71,20 @@ public class SlimeMapRenderer : MonoBehaviour
     private bool initialSpawnDone = false;
     private int playerVisibilityMask = ~0; // all 32 slots visible by default
 
-    private int updateKernel, drawKernel, diffuseKernel, clearKernel, composeKernel, clearCountsKernel, countAliveKernel, clearDeliveryKernel, clearAgentMapKernel;
+    private int updateKernel, drawKernel, diffuseKernel, clearKernel, composeKernel, clearCountsKernel, countAliveKernel, clearDeliveryKernel, clearAgentMapKernel, seedKernel;
+    private int clearVegEmitKernel, rebuildVegDisksKernel, applyVegEmitKernel;
     public  int[] DeliveryCounts = new int[MaxSlots];
     private ComputeBuffer waypointStockBuffer;
     private ComputeBuffer deliveryCounterBuffer;
+
+    // ── Germination végétale ─────────────────────────────────────────────
+    private const int MAX_SEEDS = 4096;
+    private ComputeBuffer seedCandidateBuffer;
+    private ComputeBuffer seedPriorityBuffer;
+    private readonly Vector4[] seedCandidateRead  = new Vector4[MAX_SEEDS];
+    private readonly Vector4[] emptySeedBuffer    = new Vector4[MAX_SEEDS]; // all zeros (w=0 = slot vide)
+    private readonly uint[]    zeroPriorities     = new uint[MAX_SEEDS];    // all zeros
+    private readonly float[]   seedTimers         = new float[MaxSlots];
 
     // Cached terrain data for CPU-side spawn validation
     private float[,] heightMapCache;
@@ -107,7 +118,10 @@ public class SlimeMapRenderer : MonoBehaviour
         public float repulsionStrength;     // force répulsion intra-espèce (0 = désactivé)
         public float repulsionRadius;       // rayon de détection courte pour la répulsion (pixels)
         public float densityLimit;          // seuil de densité locale (0 = désactivé)
-        public int   agentRadius;           // rayon visuel en pixels → 100 bytes total
+        public int   agentRadius;           // rayon visuel en pixels
+        public int   trailEmitRadius;       // rayon d'émission de traînée
+        public float seedProbHigh;          // probabilité germination à trail=1.0
+        public float seedProbLow;           // probabilité germination à trail=0.25 → 112 bytes total
     }
 
     public enum DiplomaticState { Neutral, Ally, Peace, War }
@@ -158,13 +172,16 @@ public class SlimeMapRenderer : MonoBehaviour
 
         agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*6 + sizeof(int)*5);
         // struct size (44 bytes) = 6 floats (24) + 5 ints (20)
-        speciesSettingsBuffer = new ComputeBuffer(MaxSlots, 100);
+        speciesSettingsBuffer = new ComputeBuffer(MaxSlots, 112);
         speciesCountsBuffer   = new ComputeBuffer(MaxSlots, sizeof(uint));
         slotColorsBuffer      = new ComputeBuffer(MaxSlots, sizeof(float) * 4);
         waypointStockBuffer   = new ComputeBuffer(MaxSlots, sizeof(float));
         deliveryCounterBuffer = new ComputeBuffer(MaxSlots, sizeof(int));
         waypointStockBuffer.SetData(new float[MaxSlots]);
         deliveryCounterBuffer.SetData(new int[MaxSlots]);
+
+        seedCandidateBuffer = new ComputeBuffer(MAX_SEEDS, sizeof(float) * 4);
+        seedPriorityBuffer  = new ComputeBuffer(MAX_SEEDS, sizeof(uint));
 
         // Default colors: spread across hue for all slots
         for (int i = 0; i < MaxSlots; i++) {
@@ -224,9 +241,10 @@ public class SlimeMapRenderer : MonoBehaviour
 
     private void InitTextures()
     {
-        TrailMap    = CreateRTArray("TrailMap");
-        DiffusedMap = CreateRTArray("DiffusedMap");
-        AgentMap    = CreateRTArray("AgentMap");
+        TrailMap           = CreateRTArray("TrailMap");
+        DiffusedMap        = CreateRTArray("DiffusedMap");
+        AgentMap           = CreateRTArray("AgentMap");
+        VegetalEmissionMap = CreateRTArray("VegetalEmissionMap");
 
         DisplayMap = new RenderTexture(Width, Height, 0, RenderTextureFormat.ARGBFloat)
         { 
@@ -261,6 +279,10 @@ public class SlimeMapRenderer : MonoBehaviour
         countAliveKernel     = SlimeShader.FindKernel("CountAlive");
         clearDeliveryKernel  = SlimeShader.FindKernel("ClearDeliveryCounters");
         clearAgentMapKernel  = SlimeShader.FindKernel("ClearAgentMap");
+        seedKernel           = SlimeShader.FindKernel("GatherSeeds");
+        clearVegEmitKernel   = SlimeShader.FindKernel("ClearVegetalEmission");
+        rebuildVegDisksKernel= SlimeShader.FindKernel("RebuildVegetalDisks");
+        applyVegEmitKernel   = SlimeShader.FindKernel("ApplyVegetalEmission");
 
         // Bind textures (persistent across frames)
         SlimeShader.SetTexture(updateKernel,       "TrailMap",         TrailMap);
@@ -269,10 +291,15 @@ public class SlimeMapRenderer : MonoBehaviour
         SlimeShader.SetTexture(drawKernel,         "AgentMap",         AgentMap);
         SlimeShader.SetTexture(diffuseKernel,      "TrailMap",         TrailMap);
         SlimeShader.SetTexture(diffuseKernel,      "DiffusedTrailMap", DiffusedMap);
-        SlimeShader.SetTexture(clearKernel,        "TrailMap",         TrailMap);
-        SlimeShader.SetTexture(clearKernel,        "DiffusedTrailMap", DiffusedMap);
-        SlimeShader.SetTexture(clearKernel,        "AgentMap",         AgentMap);
-        SlimeShader.SetTexture(clearAgentMapKernel,"AgentMap",         AgentMap);
+        SlimeShader.SetTexture(clearKernel,          "TrailMap",           TrailMap);
+        SlimeShader.SetTexture(clearKernel,          "DiffusedTrailMap",   DiffusedMap);
+        SlimeShader.SetTexture(clearKernel,          "AgentMap",           AgentMap);
+        SlimeShader.SetTexture(clearKernel,          "VegetalEmissionMap", VegetalEmissionMap);
+        SlimeShader.SetTexture(clearAgentMapKernel,  "AgentMap",           AgentMap);
+        SlimeShader.SetTexture(clearVegEmitKernel,   "VegetalEmissionMap", VegetalEmissionMap);
+        SlimeShader.SetTexture(rebuildVegDisksKernel,"VegetalEmissionMap", VegetalEmissionMap);
+        SlimeShader.SetTexture(applyVegEmitKernel,   "VegetalEmissionMap", VegetalEmissionMap);
+        SlimeShader.SetTexture(applyVegEmitKernel,   "TrailMap",           TrailMap);
         SlimeShader.SetTexture(composeKernel, "DiffusedTrailMap", DiffusedMap);
         SlimeShader.SetTexture(composeKernel, "DisplayMap",       DisplayMap);
         SlimeShader.SetTexture(composeKernel, "AgentMap",         AgentMap);
@@ -447,6 +474,7 @@ public class SlimeMapRenderer : MonoBehaviour
         SpeciesSettings settings = jsonDef != null ? jsonDef.ToSpeciesSettings() : GetPreset(type);
         settings.warMask = speciesSettings[index].warMask; // préserver l'état de guerre
         speciesSettings[index] = settings;
+        seedTimers[index] = 0f;
     }
 
     public void SetWar(int a, int b, bool atWar)
@@ -581,13 +609,15 @@ public class SlimeMapRenderer : MonoBehaviour
         agentInteractionMatrixData[fromSlot * MaxSlots + toSlot] = weight;
     }
 
-    /// <summary>Vide toutes les traînées (TrailMap, DiffusedMap, AgentMap) sans toucher aux agents.</summary>
+    /// <summary>Vide toutes les traînées (TrailMap, DiffusedMap, AgentMap, VegetalEmissionMap) sans toucher aux agents.</summary>
     public void ClearTrails()
     {
         if (SlimeShader == null) return;
         int gx = Mathf.CeilToInt(Width  / 8f);
         int gy = Mathf.CeilToInt(Height / 8f);
         SlimeShader.Dispatch(clearKernel, gx, gy, 1);
+        // Reconstruire immédiatement le masque végétal (les agents sont toujours là)
+        RebuildVegetalEmissionMap();
     }
 
     public void SetWaypoints(WaypointData[] data)
@@ -666,9 +696,13 @@ public class SlimeMapRenderer : MonoBehaviour
         Agent[] newAgents = new Agent[count];
         for (int i = 0; i < count; i++)
         {
-            Vector2 pos = GetSpawnPosition();
             float   angle = Random.value * Mathf.PI * 2f;
             int     pid   = forceSpecies >= 0 ? forceSpecies : Random.Range(0, Mathf.Max(1, numActiveSlots));
+            // Végétaux : spawn aléatoire sur toute la map (ignorent la restriction terrain — ils restent où ils naissent)
+            bool isVegetal = pid >= 0 && pid < MaxSlots && speciesSettings[pid].behaviorType == 6;
+            Vector2 pos = isVegetal
+                ? new Vector2(Random.Range(5f, Width - 5f), Random.Range(5f, Height - 5f))
+                : GetSpawnPosition();
 
             newAgents[i] = new Agent
             {
@@ -695,6 +729,13 @@ public class SlimeMapRenderer : MonoBehaviour
             nextSpawnIndex = (nextSpawnIndex + count) % maxAgents;
         }
         agentBuffer.SetData(newAgents, 0, writePos, count);
+
+        // Si des Végétaux ont été ajoutés, reconstruire leur masque d'émission
+        bool hasVegetal = false;
+        for (int i = 0; i < count && !hasVegetal; i++)
+            hasVegetal = newAgents[i].speciesIndex >= 0 && newAgents[i].speciesIndex < MaxSlots
+                         && speciesSettings[newAgents[i].speciesIndex].behaviorType == 6;
+        if (hasVegetal) RebuildVegetalEmissionMap();
 
         Debug.Log($"[RENDERER] Added {count} agents. Total: {currentAgentCount} (writePos={writePos})");
     }
@@ -793,11 +834,15 @@ public class SlimeMapRenderer : MonoBehaviour
                 // 2. Clear AgentMap maintenant que UpdateAgents l'a lue
                 SlimeShader.Dispatch(clearAgentMapKernel, texGroupsX, texGroupsY, 1);
 
-                // 3. Draw agent positions into trail map + AgentMap
+                // 3. Draw agent positions into trail map + AgentMap (Végétaux exclus — voir ApplyVegetalEmission)
                 SlimeShader.SetBuffer(drawKernel, "agents", agentBuffer);
                 SlimeShader.Dispatch(drawKernel, agentGroups, 1, 1);
 
-                // 3. Diffuse + decay
+                // 3b. Ajouter l'émission végétale statique (O(W×H) au lieu de O(agents×radius²))
+                SlimeShader.SetBuffer(applyVegEmitKernel, "speciesSettings", speciesSettingsBuffer);
+                SlimeShader.Dispatch(applyVegEmitKernel, texGroupsX, texGroupsY, 1);
+
+                // 4. Diffuse + decay
                 SlimeShader.Dispatch(diffuseKernel, texGroupsX, texGroupsY, 1);
 
                 // 4. Copy diffused result back as the new trail source
@@ -823,12 +868,89 @@ public class SlimeMapRenderer : MonoBehaviour
                 SlimeShader.Dispatch(clearDeliveryKernel, 1, 1, 1);
             }
 
+            // ── Germination végétale (timer par slot) ──────────────────────────
+            int seedMask = 0;
+            var specLib = SpeciesLibrary.Instance;
+            for (int s = 0; s < numActiveSlots; s++)
+            {
+                if (speciesSettings[s].seedProbHigh <= 0f) continue;
+                float interval = specLib?.Get(speciesIds[s])?.seedInterval ?? 0f;
+                if (interval <= 0f) continue;
+                seedTimers[s] += dt;
+                if (seedTimers[s] >= interval)
+                {
+                    seedTimers[s] = 0f;
+                    seedMask |= (1 << s);
+                }
+            }
+            if (seedMask != 0)
+                DispatchGatherSeeds(seedMask, texGroupsX, texGroupsY);
+
             // 5. Compose the final display map
             SlimeShader.Dispatch(composeKernel, texGroupsX, texGroupsY, 1);
             
         } catch (System.Exception e) {
             Debug.LogError($"[RENDERER] Update crash: {e}");
         }
+    }
+
+    // ================== VegetalEmissionMap =======================
+
+    /// <summary>
+    /// Reconstruit VegetalEmissionMap depuis zéro.
+    /// À appeler après tout ajout/suppression d'agents Végétaux.
+    /// Coût : 2 dispatches GPU (clear + disques) — à ne pas appeler chaque frame.
+    /// </summary>
+    public void RebuildVegetalEmissionMap()
+    {
+        if (!isInitialized) return;
+        int gx = Mathf.CeilToInt(Width  / 8f);
+        int gy = Mathf.CeilToInt(Height / 8f);
+        // 1. Clear
+        SlimeShader.SetInt("numActiveSlots", numActiveSlots);
+        SlimeShader.Dispatch(clearVegEmitKernel, gx, gy, 1);
+        // 2. Redessiner tous les disques végétaux vivants
+        if (currentAgentCount > 0)
+        {
+            int ag = Mathf.CeilToInt(currentAgentCount / 16f);
+            SlimeShader.SetBuffer(rebuildVegDisksKernel, "agents", agentBuffer);
+            SlimeShader.SetBuffer(rebuildVegDisksKernel, "speciesSettings", speciesSettingsBuffer);
+            SlimeShader.SetInt("numAgents", currentAgentCount);
+            SlimeShader.Dispatch(rebuildVegDisksKernel, ag, 1, 1);
+        }
+    }
+
+    // ================== Germination végétale =======================
+
+    private void DispatchGatherSeeds(int slotMask, int gx, int gy)
+    {
+        // Réinitialiser les deux buffers avant le dispatch
+        seedCandidateBuffer.SetData(emptySeedBuffer);  // w=0 = slot vide
+        seedPriorityBuffer .SetData(zeroPriorities);   // priorité 0 = aucun gagnant
+
+        SlimeShader.SetInt    ("seedSlotMask",    slotMask);
+        SlimeShader.SetInt    ("numActiveSlots",  numActiveSlots);
+        SlimeShader.SetBuffer (seedKernel, "speciesSettings",  speciesSettingsBuffer);
+        SlimeShader.SetBuffer (seedKernel, "seedCandidates",   seedCandidateBuffer);
+        SlimeShader.SetBuffer (seedKernel, "seedPriorities",   seedPriorityBuffer);
+        SlimeShader.SetTexture(seedKernel, "DiffusedTrailMap", DiffusedMap);
+        SlimeShader.SetTexture(seedKernel, "AgentMap",         AgentMap);
+        SlimeShader.Dispatch  (seedKernel, gx, gy, 1);
+
+        // Readback : lire tous les slots, spawner ceux avec w=1
+        seedCandidateBuffer.GetData(seedCandidateRead, 0, 0, MAX_SEEDS);
+        int spawned = 0;
+        for (int i = 0; i < MAX_SEEDS; i++)
+        {
+            if (seedCandidateRead[i].w < 0.5f) continue; // slot vide
+            Vector4 c    = seedCandidateRead[i];
+            int     slot = (int)c.z;
+            if (slot < 0 || slot >= MaxSlots) continue;
+            AddAgentsAt(1, slot, new Vector2(c.x, c.y));
+            spawned++;
+        }
+        if (spawned > 0)
+            RebuildVegetalEmissionMap();
     }
 
     // ================== Cleanup ====================================
@@ -845,10 +967,13 @@ public class SlimeMapRenderer : MonoBehaviour
         smoothedPathMetaBuffer?.Release();
         waypointStockBuffer?.Release();
         deliveryCounterBuffer?.Release();
+        seedCandidateBuffer?.Release();
+        seedPriorityBuffer ?.Release();
         if (flowFieldMapIsOwned && flowFieldMap != null) Destroy(flowFieldMap);
         TrailMap?.Release();
         DiffusedMap?.Release();
         DisplayMap?.Release();
+        VegetalEmissionMap?.Release();
     }
 
     /// <summary>Upload les stocks actuels des waypoints vers le GPU (appelé par WaypointManager chaque frame).</summary>

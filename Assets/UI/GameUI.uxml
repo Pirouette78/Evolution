@@ -32,7 +32,7 @@
 
             <!-- ── Type d'espèce ──────────────────── -->
             <ui:Label text="Type d'espèce" style="font-size: 13px; color: rgb(140,200,255); -unity-font-style: bold; margin-bottom: 4px;" />
-            <ui:VisualElement name="SpeciesButtonContainer" style="flex-direction: row; flex-wrap: wrap; margin-bottom: 6px;" />
+            <ui:VisualElement name="SpeciesButtonContainer" style="flex-direction: column; margin-bottom: 6px;" />
 
             <!-- ── Diplomatie ─────────────────────────── -->
             <ui:Button name="BtnDiplomatie" text="🤝  Statut Diplomatique" style="font-size:13px; padding:6px 10px; background-color:rgb(60,40,80); color:white; border-radius:5px; margin-top:2px; margin-bottom:4px;" />
