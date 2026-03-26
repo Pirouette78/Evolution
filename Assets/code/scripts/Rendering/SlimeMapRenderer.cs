@@ -346,6 +346,7 @@ public class SlimeMapRenderer : MonoBehaviour
 
         // Fallback for TerrainWalkabilityMap in case terrain isn't ready when UpdateAgents runs
         SlimeShader.SetTexture(updateKernel, "TerrainWalkabilityMap", Texture2D.whiteTexture);
+        SlimeShader.SetTexture(seedKernel,   "TerrainWalkabilityMap", Texture2D.whiteTexture);
         SlimeShader.SetInt("useTerrainCollision", 0);
 
         // Clear to black
@@ -396,6 +397,7 @@ public class SlimeMapRenderer : MonoBehaviour
         if (walkTex != null)
         {
             SlimeShader.SetTexture(updateKernel, "TerrainWalkabilityMap", walkTex);
+            SlimeShader.SetTexture(seedKernel,   "TerrainWalkabilityMap", walkTex);
             SlimeShader.SetInt("useTerrainCollision", 1);
             Debug.Log("[RENDERER] Binary walkability texture bound to shader.");
         }
@@ -677,11 +679,7 @@ public class SlimeMapRenderer : MonoBehaviour
         {
             float   angle = Random.value * Mathf.PI * 2f;
             int     pid   = forceSpecies >= 0 ? forceSpecies : Random.Range(0, Mathf.Max(1, numActiveSlots));
-            // Végétaux : spawn aléatoire sur toute la map (ignorent la restriction terrain — ils restent où ils naissent)
-            bool isVegetal = pid >= 0 && pid < MaxSlots && speciesSettings[pid].behaviorType == 6;
-            Vector2 pos = isVegetal
-                ? new Vector2(Random.Range(5f, Width - 5f), Random.Range(5f, Height - 5f))
-                : GetSpawnPosition();
+            Vector2 pos = GetSpawnPosition();
 
             newAgents[i] = new Agent
             {

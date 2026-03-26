@@ -715,6 +715,7 @@ RWStructuredBuffer<uint>   seedPriorities;          // [MAX_SEEDS] prioritÃ© alÃ
 void GatherSeeds(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)width || id.y >= (uint)height) return;
+    if (!isWalkable(float2(id.x, id.y))) return;
 
     for (int s = 0; s < numActiveSlots; s++)
     {
