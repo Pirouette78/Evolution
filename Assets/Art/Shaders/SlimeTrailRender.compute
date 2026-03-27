@@ -502,6 +502,38 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
             agent.angle = scaleToRange01(r2) * 6.2831;
             newPos = agent.position;
         }
+        else if (useNavigation && settings.repulsionStrength > 0.0)
+        {
+            // ── Répulsion omnidirectionnelle pour agents navigateurs ───
+            // Scanne un disque autour de l'agent dans l'AgentMap et calcule
+            // un vecteur de poussée s'éloignant de la masse voisine.
+            // Appliqué sur newPos directement — l'angle reste intact.
+            int cx = (int)agent.position.x, cy = (int)agent.position.y;
+            int iR   = clamp((int)settings.repulsionRadius, 1, 8);
+            int step = max(1, (int)(iR * 0.34));
+            float2 repForce = float2(0.0, 0.0);
+            for (int ddx = -iR; ddx <= iR; ddx += step)
+            for (int ddy = -iR; ddy <= iR; ddy += step)
+            {
+                if (ddx == 0 && ddy == 0) continue;
+                int sx = clamp(cx + ddx, 0, width - 1);
+                int sy = clamp(cy + ddy, 0, height - 1);
+                float p = AgentMap[int3(sx, sy, agent.speciesIndex)];
+                if (p > 0.001)
+                    repForce += float2(-(float)ddx, -(float)ddy)
+                                * rsqrt((float)(ddx*ddx + ddy*ddy)) * p;
+            }
+            if (dot(repForce, repForce) > 0.0001)
+            {
+                float2 pushed = newPos + normalize(repForce)
+                                * settings.moveSpeed * deltaTime
+                                * settings.repulsionStrength * 0.05;
+                if (pushed.x >= 1 && pushed.x < (float)width  - 1 &&
+                    pushed.y >= 1 && pushed.y < (float)height - 1 &&
+                    (useTerrainCollision == 0 || isWalkable(pushed)))
+                    newPos = pushed;
+            }
+        }
     }
 
     agent.position = newPos;
