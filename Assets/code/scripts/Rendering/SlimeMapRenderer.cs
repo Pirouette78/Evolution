@@ -73,6 +73,17 @@ public class SlimeMapRenderer : MonoBehaviour
 
     private int updateKernel, drawKernel, diffuseKernel, clearKernel, composeKernel, clearCountsKernel, countAliveKernel, clearDeliveryKernel, clearAgentMapKernel, seedKernel;
     private int clearVegEmitKernel, rebuildVegDisksKernel, applyVegEmitKernel;
+    private int cullKernel = -1;
+
+    // ── Culling tactique (utilisé par ZoomLevelController + futures couches) ────
+    /// <summary>Buffer AppendStructuredBuffer contenant les IDs des agents dans le frustum caméra.
+    /// Public : les futures couches tactiques (AgentTacticalLayer, etc.) le lisent directement.</summary>
+    public ComputeBuffer VisibleAgentIdsBuffer { get; private set; }
+    /// <summary>Buffer args pour DrawMeshInstancedIndirect (5 uints). Instance count mis à jour via CopyCount.
+    /// Public : les futures couches tactiques l'utilisent dans DrawMeshInstancedIndirect.</summary>
+    public ComputeBuffer VisibleArgsBuffer { get; private set; }
+    /// <summary>Nombre max d'agents pouvant être rendus en mode tactique.</summary>
+    public int MaxVisibleAgents = 2000;
     public  int[] DeliveryCounts = new int[MaxSlots];
     private ComputeBuffer waypointStockBuffer;
     private ComputeBuffer deliveryCounterBuffer;
@@ -280,6 +291,15 @@ public class SlimeMapRenderer : MonoBehaviour
         clearVegEmitKernel   = SlimeShader.FindKernel("ClearVegetalEmission");
         rebuildVegDisksKernel= SlimeShader.FindKernel("RebuildVegetalDisks");
         applyVegEmitKernel   = SlimeShader.FindKernel("ApplyVegetalEmission");
+        cullKernel           = SlimeShader.FindKernel("CullAgents");
+
+        // Initialiser slimeDisplayAlpha à 1 (pleine opacité) — ZoomLevelController le modifiera ensuite
+        SlimeShader.SetFloat("slimeDisplayAlpha", 1f);
+
+        // Buffers pour le culling tactique
+        VisibleAgentIdsBuffer = new ComputeBuffer(MaxVisibleAgents, sizeof(int), ComputeBufferType.Append);
+        VisibleArgsBuffer     = new ComputeBuffer(5, sizeof(uint), ComputeBufferType.IndirectArguments);
+        VisibleArgsBuffer.SetData(new uint[] { 6, 0, 0, 0, 0 }); // 6 = indices/quad, count=0 pour l'instant
 
         // Bind textures (persistent across frames)
         SlimeShader.SetTexture(updateKernel,       "TrailMap",         TrailMap);
@@ -863,9 +883,13 @@ public class SlimeMapRenderer : MonoBehaviour
             if (seedMask != 0)
                 DispatchGatherSeeds(seedMask, texGroupsX, texGroupsY);
 
-            // 5. Compose the final display map
+            // 5. Compose the final display map (utilise slimeDisplayAlpha set par ZoomLevelController)
             SlimeShader.Dispatch(composeKernel, texGroupsX, texGroupsY, 1);
-            
+
+            // 6. Culling tactique (seulement en mode tactique, après que les agents ont été mis à jour)
+            if (ZoomLevelController.Instance != null && ZoomLevelController.Instance.IsInTacticalMode)
+                DispatchCullAgents(ZoomLevelController.Instance.CameraSimBounds);
+
         } catch (System.Exception e) {
             Debug.LogError($"[RENDERER] Update crash: {e}");
         }
@@ -932,6 +956,31 @@ public class SlimeMapRenderer : MonoBehaviour
             RebuildVegetalEmissionMap();
     }
 
+    // ================== Culling tactique ==================================
+
+    /// <summary>
+    /// Dispatche le kernel CullAgents : remplit VisibleAgentIdsBuffer avec les IDs
+    /// des agents vivants dans les bounds caméra (espace sim 0-Width / 0-Height).
+    /// Appelé automatiquement en mode tactique depuis Update().
+    /// Peut aussi être appelé directement par les couches tactiques si nécessaire.
+    /// </summary>
+    public void DispatchCullAgents(Vector4 simBounds)
+    {
+        if (cullKernel < 0 || VisibleAgentIdsBuffer == null || currentAgentCount <= 0) return;
+
+        VisibleAgentIdsBuffer.SetCounterValue(0);
+        SlimeShader.SetVector("cameraBoundsSimSpace", simBounds);
+        SlimeShader.SetBuffer(cullKernel, "agents", agentBuffer);
+        SlimeShader.SetBuffer(cullKernel, "VisibleAgentIds", VisibleAgentIdsBuffer);
+
+        int groups = Mathf.CeilToInt(currentAgentCount / 64f);
+        SlimeShader.Dispatch(cullKernel, groups, 1, 1);
+
+        // Copie le counter append → argsBuffer[instance count] (offset 4 bytes = 2ème uint)
+        // Prêt pour DrawMeshInstancedIndirect des futures couches tactiques
+        ComputeBuffer.CopyCount(VisibleAgentIdsBuffer, VisibleArgsBuffer, 4);
+    }
+
     // ================== Cleanup ====================================
 
     private void OnDestroy()
@@ -951,6 +1000,8 @@ public class SlimeMapRenderer : MonoBehaviour
         DiffusedMap?.Release();
         DisplayMap?.Release();
         VegetalEmissionMap?.Release();
+        VisibleAgentIdsBuffer?.Release();
+        VisibleArgsBuffer?.Release();
     }
 
     /// <summary>Upload les stocks actuels des waypoints vers le GPU (appelé par WaypointManager chaque frame).</summary>

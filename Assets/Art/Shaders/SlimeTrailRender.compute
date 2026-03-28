@@ -11,6 +11,7 @@
 #pragma kernel ClearVegetalEmission
 #pragma kernel RebuildVegetalDisks
 #pragma kernel ApplyVegetalEmission
+#pragma kernel CullAgents
 
 #define MAX_SLOTS 32
 
@@ -40,6 +41,16 @@ SamplerState sampler_TerrainWalkabilityMap;
 
 int width;
 int height;
+
+// ── Zoom LOD ─────────────────────────────────────────────────────────────────
+// Multiplicateur de la slime map (1 = plein, 0 = noir). Set par ZoomLevelController.
+float slimeDisplayAlpha;
+
+// Culling tactique : bounds caméra en espace sim (0-width / 0-height)
+float4 cameraBoundsSimSpace;   // (minX, minY, maxX, maxY)
+
+// Buffer append pour les IDs d'agents visibles (utilisé par CullAgents)
+AppendStructuredBuffer<int> VisibleAgentIds;
 
 struct SpeciesSettings {
     float moveSpeed;
@@ -792,7 +803,7 @@ void ComposeDisplay (uint3 id : SV_DispatchThreadID)
     }
 
     if (totalDensity > 0.01) {
-        DisplayMap[id.xy] = float4(finalColor.rgb, 1.0);
+        DisplayMap[id.xy] = float4(finalColor.rgb * slimeDisplayAlpha, 1.0);
     } else {
         DisplayMap[id.xy] = float4(0, 0, 0, 1);
     }
@@ -900,4 +911,25 @@ void ApplyVegetalEmission(uint3 id : SV_DispatchThreadID)
         if (VegetalEmissionMap[int3(id.xy, s)] <= 0) continue;
         TrailMap[int3(id.xy, s)] = saturate(TrailMap[int3(id.xy, s)] + settings.trailWeight * deltaTime);
     }
+}
+
+// ── Culling tactique ──────────────────────────────────────────────────────────
+// Remplit VisibleAgentIds avec les indices des agents vivants dans le frustum caméra.
+// Dispatché seulement en mode tactique (ZoomLevelController.IsInTacticalMode).
+// N'utilise pas de transfert CPU/GPU : le résultat reste sur GPU pour DrawMeshInstancedIndirect.
+[numthreads(64,1,1)]
+void CullAgents(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= numAgents) return;
+
+    Agent a = agents[id.x];
+    if (a.age < 0) return;  // agent mort
+
+    // Test frustum en espace simulation (0-width / 0-height)
+    bool inFrustum =
+        a.position.x >= cameraBoundsSimSpace.x && a.position.x <= cameraBoundsSimSpace.z &&
+        a.position.y >= cameraBoundsSimSpace.y && a.position.y <= cameraBoundsSimSpace.w;
+
+    if (inFrustum)
+        VisibleAgentIds.Append((int)id.x);
 }

@@ -23,6 +23,9 @@ public class CameraController : MonoBehaviour
     public float MapMinY = 0f;
     public float MapMaxY = 512f;
 
+    /// <summary>Caméra gérée par ce controller (accès pour ZoomLevelController et autres systèmes).</summary>
+    public Camera Cam => cam;
+
     private Camera cam;
     private Vector3 dragOrigin;
     private bool isDragging;

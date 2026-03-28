@@ -43,9 +43,11 @@ public class TerrainMapRenderer : MonoBehaviour
     public float[,] HeightMap { get; private set; }
 
     private Texture2D terrainTexture;
+    private Texture2D mapDataTexture;
     private Texture2D walkabilityTexture;  // White = land, Black = water
 
     public Texture2D GetTexture()             => terrainTexture;
+    public Texture2D GetMapDataTexture()      => mapDataTexture;
     public Texture2D GetWalkabilityTexture()  => walkabilityTexture;
 
     private void Awake()
@@ -105,28 +107,70 @@ public class TerrainMapRenderer : MonoBehaviour
         }
     }
 
+    private int GetTerrainType(float h)
+    {
+        if (h < WaterThreshold) return 0; // Water
+        
+        float land = Mathf.InverseLerp(WaterThreshold, 1f, h);
+        if (land < 0.05f) return 1; // Sand
+        if (land < 0.4f) return 2; // Grass
+        if (land < 0.7f) return 3; // Forest
+        if (land < 0.95f) return 4; // Rock
+        return 5; // Snow
+    }
+
     private void BuildTexture()
     {
+        int[,] types = new int[Width, Height];
+        for (int y = 0; y < Height; y++)
+        {
+            for (int x = 0; x < Width; x++)
+            {
+                types[x, y] = GetTerrainType(HeightMap[x, y]);
+            }
+        }
+
+        // Texture VISUELLE (Couleurs)
         terrainTexture = new Texture2D(Width, Height, TextureFormat.RGBA32, false);
         terrainTexture.filterMode = FilterMode.Point;
         terrainTexture.wrapMode = TextureWrapMode.Clamp;
 
-        Color[] pixels = new Color[Width * Height];
+        // Texture DATA (Auto-tiling)
+        mapDataTexture = new Texture2D(Width, Height, TextureFormat.RGBA32, false, true); // true = linear space !
+        mapDataTexture.filterMode = FilterMode.Point;
+        mapDataTexture.wrapMode = TextureWrapMode.Clamp;
+
+        Color[] displayPixels = new Color[Width * Height];
+        Color32[] dataPixels = new Color32[Width * Height];
 
         for (int y = 0; y < Height; y++)
         {
             for (int x = 0; x < Width; x++)
             {
+                // Visual
                 float h = HeightMap[x, y];
-                pixels[y * Width + x] = HeightToColour(h);
+                displayPixels[y * Width + x] = HeightToColour(h);
+
+                // Data
+                int type = types[x, y];
+                int mask = 0;
+                if (y < Height - 1 && types[x, y + 1] == type) mask += 1;
+                if (x < Width - 1 && types[x + 1, y] == type) mask += 2;
+                if (y > 0 && types[x, y - 1] == type) mask += 4;
+                if (x > 0 && types[x - 1, y] == type) mask += 8;
+
+                dataPixels[y * Width + x] = new Color32((byte)type, (byte)mask, 0, 255);
             }
         }
 
-        terrainTexture.SetPixels(pixels);
+        terrainTexture.SetPixels(displayPixels);
         terrainTexture.Apply();
 
+        mapDataTexture.SetPixels32(dataPixels);
+        mapDataTexture.Apply();
+
         // --- Binary walkability texture (R8: 1.0 = land, 0.0 = water) ---
-        walkabilityTexture = new Texture2D(Width, Height, TextureFormat.R8, false);
+        walkabilityTexture = new Texture2D(Width, Height, TextureFormat.R8, false, true);
         walkabilityTexture.filterMode = FilterMode.Point;
         walkabilityTexture.wrapMode   = TextureWrapMode.Clamp;
 
@@ -137,50 +181,53 @@ public class TerrainMapRenderer : MonoBehaviour
 
         walkabilityTexture.SetPixels(walkPixels);
         walkabilityTexture.Apply();
-        Debug.Log("[TERRAIN] Walkability texture generated.");
+        Debug.Log("[TERRAIN] Walkability texture & Auto-Tiling Data generated.");
     }
 
     private Color HeightToColour(float h)
     {
         // Water band
-        if (h < WaterThreshold * 0.6f)
-            return DeepWater;
-        if (h < WaterThreshold)
-            return Color.Lerp(DeepWater, ShallowWater, Mathf.InverseLerp(WaterThreshold * 0.6f, WaterThreshold, h));
+        if (h < WaterThreshold * 0.6f) return DeepWater;
+        if (h < WaterThreshold) return Color.Lerp(DeepWater, ShallowWater, Mathf.InverseLerp(WaterThreshold * 0.6f, WaterThreshold, h));
 
         // Land bands
-        float land = Mathf.InverseLerp(WaterThreshold, 1f, h); // 0..1 within land range
+        float land = Mathf.InverseLerp(WaterThreshold, 1f, h);
 
-        if (land < 0.05f)
-            return Sand;
-        if (land < 0.4f)
-            return Color.Lerp(Grass, Forest, Mathf.InverseLerp(0.05f, 0.4f, land));
-        if (land < 0.7f)
-            return Color.Lerp(Forest, Rock, Mathf.InverseLerp(0.4f, 0.7f, land));
+        if (land < 0.05f) return Sand;
+        if (land < 0.4f) return Color.Lerp(Grass, Forest, Mathf.InverseLerp(0.05f, 0.4f, land));
+        if (land < 0.7f) return Color.Lerp(Forest, Rock, Mathf.InverseLerp(0.4f, 0.7f, land));
 
         return Color.Lerp(Rock, Snow, Mathf.InverseLerp(0.7f, 1f, land));
     }
 
     private void ApplyTexture()
     {
-        if (DisplayTarget == null)
+        if (DisplayTarget != null)
         {
-            Debug.LogWarning("[TERRAIN] No DisplayTarget assigned.");
-            return;
+            var mat = DisplayTarget.sharedMaterial;
+            if (mat != null)
+            {
+                mat.mainTexture = terrainTexture;
+                if (mat.HasProperty("_BaseMap"))
+                    mat.SetTexture("_BaseMap", terrainTexture);
+            }
+        }
+        else
+        {
+            Debug.LogWarning("[TERRAIN] No DisplayTarget assigned for original background.");
         }
 
-        // Use sharedMaterial to avoid leaking materials
-        var mat = DisplayTarget.sharedMaterial;
-        if (mat == null) return;
-
-        mat.mainTexture = terrainTexture;
-        if (mat.HasProperty("_BaseMap"))
-            mat.SetTexture("_BaseMap", terrainTexture);
+        // --- On donne la Map Data (Texture de calculs) au Shader d'Auto-Tiling ! ---
+        if (ZoomLevelController.Instance != null && ZoomLevelController.Instance.TerrainOverlayMaterial != null)
+        {
+            ZoomLevelController.Instance.TerrainOverlayMaterial.SetTexture("_MainTex", mapDataTexture);
+        }
     }
 
     private void OnDestroy()
     {
         if (terrainTexture != null)     Destroy(terrainTexture);
+        if (mapDataTexture != null)     Destroy(mapDataTexture);
         if (walkabilityTexture != null) Destroy(walkabilityTexture);
     }
 }
