@@ -9,7 +9,7 @@ using UnityEngine.InputSystem;
 public class CameraController : MonoBehaviour
 {
     [Header("Zoom")]
-    public float ZoomSpeed = 20f;
+    public float ZoomSpeed = 500f;
     public float MinOrthoSize = 10f;
     public float MaxOrthoSize = 300f;
 
@@ -50,7 +50,7 @@ public class CameraController : MonoBehaviour
         HandleZoom();
         HandleDrag();
         HandleKeyboardPan();
-        HandleEdgePan();
+        // HandleEdgePan();
         ClampPosition();
     }
 
@@ -60,7 +60,7 @@ public class CameraController : MonoBehaviour
         if (Mathf.Abs(scroll) < 0.01f) return;
 
         // scroll is typically ±120 per notch, normalise
-        float delta = scroll / 120f;
+        float delta = (scroll / 120f) * 5f; // Multiplie par 5 pour un zoom plus rapide
         float newSize = cam.orthographicSize - delta * ZoomSpeed;
         cam.orthographicSize = Mathf.Clamp(newSize, MinOrthoSize, MaxOrthoSize);
     }
@@ -100,7 +100,7 @@ public class CameraController : MonoBehaviour
 
         if (Mathf.Abs(h) > 0.01f || Mathf.Abs(v) > 0.01f)
         {
-            float scaledSpeed = PanSpeed * (cam.orthographicSize / MaxOrthoSize);
+            float scaledSpeed = PanSpeed * Mathf.Max(0.2f, (cam.orthographicSize / MaxOrthoSize));
             cam.transform.position += new Vector3(h, v, 0) * scaledSpeed * Time.unscaledDeltaTime;
         }
     }

@@ -512,6 +512,8 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
             int iR   = clamp((int)settings.repulsionRadius, 1, 8);
             int step = max(1, (int)(iR * 0.34));
             float2 repForce = float2(0.0, 0.0);
+            float totalDensity = 0.0;
+            float2 facing = float2(cos(agent.angle), sin(agent.angle));
             for (int ddx = -iR; ddx <= iR; ddx += step)
             for (int ddy = -iR; ddy <= iR; ddy += step)
             {
@@ -520,8 +522,15 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
                 int sy = clamp(cy + ddy, 0, height - 1);
                 float p = AgentMap[int3(sx, sy, agent.speciesIndex)];
                 if (p > 0.001)
+                {
                     repForce += float2(-(float)ddx, -(float)ddy)
                                 * rsqrt((float)(ddx*ddx + ddy*ddy)) * p;
+                    // Densité frontale uniquement : seuls les agents devant bloquent
+                    float2 toNeighbor = float2((float)ddx, (float)ddy);
+                    float forwardness = dot(normalize(toNeighbor), facing);
+                    if (forwardness > 0.3)
+                        totalDensity += p * forwardness;
+                }
             }
             if (dot(repForce, repForce) > 0.0001)
             {
@@ -532,6 +541,64 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
                     pushed.y >= 1 && pushed.y < (float)height - 1 &&
                     (useTerrainCollision == 0 || isWalkable(pushed)))
                     newPos = pushed;
+            }
+            // Ralentissement progressif puis arrêt selon densité frontale
+            // densityLimit = seuil de début de ralentissement (0 = désactivé)
+            // à 2×densityLimit l'agent s'arrête complètement
+            if (settings.densityLimit > 0.0)
+            {
+                float excess = (totalDensity - settings.densityLimit)
+                               / max(settings.densityLimit, 0.001);
+                float speedFactor = saturate(1.0 - excess);
+                newPos = lerp(agent.position, newPos, speedFactor);
+
+                // Déblocage — stratégie escalade 3 niveaux
+                if (speedFactor < 0.5)
+                {
+                    float2 perp  = float2(-facing.y, facing.x);
+                    float  sampR = max((float)iR * 0.5, 2.0);
+                    int lx = clamp((int)(agent.position.x + perp.x * sampR), 0, width  - 1);
+                    int ly = clamp((int)(agent.position.y + perp.y * sampR), 0, height - 1);
+                    int rx = clamp((int)(agent.position.x - perp.x * sampR), 0, width  - 1);
+                    int ry = clamp((int)(agent.position.y - perp.y * sampR), 0, height - 1);
+                    float dLeft  = AgentMap[int3(lx, ly, agent.speciesIndex)];
+                    float dRight = AgentMap[int3(rx, ry, agent.speciesIndex)];
+
+                    float2 bypassDir;
+                    if      (dLeft  < dRight - 0.001) bypassDir =  perp;
+                    else if (dRight < dLeft  - 0.001) bypassDir = -perp;
+                    else    bypassDir = (id.x & 1u) ?  perp : -perp;
+
+                    float nudge = (1.0 - speedFactor) * settings.moveSpeed * deltaTime;
+
+                    // Niveau 1 : bypass latéral (côté moins dense)
+                    float2 nudged = newPos + bypassDir * nudge;
+                    bool level1 = (nudged.x >= 1 && nudged.x < (float)width  - 1 &&
+                                   nudged.y >= 1 && nudged.y < (float)height - 1 &&
+                                   (useTerrainCollision == 0 || isWalkable(nudged)));
+                    if (level1) { newPos = nudged; }
+                    else
+                    {
+                        // Niveau 2 : s'écarter de la masse (repForce) — utile contre les murs
+                        bool level2 = false;
+                        if (dot(repForce, repForce) > 0.0001)
+                        {
+                            float2 scattered = agent.position
+                                             + normalize(repForce) * settings.moveSpeed * deltaTime;
+                            level2 = (scattered.x >= 1 && scattered.x < (float)width  - 1 &&
+                                      scattered.y >= 1 && scattered.y < (float)height - 1 &&
+                                      (useTerrainCollision == 0 || isWalkable(scattered)));
+                            if (level2) newPos = scattered;
+                        }
+                        // Niveau 3 : jitter d'angle aléatoire — l'agent tentera une nouvelle
+                        // direction au prochain frame pour sortir du blocage terrain
+                        if (!level2)
+                        {
+                            uint rj = hash(random + 77u);
+                            agent.angle += (scaleToRange01(rj) - 0.5) * 3.14159;
+                        }
+                    }
+                }
             }
         }
     }
