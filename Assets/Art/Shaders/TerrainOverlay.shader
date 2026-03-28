@@ -75,7 +75,6 @@ Shader "Evolution/TerrainOverlay"
                 float4 data = tex2D(_MainTex, i.uv);
                 
                 int terrainType = round(data.r * 255.0);
-                int mask = round(data.g * 255.0);
 
                 float2 baseOffset = float2(0,0);
                 if (terrainType == 0) baseOffset = _WaterOffset.xy;
@@ -85,15 +84,15 @@ Shader "Evolution/TerrainOverlay"
                 else if (terrainType == 4) baseOffset = _RockOffset.xy;
                 else if (terrainType == 5) baseOffset = _SnowOffset.xy;
 
-                // 4x4 layout mapping from 0-15 mask (4 columns, 4 rows)
-                float2 localOffset = float2(mask % 4, mask / 4);
+                // NOUVEAU: Le script C# sauvegarde désormais les coordonnées LOCALES (X, Y) du bloc 12x5 directement dans les canaux Vert (G) et Bleu (B) !
+                float2 localOffset = float2(round(data.g * 255.0), round(data.b * 255.0));
                 float2 tileCoord = baseOffset + localOffset;
 
                 // Position within the single tile (0.0 to 1.0)
                 float2 subUV = frac(i.uv * _MapSize);
 
                 // Unity lit l'image de Bas en Haut (V part de 0 au bas).
-                // Pour que notre Ligne 0 soit tout en "HAUT" de l'image (plus intuitif), on inverse Y :
+                // Pour que notre Ligne 0 soit tout en "HAUT" de l'image, on inverse Y :
                 float invertedRow = _AtlasRows - 1.0 - tileCoord.y;
                 
                 // Calcul final en prenant compte de l'inversion
@@ -102,7 +101,6 @@ Shader "Evolution/TerrainOverlay"
                     (invertedRow + subUV.y) / _AtlasRows
                 );
                 
-                // Sample the atlas to get exactly the correct tile visual
                 fixed4 col = tex2D(_TilesetTex, finalUV) * _Tint;
                 col.a *= _Alpha;
 

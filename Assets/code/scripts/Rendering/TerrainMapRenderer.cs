@@ -151,15 +151,25 @@ public class TerrainMapRenderer : MonoBehaviour
                 float h = HeightMap[x, y];
                 displayPixels[y * Width + x] = HeightToColour(h);
 
-                // Data
+                // Data (8-bit masking)
                 int type = types[x, y];
-                int mask = 0;
-                if (y < Height - 1 && types[x, y + 1] == type) mask += 1;
-                if (x < Width - 1 && types[x + 1, y] == type) mask += 2;
-                if (y > 0 && types[x, y - 1] == type) mask += 4;
-                if (x > 0 && types[x - 1, y] == type) mask += 8;
+                
+                bool n = y < Height-1 && types[x, y+1] == type;
+                bool e = x < Width-1 && types[x+1, y] == type;
+                bool s = y > 0 && types[x, y-1] == type;
+                bool w = x > 0 && types[x-1, y] == type;
+                bool ne = n && e && (x < Width-1 && y < Height-1 && types[x+1, y+1] == type);
+                bool se = s && e && (x < Width-1 && y > 0 && types[x+1, y-1] == type);
+                bool sw = s && w && (x > 0 && y > 0 && types[x-1, y-1] == type);
+                bool nw = n && w && (x > 0 && y < Height-1 && types[x-1, y+1] == type);
 
-                dataPixels[y * Width + x] = new Color32((byte)type, (byte)mask, 0, 255);
+                int mask = (n?1:0) | (e?2:0) | (s?4:0) | (w?8:0) | (ne?16:0) | (se?32:0) | (sw?64:0) | (nw?128:0);
+                
+                // Map the 0-255 mask to the 12x5 block coordinates!
+                Vector2Int localCoord = GetBlob12x5Position(mask);
+
+                // R = Type de Terrain, G = Ligne Local X, B = Colonne Local Y
+                dataPixels[y * Width + x] = new Color32((byte)type, (byte)localCoord.x, (byte)localCoord.y, 255);
             }
         }
 
@@ -182,6 +192,85 @@ public class TerrainMapRenderer : MonoBehaviour
         walkabilityTexture.SetPixels(walkPixels);
         walkabilityTexture.Apply();
         Debug.Log("[TERRAIN] Walkability texture & Auto-Tiling Data generated.");
+    }
+
+    /// <summary>
+    /// Convertit un masque à 8 bits (256 valeurs) en coordonnée X,Y de votre Atlas 12x5 Blob.
+    /// Modifier ici si une bordure ne correspond pas exactement à votre dessin dans le PNG !
+    /// </summary>
+    private Vector2Int GetBlob12x5Position(int mask)
+    {
+        int ortho = mask & 15;
+        int diag = mask >> 4;
+
+        if (ortho == 0) return new Vector2Int(0, 4); // Ile
+        if (ortho == 1) return new Vector2Int(0, 3); // N
+        if (ortho == 4) return new Vector2Int(0, 0); // S
+        if (ortho == 5) return new Vector2Int(0, 1); // N, S
+        if (ortho == 2) return new Vector2Int(1, 4); // E
+        if (ortho == 8) return new Vector2Int(4, 4); // W
+        if (ortho == 10) return new Vector2Int(2, 4); // E, W
+
+        // Coins extérieurs (et avec leur diag pleine correspondante)
+        if (ortho == 3) return diag == 1 ? new Vector2Int(5, 3) : new Vector2Int(1, 3); // N, E
+        if (ortho == 6) return diag == 2 ? new Vector2Int(5, 0) : new Vector2Int(1, 0); // S, E
+        if (ortho == 12) return diag == 4 ? new Vector2Int(8, 0) : new Vector2Int(4, 0); // S, W
+        if (ortho == 9) return diag == 8 ? new Vector2Int(8, 3) : new Vector2Int(4, 3); // N, W
+
+        // Lignes droites (avec diags intérieures pleines)
+        if (ortho == 7) { // N, E, S
+            if (diag == 0) return new Vector2Int(1, 1);
+            if (diag == 1) return new Vector2Int(5, 1);
+            if (diag == 2) return new Vector2Int(5, 2);
+            if (diag == 3) return new Vector2Int(6, 1); // Ligne totalement pleine à gauche
+        }
+        if (ortho == 14) { // E, S, W
+            if (diag == 0) return new Vector2Int(2, 0);
+            if (diag == 2) return new Vector2Int(6, 0); // Ligne totalement pleine en haut
+            if (diag == 4) return new Vector2Int(7, 0);
+            if (diag == 6) return new Vector2Int(6, 2);
+        }
+        if (ortho == 13) { // N, S, W
+            if (diag == 0) return new Vector2Int(4, 1);
+            if (diag == 4) return new Vector2Int(8, 1);
+            if (diag == 8) return new Vector2Int(8, 2);
+            if (diag == 12) return new Vector2Int(7, 2); // Ligne totalement pleine à droite
+        }
+        if (ortho == 11) { // N, E, W
+            if (diag == 0) return new Vector2Int(2, 3);
+            if (diag == 1) return new Vector2Int(7, 3);
+            if (diag == 8) return new Vector2Int(6, 3); // Ligne totalement pleine en bas
+            if (diag == 9) return new Vector2Int(7, 1);
+        }
+
+        // Complètement entouré en orthogonal (N, E, S, W) avec X diagonales manquantes
+        if (ortho == 15) {
+            switch (diag) {
+                case 15: return new Vector2Int(6, 1); // PLEIN, BORDURE INVISIBLE (Tuile centrale 100% pleine !)
+                // 1 coin interne manquant
+                case 14: return new Vector2Int(9, 0); // Manque NE
+                case 13: return new Vector2Int(11, 0); // Manque SE
+                case 11: return new Vector2Int(11, 2); // Manque SW
+                case 7: return new Vector2Int(9, 2); // Manque NW
+                // 2 coins internes manquants (opposés)
+                case 10: return new Vector2Int(10, 0); // Manque NE, SW
+                case 5: return new Vector2Int(10, 2); // Manque SE, NW
+                // 2 coins internes manquants (adjacents)
+                case 12: return new Vector2Int(9, 1); // Manque NE, SE
+                case 9: return new Vector2Int(11, 1); // Manque SE, SW
+                case 3: return new Vector2Int(11, 3); // Manque SW, NW
+                case 6: return new Vector2Int(9, 3); // Manque NW, NE
+                // 3 coins internes manquants
+                case 8: return new Vector2Int(10, 3); // Reste SE ? (Ici c'est arbitraire, modifiez selon votre image)
+                case 4: return new Vector2Int(10, 1); 
+                case 2: return new Vector2Int(2, 2); 
+                case 1: return new Vector2Int(3, 2); 
+                // 4 coins internes manquants !
+                case 0: return new Vector2Int(2, 1); 
+            }
+        }
+
+        return new Vector2Int(0, 4); // Secours
     }
 
     private Color HeightToColour(float h)
