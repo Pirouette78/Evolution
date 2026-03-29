@@ -163,10 +163,19 @@ public class TerrainMapRenderer : MonoBehaviour
                 bool sw = s && w && (x > 0 && y > 0 && types[x-1, y-1] == type);
                 bool nw = n && w && (x > 0 && y < Height-1 && types[x-1, y+1] == type);
 
-                int mask = (n?1:0) | (e?2:0) | (s?4:0) | (w?8:0) | (ne?16:0) | (se?32:0) | (sw?64:0) | (nw?128:0);
+                // Algorithme Godot 3x3 Minimal (Diagonales conditionnées aux bords)
+                int mask = 0;
+                if (n) mask |= 1;
+                if (e) mask |= 4;
+                if (s) mask |= 16;
+                if (w) mask |= 64;
+                if (ne && n && e) mask |= 2;
+                if (se && s && e) mask |= 8;
+                if (sw && s && w) mask |= 32;
+                if (nw && n && w) mask |= 128;
                 
-                // Map the 0-255 mask to the 12x5 block coordinates!
-                Vector2Int localCoord = GetBlob12x5Position(mask);
+                // Map the 0-255 mask to the user's specific 7x7 image coordinates
+                Vector2Int localCoord = GetGodotImagePosition(mask);
 
                 // R = Type de Terrain, G = Ligne Local X, B = Colonne Local Y
                 dataPixels[y * Width + x] = new Color32((byte)type, (byte)localCoord.x, (byte)localCoord.y, 255);
@@ -195,82 +204,75 @@ public class TerrainMapRenderer : MonoBehaviour
     }
 
     /// <summary>
-    /// Convertit un masque à 8 bits (256 valeurs) en coordonnée X,Y de votre Atlas 12x5 Blob.
-    /// Modifier ici si une bordure ne correspond pas exactement à votre dessin dans le PNG !
+    /// Format Godot 3x3 Minimal. Route la forme topologique directement sur les nombres
+    /// imprimés dans l'image 7x7 de l'utilisateur (28, 116, 84 etc.).
     /// </summary>
-    private Vector2Int GetBlob12x5Position(int mask)
+    private Vector2Int GetGodotImagePosition(int mask)
     {
-        int ortho = mask & 15;
-        int diag = mask >> 4;
+        switch (mask) {
+            // Ligne 0
+            case 28: return new Vector2Int(0, 0);
+            case 116: return new Vector2Int(1, 0);
+            case 84: return new Vector2Int(2, 0);
+            case 92: return new Vector2Int(3, 0);
+            case 124: return new Vector2Int(4, 0);
+            case 112: return new Vector2Int(5, 0);
+            case 16: return new Vector2Int(6, 0);
+            
+            // Ligne 1
+            case 23: return new Vector2Int(0, 1);
+            case 213: return new Vector2Int(1, 1);
+            case 85: return new Vector2Int(2, 1);
+            case 95: return new Vector2Int(3, 1);
+            case 253: return new Vector2Int(5, 1);
+            case 113: return new Vector2Int(6, 1);
+            
+            // Ligne 2
+            case 21: return new Vector2Int(0, 2);
+            case 93: return new Vector2Int(1, 2);
+            case 125: return new Vector2Int(2, 2);
+            case 119: return new Vector2Int(3, 2);
+            case 215: return new Vector2Int(4, 2);
+            case 199: return new Vector2Int(5, 2);
+            case 209: return new Vector2Int(6, 2);
 
-        if (ortho == 0) return new Vector2Int(0, 4); // Ile
-        if (ortho == 1) return new Vector2Int(0, 3); // N
-        if (ortho == 4) return new Vector2Int(0, 0); // S
-        if (ortho == 5) return new Vector2Int(0, 1); // N, S
-        if (ortho == 2) return new Vector2Int(1, 4); // E
-        if (ortho == 8) return new Vector2Int(4, 4); // W
-        if (ortho == 10) return new Vector2Int(2, 4); // E, W
+            // Ligne 3
+            case 29: return new Vector2Int(0, 3);
+            case 127: return new Vector2Int(1, 3);
+            case 247: return new Vector2Int(2, 3);
+            case 221: return new Vector2Int(3, 3);
+            case 117: return new Vector2Int(4, 3);
+            case 68: return new Vector2Int(5, 3);
+            case 81: return new Vector2Int(6, 3);
 
-        // Coins extérieurs (et avec leur diag pleine correspondante)
-        if (ortho == 3) return diag == 1 ? new Vector2Int(5, 3) : new Vector2Int(1, 3); // N, E
-        if (ortho == 6) return diag == 2 ? new Vector2Int(5, 0) : new Vector2Int(1, 0); // S, E
-        if (ortho == 12) return diag == 4 ? new Vector2Int(8, 0) : new Vector2Int(4, 0); // S, W
-        if (ortho == 9) return diag == 8 ? new Vector2Int(8, 3) : new Vector2Int(4, 3); // N, W
+            // Ligne 4
+            case 31: return new Vector2Int(0, 4);
+            case 255: return new Vector2Int(1, 4); // Apparaît aussi en (4,1), on garde (1,4)
+            case 245: return new Vector2Int(2, 4);
+            case 87: return new Vector2Int(3, 4);
+            case 193: return new Vector2Int(4, 4);
+            case 1: return new Vector2Int(6, 4);
 
-        // Lignes droites (avec diags intérieures pleines)
-        if (ortho == 7) { // N, E, S
-            if (diag == 0) return new Vector2Int(1, 1);
-            if (diag == 1) return new Vector2Int(5, 1);
-            if (diag == 2) return new Vector2Int(5, 2);
-            if (diag == 3) return new Vector2Int(6, 1); // Ligne totalement pleine à gauche
-        }
-        if (ortho == 14) { // E, S, W
-            if (diag == 0) return new Vector2Int(2, 0);
-            if (diag == 2) return new Vector2Int(6, 0); // Ligne totalement pleine en haut
-            if (diag == 4) return new Vector2Int(7, 0);
-            if (diag == 6) return new Vector2Int(6, 2);
-        }
-        if (ortho == 13) { // N, S, W
-            if (diag == 0) return new Vector2Int(4, 1);
-            if (diag == 4) return new Vector2Int(8, 1);
-            if (diag == 8) return new Vector2Int(8, 2);
-            if (diag == 12) return new Vector2Int(7, 2); // Ligne totalement pleine à droite
-        }
-        if (ortho == 11) { // N, E, W
-            if (diag == 0) return new Vector2Int(2, 3);
-            if (diag == 1) return new Vector2Int(7, 3);
-            if (diag == 8) return new Vector2Int(6, 3); // Ligne totalement pleine en bas
-            if (diag == 9) return new Vector2Int(7, 1);
-        }
+            // Ligne 5
+            case 7: return new Vector2Int(0, 5);
+            case 223: return new Vector2Int(1, 5);
+            case 241: return new Vector2Int(2, 5);
+            case 17: return new Vector2Int(3, 5);
+            case 0: return new Vector2Int(4, 5); // Tuile isolée (0) => case bleue dans l'image
+            case 20: return new Vector2Int(5, 5);
+            case 80: return new Vector2Int(6, 5);
 
-        // Complètement entouré en orthogonal (N, E, S, W) avec X diagonales manquantes
-        if (ortho == 15) {
-            switch (diag) {
-                case 15: return new Vector2Int(6, 1); // PLEIN, BORDURE INVISIBLE (Tuile centrale 100% pleine !)
-                // 1 coin interne manquant
-                case 14: return new Vector2Int(9, 0); // Manque NE
-                case 13: return new Vector2Int(11, 0); // Manque SE
-                case 11: return new Vector2Int(11, 2); // Manque SW
-                case 7: return new Vector2Int(9, 2); // Manque NW
-                // 2 coins internes manquants (opposés)
-                case 10: return new Vector2Int(10, 0); // Manque NE, SW
-                case 5: return new Vector2Int(10, 2); // Manque SE, NW
-                // 2 coins internes manquants (adjacents)
-                case 12: return new Vector2Int(9, 1); // Manque NE, SE
-                case 9: return new Vector2Int(11, 1); // Manque SE, SW
-                case 3: return new Vector2Int(11, 3); // Manque SW, NW
-                case 6: return new Vector2Int(9, 3); // Manque NW, NE
-                // 3 coins internes manquants
-                case 8: return new Vector2Int(10, 3); // Reste SE ? (Ici c'est arbitraire, modifiez selon votre image)
-                case 4: return new Vector2Int(10, 1); 
-                case 2: return new Vector2Int(2, 2); 
-                case 1: return new Vector2Int(3, 2); 
-                // 4 coins internes manquants !
-                case 0: return new Vector2Int(2, 1); 
-            }
+            // Ligne 6
+            case 4: return new Vector2Int(0, 6);
+            case 71: return new Vector2Int(1, 6);
+            case 197: return new Vector2Int(2, 6);
+            case 69: return new Vector2Int(3, 6);
+            case 64: return new Vector2Int(4, 6);
+            case 5: return new Vector2Int(5, 6);
+            case 65: return new Vector2Int(6, 6);
         }
-
-        return new Vector2Int(0, 4); // Secours
+        
+        return new Vector2Int(4, 5); // Secours : Tuile Isolée (0)
     }
 
     private Color HeightToColour(float h)

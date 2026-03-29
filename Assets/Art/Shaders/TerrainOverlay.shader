@@ -8,8 +8,7 @@ Shader "Evolution/TerrainOverlay"
         _Tint ("Tint Color", Color) = (1, 1, 1, 1)
 
         _MapSize ("Map Size (Width/Height)", Float) = 512
-        _AtlasCols ("Atlas Columns", Float) = 48
-        _AtlasRows ("Atlas Rows", Float) = 17
+        _TileSize ("Tile Size (Pixels)", Float) = 32
 
         // Starting column/row for the 4x4 block of each terrain
         _WaterOffset ("Water Offset (Col, Row)", Vector) = (0, 0, 0, 0)
@@ -35,13 +34,13 @@ Shader "Evolution/TerrainOverlay"
 
             sampler2D _MainTex;
             sampler2D _TilesetTex;
+            float4 _TilesetTex_TexelSize;
             float4 _MainTex_ST;
             float _Alpha;
             float4 _Tint;
 
             float _MapSize;
-            float _AtlasCols;
-            float _AtlasRows;
+            float _TileSize;
 
             float4 _WaterOffset;
             float4 _SandOffset;
@@ -84,21 +83,19 @@ Shader "Evolution/TerrainOverlay"
                 else if (terrainType == 4) baseOffset = _RockOffset.xy;
                 else if (terrainType == 5) baseOffset = _SnowOffset.xy;
 
-                // NOUVEAU: Le script C# sauvegarde désormais les coordonnées LOCALES (X, Y) du bloc 12x5 directement dans les canaux Vert (G) et Bleu (B) !
                 float2 localOffset = float2(round(data.g * 255.0), round(data.b * 255.0));
                 float2 tileCoord = baseOffset + localOffset;
 
-                // Position within the single tile (0.0 to 1.0)
+                float atlasCols = round(_TilesetTex_TexelSize.z / _TileSize);
+                float atlasRows = round(_TilesetTex_TexelSize.w / _TileSize);
+
                 float2 subUV = frac(i.uv * _MapSize);
 
-                // Unity lit l'image de Bas en Haut (V part de 0 au bas).
-                // Pour que notre Ligne 0 soit tout en "HAUT" de l'image, on inverse Y :
-                float invertedRow = _AtlasRows - 1.0 - tileCoord.y;
+                float invertedRow = atlasRows - 1.0 - tileCoord.y;
                 
-                // Calcul final en prenant compte de l'inversion
                 float2 finalUV = float2(
-                    (tileCoord.x + subUV.x) / _AtlasCols,
-                    (invertedRow + subUV.y) / _AtlasRows
+                    (tileCoord.x + subUV.x) / atlasCols,
+                    (invertedRow + subUV.y) / atlasRows
                 );
                 
                 fixed4 col = tex2D(_TilesetTex, finalUV) * _Tint;

@@ -29,19 +29,20 @@ Material:
         m_Offset: {x: 0, y: 0}
     - _TilesetTex:
         m_Texture: {fileID: 2800000, guid: 0984385027d8fa340b5be9384add3867, type: 3}
-        m_Scale: {x: 1, y: 1}
+        m_Scale: {x: 32, y: 32}
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
     - _Alpha: 1
-    - _AtlasCols: 48
-    - _AtlasRows: 17
+    - _AtlasCols: 7
+    - _AtlasRows: 7
     - _MapSize: 512
+    - _TileSize: 32
     m_Colors:
-    - _ForestOffset: {r: 0, g: 0, b: 0, a: 0}
-    - _GrassOffset: {r: 0, g: 0, b: 0, a: 0}
+    - _ForestOffset: {r: 7, g: 0, b: 0, a: 0}
+    - _GrassOffset: {r: 7, g: 0, b: 0, a: 0}
     - _RockOffset: {r: 0, g: 0, b: 0, a: 0}
-    - _SandOffset: {r: 0, g: 0, b: 0, a: 0}
+    - _SandOffset: {r: 7, g: 0, b: 0, a: 0}
     - _SnowOffset: {r: 0, g: 0, b: 0, a: 0}
     - _Tint: {r: 1, g: 1, b: 1, a: 1}
     - _WaterOffset: {r: 0, g: 0, b: 0, a: 0}

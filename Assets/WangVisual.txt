@@ -1,0 +1,64 @@
+Dimensions reelles: 224x224
+. X X X X X X X |. X X X X X X X |. X X X X X X X |. X X X X X X X |. X X X X X X X |. X X X X X X X |. X X X X X X X |
+X X X X X X X X |X X X X X X X X |X X X X X X X X |X X X X X X X X |X X X X X X X X |X X X X X X X X |X X X X X X X X |
+X X X X X X X X |X X X X X X X X |X X X X X X X X |X X X X X X X X |X X X X X X X X |X X X X X X X X |X X X X X X X X |
+X X X X X X X X |X X X . . . . . |. . . X . . . . |. . . . X . . . |. . . . X X . . |. . . X . . X X |X X X X . X X X |
+X X X X X X X X |X X X . X . . . |. . . . . . . . |. . . . . X . . |. . . . X . . . |. . . . . X X X |X X X X X X X X |
+X X X X X X X X |X X X . . . . . |. . . . . . . . |. . . . . . . . |. . . . . . . . |. . . . . . X X |X X X X X X X X |
+X X X X X X X X |X X X X X X X X |X X X . . . . . |. . . . . . . . |. . . . . . X X |X X X . . . X X |X X X X X X X X |
+X X X X X X X X |X X X X X X X X |X X X . . . . . |. . . . . . . . |. . . . . . X X |X X X . . . X X |X X X X X X X X |
+----------------------------------------------------------------------
+. X X X X X X X |. X X X X X X X |. X X . . . . . |. . . . . . . . |. . . . . . X X |. X X . . . X X |. X X X X X X X |
+X X X X X X X X |X X X X X X X X |X X X . . . . . |. . . . . . . . |. . . . . . X X |X X X . . . X X |X X X X X X X X |
+X X X X X X X X |X X X X X X X X |X X . . . . . . |. . . . . . . . |. . . . . . X X |X X X . . . X X |X X X X X X X X |
+X X X . . . X X |X X X X . . . . |. . . X . X . . |. . . . . . . . |. . . . . . X X |X X X X . . . . |. . . X . . X X |
+X X X . . X X X |X X X X . X . . |. . . . . . . . |. . . . X . . . |. . . . X . X X |X X X X . . . . |. . . . . X X X |
+X X X . . . X X |X X X . . . . . |. . . . . . . . |. . . . . . . . |. . . . . . X X |X X X . . . . . |. . . . . . X X |
+X X X . . . X X |X X X . . . X X |X X X . . . X X |X X X . . . . . |. . . . . . X X |X X X . . . X X |X X X X X X X X |
+X X X . . . X X |X X X . . . X X |X X X . . . X X |X X X . . . . . |. . . . . . X X |X X X . . . X X |X X X X X X X X |
+----------------------------------------------------------------------
+. X X . . . X X |. X X . . . X X |. X X . . . X X |. X X . . . . . |. . . . . . X X |. X X . . . X X |. X X X X X X X |
+X X X . . . X X |X X X . . . X X |X X X . . . X X |X X X . . . . . |. . . . . . X X |X X X . . . X X |X X X X X X X X |
+X X X . . . X X |X X . . . . X X |X X . . . . X X |X X . . . . . . |. . . . . . X X |X X . . . . X X |X X X X X X X X |
+X X X X . . . . |. . . . X X . . |. . . X . X . . |. . . X . . . . |. . . . X . . . |. . . . X X . . |. . . . . X X X |
+X X X X . X . . |. . . . X X . . |. . . . . X . . |. . . X . . . . |. . . . . . . . |. . . . . . . . |. . . . . . X X |
+X X X . . . . . |. . . . . . . . |. . . . . . . . |. . . . . . . . |. . . . . . . . |. . . . . . . . |. . . . . . X X |
+X X X . . . . . |. . . . . . X X |X X X . . . X X |X X X X X X X X |X X X . . . . . |. . . . . . . . |. . . . . . X X |
+X X X . . . . . |. . . . . . X X |X X X . . . X X |X X X X X X X X |X X X . . . . . |. . . . . . . . |. . . . . . X X |
+----------------------------------------------------------------------
+. X X . . . . . |. . . . . . X X |. X X . . . X X |. X X X X X X X |. X X . . . . . |. . . . . . . . |. . . . . . X X |
+X X X . . . . . |. . . . . . X X |X X X . . . X X |X X X X X X X X |X X X . . . . . |. . . . . . . . |. . . . . . X X |
+X X X . . . . . |. . . . . . X X |X X . . . . X X |X X X X X X X X |X X . . . . . . |. . . . . . . . |. . . . . . X X |
+X X X X . . . . |. . . . X X . . |. . . . . . X X |X X X X . . . . |. . . . X X . . |. . . . . X . . |. . . . . X X X |
+X X X . . . . . |. . . . . . . . |. . . . . X X X |X X X X . X . . |. . . . . X . . |. . . . X X . . |. . . . X . X X |
+X X X . . . . . |. . . . . . . . |. . . . . . X X |X X X . . . . . |. . . . . . . . |. . . . . . . . |. . . . . . X X |
+X X X . . . . . |. . . . . . . . |. . . . . . X X |X X X . . . . . |. . . . . . . . |. . . . . . X X |X X X . . . X X |
+X X X . . . . . |. . . . . . . . |. . . . . . X X |X X X . . . . . |. . . . . . . . |. . . . . . X X |X X X . . . X X |
+----------------------------------------------------------------------
+. X X . . . . . |. . . . . . . . |. . . . . . X X |. X X . . . . . |. . . . . . . . |. . . . . . X X |. X X . . . X X |
+X X X . . . . . |. . . . . . . . |. . . . . . X X |X X X . . . . . |. . . . . . . . |. . . . . . X X |X X X . . . X X |
+X X X . . . . . |. . . . . . . . |. . . . . . X X |X X . . . . . . |. . . . . . . . |. . . . . . X X |X X . . . . X X |
+X X X X . . . . |. . . . X X . . |. . . . X X . . |. . . X . X . . |. . . . X X . . |. . . . . X . . |. . . X . . X X |
+X X X X . X . . |. . . . . . . . |. . . . X . . . |. . . . . X . . |. . . . . . . . |. . . . X . . . |. . . . . . X X |
+X X X . . . . . |. . . . . . . . |. . . . . . . . |. . . . . . . . |. . . . . . . . |. . . . . . . . |. . . . . . X X |
+X X X . . . X X |X X X X X X X X |X X X . . . X X |X X X . . . . . |. . . . . . . . |. . . . . . X X |X X X . . . X X |
+X X X . . . X X |X X X X X X X X |X X X . . . X X |X X X . . . . . |. . . . . . . . |. . . . . . X X |X X X . . . X X |
+----------------------------------------------------------------------
+. X X . . . X X |. X X X X X X X |. X X . . . X X |. X X . . . . . |. . . . . . . . |. . . . . . X X |. X X . . . X X |
+X X X . . . X X |X X X X X X X X |X X X . . . X X |X X X . . . . . |. . . . . . . . |. . . . . . X X |X X X . . . X X |
+X X X . . . X X |X X X X X X X X |X X . . . . X X |X X . . . . . . |. . . . . . . . |. . . . . . X X |X X X . . . X X |
+X X X . X . . . |. . . X . . . . |. . . X . . . . |. . . . X X . . |. . . . X X . . |. . . . . X X X |X X X . . X X X |
+X X X . . . . . |. . . . . X . . |. . . . . X . . |. . . . X . . . |. . . . X . . . |. . . . X . X X |X X X . . . X X |
+X X X . . . . . |. . . . . . . . |. . . . . . . . |. . . . . . . . |. . . . . . . . |. . . . . . X X |X X X . . . X X |
+X X X X X X X X |X X X . . . X X |X X X . . . . . |. . . . . . X X |X X X . . . X X |X X X X X X X X |X X X . . . X X |
+X X X X X X X X |X X X . . . X X |X X X . . . . . |. . . . . . X X |X X X . . . X X |X X X X X X X X |X X X . . . X X |
+----------------------------------------------------------------------
+. X X X X X X X |. X X . . . X X |. X X . . . . . |. . . . . . X X |. X X . . . X X |. X X X X X X X |. X X . . . X X |
+X X X X X X X X |X X X . . . X X |X X X . . . . . |. . . . . . X X |X X X . . . X X |X X X X X X X X |X X X . . . X X |
+X X X X X X X X |X X X . . . X X |X X X . . . . . |. . . . . . X X |X X . . . . X X |X X X X X X X X |X X . . . . X X |
+X X X X . X X X |X X X . X . X X |X X X . X . . . |. . . . X X . . |. . . X . . . . |. . . X . . . . |. . . X . X X X |
+X X X X X X X X |X X X . X . X X |X X X . . . . . |. . . . . X . . |. . . . . X . . |. . . . . X . . |. . . . . X X X |
+X X X X X X X X |X X X . . . X X |X X X . . . . . |. . . . . . . . |. . . . . . . . |. . . . . . . . |. . . . . . X X |
+X X X X X X X X |X X X X X X X X |X X X X X X X X |X X X X X X X X |X X X X X X X X |X X X X X X X X |X X X X X X X X |
+X X X X X X X X |X X X X X X X X |X X X X X X X X |X X X X X X X X |X X X X X X X X |X X X X X X X X |X X X X X X X X |
+----------------------------------------------------------------------
