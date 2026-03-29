@@ -135,8 +135,9 @@ public class TerrainMapRenderer : MonoBehaviour
         terrainTexture.filterMode = FilterMode.Point;
         terrainTexture.wrapMode = TextureWrapMode.Clamp;
 
-        // Texture DATA (Auto-tiling)
-        mapDataTexture = new Texture2D(Width, Height, TextureFormat.RGBA32, false, true); // true = linear space !
+        // Texture DATA (Auto-tiling Multi-Layers)
+        // Format R8 est idéal (1 octet par pixel) mais RGBA32 est universel. On utilisera juste le canal R = Type de Terrain
+        mapDataTexture = new Texture2D(Width, Height, TextureFormat.RGBA32, false, true); 
         mapDataTexture.filterMode = FilterMode.Point;
         mapDataTexture.wrapMode = TextureWrapMode.Clamp;
 
@@ -151,34 +152,9 @@ public class TerrainMapRenderer : MonoBehaviour
                 float h = HeightMap[x, y];
                 displayPixels[y * Width + x] = HeightToColour(h);
 
-                // Data (8-bit masking)
+                // Data (R = Terrain Type Brut)
                 int type = types[x, y];
-                
-                bool n = y < Height-1 && types[x, y+1] == type;
-                bool e = x < Width-1 && types[x+1, y] == type;
-                bool s = y > 0 && types[x, y-1] == type;
-                bool w = x > 0 && types[x-1, y] == type;
-                bool ne = n && e && (x < Width-1 && y < Height-1 && types[x+1, y+1] == type);
-                bool se = s && e && (x < Width-1 && y > 0 && types[x+1, y-1] == type);
-                bool sw = s && w && (x > 0 && y > 0 && types[x-1, y-1] == type);
-                bool nw = n && w && (x > 0 && y < Height-1 && types[x-1, y+1] == type);
-
-                // Algorithme Godot 3x3 Minimal (Diagonales conditionnées aux bords)
-                int mask = 0;
-                if (n) mask |= 1;
-                if (e) mask |= 4;
-                if (s) mask |= 16;
-                if (w) mask |= 64;
-                if (ne && n && e) mask |= 2;
-                if (se && s && e) mask |= 8;
-                if (sw && s && w) mask |= 32;
-                if (nw && n && w) mask |= 128;
-                
-                // Map the 0-255 mask to the user's specific 7x7 image coordinates
-                Vector2Int localCoord = GetGodotImagePosition(mask);
-
-                // R = Type de Terrain, G = Ligne Local X, B = Colonne Local Y
-                dataPixels[y * Width + x] = new Color32((byte)type, (byte)localCoord.x, (byte)localCoord.y, 255);
+                dataPixels[y * Width + x] = new Color32((byte)type, 0, 0, 255);
             }
         }
 
@@ -201,78 +177,6 @@ public class TerrainMapRenderer : MonoBehaviour
         walkabilityTexture.SetPixels(walkPixels);
         walkabilityTexture.Apply();
         Debug.Log("[TERRAIN] Walkability texture & Auto-Tiling Data generated.");
-    }
-
-    /// <summary>
-    /// Format Godot 3x3 Minimal. Route la forme topologique directement sur les nombres
-    /// imprimés dans l'image 7x7 de l'utilisateur (28, 116, 84 etc.).
-    /// </summary>
-    private Vector2Int GetGodotImagePosition(int mask)
-    {
-        switch (mask) {
-            // Ligne 0
-            case 28: return new Vector2Int(0, 0);
-            case 116: return new Vector2Int(1, 0);
-            case 84: return new Vector2Int(2, 0);
-            case 92: return new Vector2Int(3, 0);
-            case 124: return new Vector2Int(4, 0);
-            case 112: return new Vector2Int(5, 0);
-            case 16: return new Vector2Int(6, 0);
-            
-            // Ligne 1
-            case 23: return new Vector2Int(0, 1);
-            case 213: return new Vector2Int(1, 1);
-            case 85: return new Vector2Int(2, 1);
-            case 95: return new Vector2Int(3, 1);
-            case 253: return new Vector2Int(5, 1);
-            case 113: return new Vector2Int(6, 1);
-            
-            // Ligne 2
-            case 21: return new Vector2Int(0, 2);
-            case 93: return new Vector2Int(1, 2);
-            case 125: return new Vector2Int(2, 2);
-            case 119: return new Vector2Int(3, 2);
-            case 215: return new Vector2Int(4, 2);
-            case 199: return new Vector2Int(5, 2);
-            case 209: return new Vector2Int(6, 2);
-
-            // Ligne 3
-            case 29: return new Vector2Int(0, 3);
-            case 127: return new Vector2Int(1, 3);
-            case 247: return new Vector2Int(2, 3);
-            case 221: return new Vector2Int(3, 3);
-            case 117: return new Vector2Int(4, 3);
-            case 68: return new Vector2Int(5, 3);
-            case 81: return new Vector2Int(6, 3);
-
-            // Ligne 4
-            case 31: return new Vector2Int(0, 4);
-            case 255: return new Vector2Int(1, 4); // Apparaît aussi en (4,1), on garde (1,4)
-            case 245: return new Vector2Int(2, 4);
-            case 87: return new Vector2Int(3, 4);
-            case 193: return new Vector2Int(4, 4);
-            case 1: return new Vector2Int(6, 4);
-
-            // Ligne 5
-            case 7: return new Vector2Int(0, 5);
-            case 223: return new Vector2Int(1, 5);
-            case 241: return new Vector2Int(2, 5);
-            case 17: return new Vector2Int(3, 5);
-            case 0: return new Vector2Int(4, 5); // Tuile isolée (0) => case bleue dans l'image
-            case 20: return new Vector2Int(5, 5);
-            case 80: return new Vector2Int(6, 5);
-
-            // Ligne 6
-            case 4: return new Vector2Int(0, 6);
-            case 71: return new Vector2Int(1, 6);
-            case 197: return new Vector2Int(2, 6);
-            case 69: return new Vector2Int(3, 6);
-            case 64: return new Vector2Int(4, 6);
-            case 5: return new Vector2Int(5, 6);
-            case 65: return new Vector2Int(6, 6);
-        }
-        
-        return new Vector2Int(4, 5); // Secours : Tuile Isolée (0)
     }
 
     private Color HeightToColour(float h)
