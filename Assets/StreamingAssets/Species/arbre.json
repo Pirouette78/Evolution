@@ -19,9 +19,19 @@
   "repulsionStrength": 0.0,
   "repulsionRadius": 0.0,
   "densityLimit": 0.0,
-  "agentRadius": 3,
+  "agentRadius": 1,
   "trailEmitRadius": 20,
   "seedProbHigh": 0.00005,
   "seedProbLow": 0.0000005,
-  "seedInterval": 5.0
+  "seedInterval": 5.0,
+  "blocksMovement": true,
+  "spriteName": "arbre",
+  "spriteTilesW": 6,
+  "spriteTilesH": 9,
+  "spriteAnchorX": 0.5,
+  "spriteAnchorY": 0.17,
+  "blockOffsetX": -1.0,
+  "blockOffsetY": -1.0,
+  "blockTilesW": 2.0,
+  "blockTilesH": 2.0
 }

@@ -344,6 +344,18 @@ public class WaypointManager : MonoBehaviour
         Debug.Log($"[WAYPOINTS] Added waypoint #{newIndex} type={wp.type} species={wp.speciesIndex} at {wp.position}");
     }
 
+    /// <summary>
+    /// Recalcule tous les flow fields (ex: après un changement de marchabilité dû aux unités).
+    /// Sans effet si les flow fields ne sont pas encore initialisés.
+    /// </summary>
+    public void RebuildAllFlowFields()
+    {
+        if (!flowFieldReady) return;
+        RecomputeAllFlowFields();
+        UploadToGPU();
+        Debug.Log("[WAYPOINTS] Flow fields rebuilt (walkability changed).");
+    }
+
     public WaypointData[] GetWaypoints() => waypointList.ToArray();
 
     public string GetWaypointName(int index)

@@ -6,6 +6,7 @@
   "species": [
     { "speciesId": "globulerouge", "color": [0.9, 0.1, 0.1] },
 	{ "speciesId": "globuleblanc", "color": [0.8, 0.5, 0.5] },
-    { "speciesId": "plaquette",    "color": [1.0, 0.7, 0.7] }
+    { "speciesId": "plaquette",    "color": [1.0, 0.7, 0.7] },
+	{ "speciesId": "arbre", "color": [0, 1.0, 0] }
   ]
 }

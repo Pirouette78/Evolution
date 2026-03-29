@@ -187,8 +187,9 @@ Shader "Evolution/TerrainOverlay"
                     if (bsw) mask |= 32;
                     if (bnw) mask |= 128;
 
-                    // If cell is part of this layer or its neighbors form a mask, draw it
-                    if (mask > 0 || c >= L) {
+                    // On ne dessine le calque QUE si cette case APPARTIENT à ce calque.
+                    // Les transitions vers le calque inférieur se font via la transparence directionnelle INCLUSE dans la tuile 7x7.
+                    if (c >= L) {
                         float2 localCoord = GetGodotImagePosition(mask);
                         float invRow = atlasRows - 1.0 - (offsets[L].y + localCoord.y);
                         float2 layerUV = float2((offsets[L].x + localCoord.x + subUV.x) / atlasCols, (invRow + subUV.y) / atlasRows);

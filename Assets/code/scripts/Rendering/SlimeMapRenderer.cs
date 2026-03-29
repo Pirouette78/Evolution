@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
 using Unity.Entities;
 
 /// <summary>
@@ -55,6 +56,8 @@ public class SlimeMapRenderer : MonoBehaviour
     public SpeciesSettings[] speciesSettings = new SpeciesSettings[MaxSlots];
     public uint[]   AliveSpeciesCounts = new uint[MaxSlots];
     public SpeciesType[] speciesTypes  = new SpeciesType[MaxSlots];
+    /// <summary>Par slot GPU : true si cette espèce bloque la marchabilité quand elle est vivante.</summary>
+    public bool[] speciesBlocksMovement = new bool[MaxSlots];
     /// <summary>ID d'espèce pour chaque slot GPU. Géré par PlayerLibrary.</summary>
     public string[] speciesIds         = new string[MaxSlots];
     /// <summary>Nombre de slots GPU actifs (configuré par PlayerLibrary).</summary>
@@ -160,6 +163,23 @@ public class SlimeMapRenderer : MonoBehaviour
         public int     cargo;        // 4 : 0=vide, 1=chargé
     } // total 40 bytes
 
+    // ── Unités bloquant la marchabilité ──────────────────────────────
+    // isRect=true → blocage rect (offX/offY/w/h en sim pixels) ; false → disque (radius)
+    private struct BlockEntry
+    {
+        public int     bufferIdx;
+        public Vector2 pos;
+        public bool    isRect;
+        public int     offX, offY, rectW, rectH; // rect
+        public int     radius;                    // disque
+    }
+    private List<BlockEntry>[] blockingRegistry;
+    private uint[] prevBlockingAliveCounts = new uint[MaxSlots];
+    private readonly Agent[] singleAgentReadback = new Agent[1];
+
+    // Dirty flag : la WalkabilityGrid a changé → texture à reconstruire en fin de frame
+    private bool walkabilityDirty = false;
+
     // ================== Unity lifecycle ============================
 
     private void Awake()
@@ -177,6 +197,11 @@ public class SlimeMapRenderer : MonoBehaviour
         interactionMatrixData      = new float[MaxSlots * MaxSlots];
         agentInteractionMatrixData = new float[MaxSlots * MaxSlots];
         DeliveryCounts         = new int[MaxSlots];
+        speciesBlocksMovement  = new bool[MaxSlots];
+        prevBlockingAliveCounts = new uint[MaxSlots];
+        blockingRegistry = new List<BlockEntry>[MaxSlots];
+        for (int i = 0; i < MaxSlots; i++)
+            blockingRegistry[i] = new List<BlockEntry>();
 
         agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*6 + sizeof(int)*4);
         // struct size (40 bytes) = 6 floats (24) + 4 ints (16)
@@ -685,6 +710,59 @@ public class SlimeMapRenderer : MonoBehaviour
             nextSpawnIndex = (nextSpawnIndex + count) % maxAgents;
         }
         agentBuffer.SetData(newAgents, 0, writePos, count);
+
+        RegisterBlockingAgents(newAgents, writePos, count);
+    }
+
+    /// <summary>
+    /// Pour chaque agent dans le tableau dont l'espèce bloque la marchabilité,
+    /// enregistre le bloc dans WalkabilityGrid + blockingRegistry + UnitSpriteRenderer.
+    /// Appelé par AddAgentsAt ET AddAgents pour ne rater aucun cas.
+    /// </summary>
+    private void RegisterBlockingAgents(Agent[] agents, int writePos, int count)
+    {
+        var terrain = TerrainMapRenderer.Instance;
+        var specLib = SpeciesLibrary.Instance;
+
+        // Scale factors: convert sim pixel coords (0..Width) → terrain grid coords (0..terrain.Width)
+        float scaleX = (terrain != null && Width > 0) ? terrain.Width  / (float)Width  : 1f;
+        float scaleY = (terrain != null && Width > 0) ? terrain.Height / (float)Height : 1f;
+
+        for (int i = 0; i < count; i++)
+        {
+            int s = agents[i].speciesIndex;
+            if (s < 0 || s >= MaxSlots || !speciesBlocksMovement[s]) continue;
+
+            Vector2 pos = agents[i].position;
+            int cx = (int)(pos.x * scaleX), cy = (int)(pos.y * scaleY);
+            var def = specLib?.Get(speciesIds[s]);
+
+            BlockEntry entry;
+            if (def != null && def.blockTilesW > 0)
+            {
+                // offsets et dimensions en pixels terrain (pas scalés : le JSON les exprime déjà en unités terrain)
+                int offX  = Mathf.RoundToInt(def.blockOffsetX);
+                int offY  = Mathf.RoundToInt(def.blockOffsetY);
+                int rectW = Mathf.Max(1, Mathf.RoundToInt(def.blockTilesW));
+                int rectH = Mathf.Max(1, Mathf.RoundToInt(def.blockTilesH));
+                entry = new BlockEntry { bufferIdx=writePos+i, pos=pos, isRect=true,
+                                         offX=offX, offY=offY, rectW=rectW, rectH=rectH };
+                terrain?.SetUnitBlockRect(cx, cy, offX, offY, rectW, rectH, true);
+            }
+            else
+            {
+                // agentRadius en pixels terrain (pas scalé)
+                int radius = (int)speciesSettings[s].agentRadius;
+                entry = new BlockEntry { bufferIdx=writePos+i, pos=pos, isRect=false, radius=radius };
+                terrain?.SetUnitBlock(cx, cy, radius, true);
+            }
+            blockingRegistry[s].Add(entry);
+
+            if (def != null && def.spriteTilesW > 0)
+                UnitSpriteRenderer.Instance?.Register(pos, def);
+
+            walkabilityDirty = true;
+        }
     }
 
     /// <summary>Append count new agents to the GPU buffer.</summary>
@@ -733,6 +811,8 @@ public class SlimeMapRenderer : MonoBehaviour
             hasVegetal = newAgents[i].speciesIndex >= 0 && newAgents[i].speciesIndex < MaxSlots
                          && speciesSettings[newAgents[i].speciesIndex].behaviorType == 6;
         if (hasVegetal) RebuildVegetalEmissionMap();
+
+        RegisterBlockingAgents(newAgents, writePos, count);
 
         Debug.Log($"[RENDERER] Added {count} agents. Total: {currentAgentCount} (writePos={writePos})");
     }
@@ -860,6 +940,15 @@ public class SlimeMapRenderer : MonoBehaviour
                 SlimeShader.Dispatch(countAliveKernel, countGroups, 1, 1);
                 speciesCountsBuffer.GetData(AliveSpeciesCounts);
 
+                // Détection de mort d'unités bloquantes
+                for (int s = 0; s < numActiveSlots; s++)
+                {
+                    if (!speciesBlocksMovement[s]) continue;
+                    if (AliveSpeciesCounts[s] < prevBlockingAliveCounts[s])
+                        HandleBlockingAgentDeaths(s);
+                    prevBlockingAliveCounts[s] = AliveSpeciesCounts[s];
+                }
+
                 // Lire et réinitialiser les compteurs de livraison GPU
                 deliveryCounterBuffer.GetData(DeliveryCounts);
                 SlimeShader.Dispatch(clearDeliveryKernel, 1, 1, 1);
@@ -890,8 +979,75 @@ public class SlimeMapRenderer : MonoBehaviour
             if (ZoomLevelController.Instance != null && ZoomLevelController.Instance.IsInTacticalMode)
                 DispatchCullAgents(ZoomLevelController.Instance.CameraSimBounds);
 
+            // ── Flush walkabilité (une seule fois par frame) ────────────────
+            if (walkabilityDirty)
+            {
+                TerrainMapRenderer.Instance?.RebuildWalkabilityTexture();
+                var walkTex = TerrainMapRenderer.Instance?.GetWalkabilityTexture();
+                if (walkTex != null)
+                {
+                    SlimeShader.SetTexture(updateKernel, "TerrainWalkabilityMap", walkTex);
+                    SlimeShader.SetTexture(seedKernel,   "TerrainWalkabilityMap", walkTex);
+                }
+                WalkabilityDebugOverlay.Instance?.MarkDirty();
+                walkabilityDirty = false;
+            }
+
         } catch (System.Exception e) {
             Debug.LogError($"[RENDERER] Update crash: {e}");
+        }
+    }
+
+    // ================== Unités bloquant la marchabilité ===========
+
+    /// <summary>
+    /// Vérifie si des agents bloquants du slot donné sont morts depuis la dernière frame
+    /// et met à jour la walkability + flow fields en conséquence.
+    /// </summary>
+    private void HandleBlockingAgentDeaths(int slot)
+    {
+        var registry = blockingRegistry[slot];
+        if (registry == null || registry.Count == 0) return;
+
+        var terrain = TerrainMapRenderer.Instance;
+        var def     = SpeciesLibrary.Instance?.Get(speciesIds[slot]);
+        bool anyRemoved = false;
+
+        for (int i = registry.Count - 1; i >= 0; i--)
+        {
+            BlockEntry entry = registry[i];
+
+            // Si l'index dépasse le buffer courant, le slot a été recyclé → traiter comme mort
+            bool dead = entry.bufferIdx >= currentAgentCount;
+            if (!dead)
+            {
+                agentBuffer.GetData(singleAgentReadback, 0, entry.bufferIdx, 1);
+                dead = singleAgentReadback[0].age < 0 || singleAgentReadback[0].speciesIndex != slot;
+            }
+
+            if (!dead) continue;
+
+            // Débloquer les cellules
+            float scaleX = (terrain != null && Width > 0) ? terrain.Width  / (float)Width  : 1f;
+            float scaleY = (terrain != null && Width > 0) ? terrain.Height / (float)Height : 1f;
+            int cx = (int)(entry.pos.x * scaleX), cy = (int)(entry.pos.y * scaleY);
+            if (entry.isRect)
+                terrain?.SetUnitBlockRect(cx, cy, entry.offX, entry.offY, entry.rectW, entry.rectH, false);
+            else
+                terrain?.SetUnitBlock(cx, cy, entry.radius, false);
+
+            // Notifier le rendu de sprites
+            if (def != null && def.spriteTilesW > 0)
+                UnitSpriteRenderer.Instance?.Unregister(entry.pos, def);
+
+            registry.RemoveAt(i);
+            anyRemoved = true;
+        }
+
+        if (anyRemoved)
+        {
+            walkabilityDirty = true;
+            Debug.Log($"[RENDERER] Blocking agent(s) died in slot {slot} — walkability rebuild scheduled.");
         }
     }
 

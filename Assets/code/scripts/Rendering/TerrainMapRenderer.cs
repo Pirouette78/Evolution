@@ -32,10 +32,14 @@ public class TerrainMapRenderer : MonoBehaviour
     public Color Snow         = new Color(0.95f, 0.95f, 0.97f);
 
     /// <summary>
-    /// The generated walkability grid. True = passable.
-    /// Dimensions: [Width, Height].
+    /// Grille de marchabilité combinée (terrain + unités bloquantes). True = passable.
+    /// Utilisée par Dijkstra pour les flow fields. Dimensions: [Width, Height].
     /// </summary>
     public bool[,] WalkabilityGrid { get; private set; }
+
+    // Compteur de blocage par unité par cellule (pour gérer chevauchements).
+    // Une valeur > 0 signifie qu'au moins une unité bloque cette cellule.
+    private int[,] unitBlockingGrid;
 
     /// <summary>
     /// The raw noise map values [0..1]. Dimensions: [Width, Height].
@@ -97,14 +101,70 @@ public class TerrainMapRenderer : MonoBehaviour
 
     private void BuildWalkabilityGrid()
     {
-        WalkabilityGrid = new bool[Width, Height];
+        WalkabilityGrid  = new bool[Width, Height];
+        unitBlockingGrid = new int[Width, Height];
         for (int y = 0; y < Height; y++)
-        {
             for (int x = 0; x < Width; x++)
-            {
                 WalkabilityGrid[x, y] = HeightMap[x, y] >= WaterThreshold;
-            }
+    }
+
+    /// <summary>
+    /// Marque ou démarque un disque de cellules comme bloqué par une unité statique.
+    /// N'affecte pas les cellules déjà infranchissables (eau/hors-carte).
+    /// Appeler RebuildWalkabilityTexture() après pour propager au GPU.
+    /// </summary>
+    public void SetUnitBlock(int cx, int cy, int radius, bool add)
+    {
+        if (unitBlockingGrid == null) return;
+        int delta = add ? 1 : -1;
+        for (int dy = -radius; dy <= radius; dy++)
+        for (int dx = -radius; dx <= radius; dx++)
+        {
+            if (radius > 0 && dx * dx + dy * dy > radius * radius) continue;
+            int x = cx + dx, y = cy + dy;
+            if (x < 0 || x >= Width || y < 0 || y >= Height) continue;
+            if (HeightMap[x, y] < WaterThreshold) continue; // l'eau reste l'eau
+            unitBlockingGrid[x, y] = Mathf.Max(0, unitBlockingGrid[x, y] + delta);
+            WalkabilityGrid[x, y]  = unitBlockingGrid[x, y] == 0;
         }
+    }
+
+    /// <summary>
+    /// Marque/démarque un rectangle de cellules comme bloqué par une unité statique.
+    /// cx/cy = position de l'ancre en pixels sim.
+    /// offX/offY = offset de l'angle bas-gauche du rect depuis l'ancre, en pixels sim.
+    /// w/h = dimensions du rect en pixels sim.
+    /// Appeler RebuildWalkabilityTexture() après pour propager au GPU.
+    /// </summary>
+    public void SetUnitBlockRect(int cx, int cy, int offX, int offY, int w, int h, bool add)
+    {
+        if (unitBlockingGrid == null || w <= 0 || h <= 0) return;
+        int delta  = add ? 1 : -1;
+        int startX = cx + offX;
+        int startY = cy + offY;
+        for (int y = startY; y < startY + h; y++)
+        for (int x = startX; x < startX + w; x++)
+        {
+            if (x < 0 || x >= Width || y < 0 || y >= Height) continue;
+            if (HeightMap[x, y] < WaterThreshold) continue;
+            unitBlockingGrid[x, y] = Mathf.Max(0, unitBlockingGrid[x, y] + delta);
+            WalkabilityGrid[x, y]  = unitBlockingGrid[x, y] == 0;
+        }
+    }
+
+    /// <summary>
+    /// Reconstruit la texture de walkabilité depuis WalkabilityGrid et l'envoie au GPU.
+    /// À appeler après un ou plusieurs SetUnitBlock().
+    /// </summary>
+    public void RebuildWalkabilityTexture()
+    {
+        if (walkabilityTexture == null) return;
+        Color[] walkPixels = new Color[Width * Height];
+        for (int y = 0; y < Height; y++)
+            for (int x = 0; x < Width; x++)
+                walkPixels[y * Width + x] = WalkabilityGrid[x, y] ? Color.white : Color.black;
+        walkabilityTexture.SetPixels(walkPixels);
+        walkabilityTexture.Apply();
     }
 
     private int GetTerrainType(float h)

@@ -104,6 +104,39 @@ public class SpeciesDefinition
     /// <summary>Secondes entre chaque scan de germination (C# uniquement, pas dans le GPU struct).</summary>
     public float seedInterval = 5f;
 
+    // ── Sprite visuel ─────────────────────────────────────────────────
+    /// <summary>Nom du fichier sprite dans StreamingAssets/Sprites/ (sans .png). Vide = pas de sprite.</summary>
+    public string spriteName    = "";
+    /// <summary>Largeur du sprite en tiles (0 = pas de sprite).</summary>
+    public int    spriteTilesW  = 0;
+    /// <summary>Hauteur du sprite en tiles.</summary>
+    public int    spriteTilesH  = 0;
+    /// <summary>Colonnes d'animation dans le sprite sheet (1 par défaut).</summary>
+    public int    spriteFramesW = 1;
+    /// <summary>Lignes d'animation (direction de vue) dans le sprite sheet (1 par défaut).</summary>
+    public int    spriteFramesH = 1;
+    /// <summary>Ancre horizontale : 0=gauche, 0.5=centre, 1=droite (fraction du sprite).</summary>
+    public float  spriteAnchorX = 0.5f;
+    /// <summary>Ancre verticale : 0=bas, 1=haut (fraction du sprite).</summary>
+    public float  spriteAnchorY = 0f;
+
+    // ── Zone bloquante rectangulaire ───────────────────────────────────
+    /// <summary>Offset X depuis l'ancre en tiles (gauche=négatif). Utilisé si blockTilesW > 0.</summary>
+    public float  blockOffsetX  = 0f;
+    /// <summary>Offset Y depuis l'ancre en tiles (bas=0).</summary>
+    public float  blockOffsetY  = 0f;
+    /// <summary>Largeur du rectangle bloquant en tiles. 0 = utiliser agentRadius (disque).</summary>
+    public float  blockTilesW   = 0f;
+    /// <summary>Hauteur du rectangle bloquant en tiles.</summary>
+    public float  blockTilesH   = 0f;
+
+    /// <summary>
+    /// Si true, cette unité bloque la carte de déplacement (WalkabilityGrid + flow fields).
+    /// Les agents ne peuvent pas traverser les cellules occupées par ces unités.
+    /// Mis à jour dynamiquement à l'apparition/mort de l'unité. CPU uniquement — pas dans le GPU struct.
+    /// </summary>
+    public bool blocksMovement = false;
+
     // ── Conversion ───────────────────────────────────────────────────
 
     public int BehaviorTypeInt => System.Enum.TryParse<AgentBehavior>(behaviorType, true, out var b) ? (int)b : 0;

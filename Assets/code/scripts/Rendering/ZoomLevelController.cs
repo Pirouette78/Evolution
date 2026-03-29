@@ -112,11 +112,30 @@ public class ZoomLevelController : MonoBehaviour
 
         int simW = _slimeRenderer.MapWidth;
         int simH = _slimeRenderer.MapHeight;
+        
+        // Convert world bounds to sim bounds
+        float simBlX = bl.x;
+        float simBlY = bl.y;
+        float simTrX = tr.x;
+        float simTrY = tr.y;
+
+        if (_slimeRenderer.DisplayTarget != null)
+        {
+            Bounds b = _slimeRenderer.DisplayTarget.bounds;
+            // Mathf.Max(0.0001f) pour éviter la division par zero
+            float sx = Mathf.Max(0.0001f, b.size.x);
+            float sy = Mathf.Max(0.0001f, b.size.y);
+            simBlX = ((bl.x - b.min.x) / sx) * simW;
+            simBlY = ((bl.y - b.min.y) / sy) * simH;
+            simTrX = ((tr.x - b.min.x) / sx) * simW;
+            simTrY = ((tr.y - b.min.y) / sy) * simH;
+        }
+
         CameraSimBounds = new Vector4(
-            Mathf.Max(0f, bl.x),
-            Mathf.Max(0f, bl.y),
-            Mathf.Min(simW, tr.x),
-            Mathf.Min(simH, tr.y)
+            Mathf.Max(0f, simBlX),
+            Mathf.Max(0f, simBlY),
+            Mathf.Min(simW, simTrX),
+            Mathf.Min(simH, simTrY)
         );
 
         // ── Notifications aux couches ────────────────────────────────────

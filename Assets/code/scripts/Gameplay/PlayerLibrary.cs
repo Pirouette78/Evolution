@@ -106,6 +106,7 @@ public class PlayerLibrary : MonoBehaviour
             {
                 def.slotIndex = s; // calculé à l'exécution — inutile de le mettre dans le JSON
                 smr.speciesSettings[s] = def.ToSpeciesSettings();
+                smr.speciesBlocksMovement[s] = def.blocksMovement;
             }
 
             // Couleur : species JSON en priorité, player JSON en fallback
