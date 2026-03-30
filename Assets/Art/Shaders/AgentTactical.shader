@@ -3,14 +3,18 @@ Shader "Evolution/AgentTactical"
     Properties
     {
         _Color ("Main Color", Color) = (1,1,1,1)
+        _GlobalAlpha ("Global Alpha", Range(0,1)) = 1
     }
     SubShader
     {
-        Tags { "Queue"="AlphaTest" "RenderType"="TransparentCutout" "IgnoreProjector"="True" }
+        Tags { "Queue"="Transparent" "RenderType"="Transparent" "IgnoreProjector"="True" }
+        //        Tags { "Queue"="AlphaTest" "RenderType"="TransparentCutout" "IgnoreProjector"="True" }
         LOD 100
 
+        //Blend SrcAlpha OneMinusSrcAlpha
         Cull Off
         ZWrite On
+        //ZTest Always
 
         Pass
         {
@@ -39,6 +43,7 @@ Shader "Evolution/AgentTactical"
 
             UNITY_DECLARE_TEX2DARRAY(_SpriteArray);
             float4 _SpriteData[32]; // x=cols, y=rows, z=uScale, w=vScale
+            float  _GlobalAlpha;
 
             // [min.x, min.y, size.x, size.y] in WORLD SPACE of DisplayTarget
             float4 _MapWorldBounds;
@@ -82,7 +87,7 @@ Shader "Evolution/AgentTactical"
                 float2 offset   = v.vertex.xy * scale;
                 float2 finalXY  = worldPos2D + offset;
 
-                // --- Z : place agents at zBase, spread by Y for Y-sorting ----------
+                // --- Z : Y-sorting, bas de l'écran → devant (Z petit = proche caméra)
                 float normY  = (worldPos2D.y - _MapWorldBounds.y)
                              / max(0.0001, _MapWorldBounds.w);
                 float zDepth = _MapSimParams.z - 1.0 + normY * 0.9;
@@ -101,6 +106,7 @@ Shader "Evolution/AgentTactical"
 
             fixed4 frag (v2f i) : SV_Target
             {
+                //return fixed4(1, 0, 1, 1); // DEBUG magenta
                 int   spIndex   = (int)round(i.agentData.x);
                 float angle     = i.agentData.y;
                 float timeOffset = i.agentData.z;
@@ -144,7 +150,8 @@ Shader "Evolution/AgentTactical"
 
                 fixed4 c = UNITY_SAMPLE_TEX2DARRAY(_SpriteArray, float3(uv.x, uv.y, spIndex));
 
-                clip(c.a - 0.1);
+                //c.a *= _GlobalAlpha;
+                clip(c.a - 0.01);
                 return c;
             }
             ENDCG

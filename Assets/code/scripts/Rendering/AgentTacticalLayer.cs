@@ -69,52 +69,63 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
 
         var smr = SlimeMapRenderer.Instance;
         var lib = SpeciesLibrary.Instance;
-        if (smr == null || lib == null) return;
+        if (smr == null || lib == null)
+        {
+            Debug.LogWarning($"[AgentTacticalLayer] BuildSpriteArray: smr={smr != null}, lib={lib != null} → early exit");
+            return;
+        }
 
+        Debug.Log($"[AgentTacticalLayer] BuildSpriteArray: {smr.numActiveSlots} slots");
         for (int i = 0; i < smr.numActiveSlots; i++)
         {
             string id = smr.speciesIds[i];
             var def = lib.Get(id);
-            if (def == null) continue;
+            if (def == null) { Debug.LogWarning($"[AgentTacticalLayer] Slot {i} ({id}): def null"); continue; }
 
             // Espèces avec sprite grande-taille (arbres, bâtiments) → gérées par UnitSpriteRenderer
             if (def.spriteTilesW > 0)
             {
                 _spriteData[i] = new Vector4(0, 0, 0, 0); // cols=0 → shader clip(-1)
+                Debug.Log($"[AgentTacticalLayer] Slot {i} ({id}): tileSprite, skipped (UnitSpriteRenderer)");
                 continue;
             }
 
-            if (string.IsNullOrEmpty(def.spriteName)) continue;
+            if (string.IsNullOrEmpty(def.spriteName))
+            {
+                Debug.Log($"[AgentTacticalLayer] Slot {i} ({id}): no spriteName");
+                continue;
+            }
 
             string path = Path.Combine(Application.streamingAssetsPath, "Sprites", def.spriteName + ".png");
-            if (File.Exists(path))
+            if (!File.Exists(path))
             {
-                byte[] bytes = File.ReadAllBytes(path);
-                Texture2D tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
-                tex.LoadImage(bytes);
-
-                // Copy texture to array slice (bottom-left aligned)
-                Color32[] pixels = tex.GetPixels32();
-                // We need to place it in the bottom-left of the 1024x1024 slice
-                Color32[] slicePixels = new Color32[size * size];
-                int w = Mathf.Min(tex.width, size);
-                int h = Mathf.Min(tex.height, size);
-                
-                for (int y = 0; y < h; y++)
-                {
-                    for (int x = 0; x < w; x++)
-                    {
-                        slicePixels[y * size + x] = pixels[y * tex.width + x];
-                    }
-                }
-                _spriteArray.SetPixels32(slicePixels, i);
-
-                int cols = Mathf.Max(1, def.spriteFramesW);
-                int rows = Mathf.Max(1, def.spriteFramesH);
-                _spriteData[i] = new Vector4(cols, rows, w / (float)size, h / (float)size);
-
-                Destroy(tex);
+                Debug.LogWarning($"[AgentTacticalLayer] Slot {i} ({id}): FILE NOT FOUND: {path}");
+                continue;
             }
+
+            byte[] bytes = File.ReadAllBytes(path);
+            Texture2D tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            tex.LoadImage(bytes);
+
+            // Copy texture to array slice (bottom-left aligned)
+            Color32[] pixels = tex.GetPixels32();
+            Color32[] slicePixels = new Color32[size * size];
+            int w = Mathf.Min(tex.width, size);
+            int h = Mathf.Min(tex.height, size);
+
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                    slicePixels[y * size + x] = pixels[y * tex.width + x];
+
+            _spriteArray.SetPixels32(slicePixels, i);
+
+            int cols = Mathf.Max(1, def.spriteFramesW);
+            int rows = Mathf.Max(1, def.spriteFramesH);
+            _spriteData[i] = new Vector4(cols, rows, w / (float)size, h / (float)size);
+
+            Debug.Log($"[AgentTacticalLayer] Slot {i} ({id}): loaded {def.spriteName} {tex.width}x{tex.height}px → cols={cols} rows={rows} uScale={w/(float)size:F3} vScale={h/(float)size:F3}");
+
+            Destroy(tex);
         }
 
         _spriteArray.Apply();
@@ -126,15 +137,36 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
         BuildSpriteArray();
     }
 
+    private float _camBoundsLogTimer = 0f;
     public void OnCameraBoundsChanged(Vector4 cameraBounds)
     {
         var renderer = SlimeMapRenderer.Instance;
-        if (renderer == null) return;
+        if (renderer == null) { Debug.LogWarning("[AgentTacticalLayer] OnCameraBoundsChanged: renderer null"); return; }
 
-        if (renderer.VisibleArgsBuffer == null || renderer.VisibleAgentIdsBuffer == null) return;
-        if (agentMesh == null || agentMaterial == null) return;
+        if (renderer.VisibleArgsBuffer == null || renderer.VisibleAgentIdsBuffer == null)
+        {
+            Debug.LogWarning($"[AgentTacticalLayer] OnCameraBoundsChanged: argsBuffer={renderer.VisibleArgsBuffer != null} idsBuffer={renderer.VisibleAgentIdsBuffer != null}");
+            return;
+        }
+        if (agentMesh == null || agentMaterial == null)
+        {
+            Debug.LogWarning($"[AgentTacticalLayer] OnCameraBoundsChanged: mesh={agentMesh != null} mat={agentMaterial != null}");
+            return;
+        }
 
         // Assigner les buffers et textures au MaterialPropertyBlock
+        float spriteAlpha = ZoomLevelController.Instance != null ? ZoomLevelController.Instance.SpriteAlpha : 1f;
+        _mpb.SetFloat("_GlobalAlpha", spriteAlpha);
+
+        _camBoundsLogTimer += Time.deltaTime;
+        if (_camBoundsLogTimer >= 2f)
+        {
+            _camBoundsLogTimer = 0f;
+            uint[] args = new uint[5];
+            renderer.VisibleArgsBuffer.GetData(args);
+            Debug.Log($"[AgentTacticalLayer] Draw: alpha={spriteAlpha:F2} instances={args[1]} spriteArray={_spriteArray != null} mesh={agentMesh != null} mat={agentMaterial != null} spriteData[1]={_spriteData[1]}");
+        }
+
         _mpb.SetBuffer("_VisibleAgentIds", renderer.VisibleAgentIdsBuffer);
         _mpb.SetBuffer("_AgentBuffer", renderer.AgentBuffer);
         

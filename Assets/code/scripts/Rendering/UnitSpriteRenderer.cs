@@ -36,6 +36,7 @@ public class UnitSpriteRenderer : MonoBehaviour
     private readonly Dictionary<string, List<SpriteEntry>> entries = new Dictionary<string, List<SpriteEntry>>();
 
     private Mesh quadMesh;
+    private MaterialPropertyBlock _mpb;
 
     // ── Unity lifecycle ─────────────────────────────────────────────
 
@@ -44,6 +45,7 @@ public class UnitSpriteRenderer : MonoBehaviour
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
         quadMesh = CreateQuad();
+        _mpb = new MaterialPropertyBlock();
     }
 
     /// <summary>
@@ -120,8 +122,9 @@ public class UnitSpriteRenderer : MonoBehaviour
             }
         }
 
-        if (ZoomLevelController.Instance == null || !ZoomLevelController.Instance.IsSpritesVisible)
-            return;
+        float spriteAlpha = ZoomLevelController.Instance != null ? ZoomLevelController.Instance.SpriteAlpha : 0f;
+        if (spriteAlpha <= 0f) return;
+        _mpb.SetColor("_Color", new Color(1f, 1f, 1f, spriteAlpha));
 
         Bounds b    = smr.DisplayTarget.bounds;
         float  mapW = smr.Width;
@@ -160,8 +163,7 @@ public class UnitSpriteRenderer : MonoBehaviour
                 float wx = b.min.x + (csxT / terrW) * b.size.x;
                 float wy = b.min.y + (csyT / terrH) * b.size.y;
 
-                // Y-Sorting : même formule que AgentTactical.shader
-                // Bas de l'écran (anchorWorldY petit) → Z petit → plus proche de la caméra
+                // Y-Sorting : bas de l'écran (anchorWorldY petit) → Z petit → devant
                 float normY = Mathf.Clamp01((anchorWorldY - b.min.y) / Mathf.Max(0.0001f, b.size.y));
                 float sz    = (zBase - 1.0f) + normY * 0.9f;
 
@@ -174,7 +176,7 @@ public class UnitSpriteRenderer : MonoBehaviour
                     Quaternion.identity,
                     new Vector3(scaleX, scaleY, 1f));
 
-                Graphics.DrawMesh(quadMesh, matrix, mat, 0);
+                Graphics.DrawMesh(quadMesh, matrix, mat, 0, null, 0, _mpb);
             }
         }
     }
