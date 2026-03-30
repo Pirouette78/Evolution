@@ -119,6 +119,10 @@ public class SpeciesDefinition
     public float  spriteAnchorX = 0.5f;
     /// <summary>Ancre verticale : 0=bas, 1=haut (fraction du sprite).</summary>
     public float  spriteAnchorY = 0f;
+    /// <summary>Largeur en pixels image d'une frame du sprite (0 = toute la texture).</summary>
+    public int    spriteFramePixelW = 0;
+    /// <summary>Hauteur en pixels image d'une frame du sprite (0 = toute la texture).</summary>
+    public int    spriteFramePixelH = 0;
 
     // ── Zone bloquante rectangulaire ───────────────────────────────────
     /// <summary>Offset X depuis l'ancre en tiles (gauche=négatif). Utilisé si blockTilesW > 0.</summary>

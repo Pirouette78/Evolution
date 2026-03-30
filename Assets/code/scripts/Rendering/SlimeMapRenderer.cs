@@ -72,6 +72,7 @@ public class SlimeMapRenderer : MonoBehaviour
     private int nextSpawnIndex = 0;   // index circulaire pour réutiliser les slots morts
     private bool isInitialized = false;
     private bool initialSpawnDone = false;
+    public  bool InitialSpawnDone => initialSpawnDone;
     private int playerVisibilityMask = ~0; // all 32 slots visible by default
 
     private int updateKernel, drawKernel, diffuseKernel, clearKernel, composeKernel, clearCountsKernel, countAliveKernel, clearDeliveryKernel, clearAgentMapKernel, seedKernel;
@@ -176,6 +177,18 @@ public class SlimeMapRenderer : MonoBehaviour
     private List<BlockEntry>[] blockingRegistry;
     private uint[] prevBlockingAliveCounts = new uint[MaxSlots];
     private readonly Agent[] singleAgentReadback = new Agent[1];
+
+    /// <summary>
+    /// Retourne les positions (espace sim) de tous les agents bloquants du slot donné.
+    /// Utilisé par UnitSpriteRenderer pour reconstruire son registre au démarrage.
+    /// </summary>
+    public IEnumerable<Vector2> GetBlockingPositions(int slot)
+    {
+        if (blockingRegistry == null || slot < 0 || slot >= MaxSlots)
+            yield break;
+        foreach (var entry in blockingRegistry[slot])
+            yield return entry.pos;
+    }
 
     // Dirty flag : la WalkabilityGrid a changé → texture à reconstruire en fin de frame
     private bool walkabilityDirty = false;

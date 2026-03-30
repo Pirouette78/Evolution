@@ -75,7 +75,16 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
         {
             string id = smr.speciesIds[i];
             var def = lib.Get(id);
-            if (def == null || string.IsNullOrEmpty(def.spriteName)) continue;
+            if (def == null) continue;
+
+            // Espèces avec sprite grande-taille (arbres, bâtiments) → gérées par UnitSpriteRenderer
+            if (def.spriteTilesW > 0)
+            {
+                _spriteData[i] = new Vector4(0, 0, 0, 0); // cols=0 → shader clip(-1)
+                continue;
+            }
+
+            if (string.IsNullOrEmpty(def.spriteName)) continue;
 
             string path = Path.Combine(Application.streamingAssetsPath, "Sprites", def.spriteName + ".png");
             if (File.Exists(path))

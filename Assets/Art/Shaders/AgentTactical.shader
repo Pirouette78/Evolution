@@ -110,8 +110,11 @@ Shader "Evolution/AgentTactical"
                 float uScale = _SpriteData[spIndex].z;
                 float vScale = _SpriteData[spIndex].w;
 
+                // cols = 0 → espèce gérée par un autre renderer (ex: UnitSpriteRenderer), invisible ici
+                if (cols <= 0.0) { clip(-1); return fixed4(0,0,0,0); }
+
                 // No sprite loaded → RED circle for debug
-                if (cols < 1.0 || rows < 1.0 || uScale <= 0.0)
+                if (rows < 1.0 || uScale <= 0.0)
                 {
                     float dist = length(i.uv - float2(0.5, 0.5));
                     clip(0.5 - dist);
@@ -140,9 +143,6 @@ Shader "Evolution/AgentTactical"
                 );
 
                 fixed4 c = UNITY_SAMPLE_TEX2DARRAY(_SpriteArray, float3(uv.x, uv.y, spIndex));
-
-                // Transparent → BLUE for debug
-                if (c.a < 0.1) return fixed4(0, 0, 1, 1);
 
                 clip(c.a - 0.1);
                 return c;

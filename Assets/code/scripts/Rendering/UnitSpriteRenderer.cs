@@ -1,5 +1,7 @@
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEngine;
 
 /// <summary>
@@ -44,15 +46,85 @@ public class UnitSpriteRenderer : MonoBehaviour
         quadMesh = CreateQuad();
     }
 
+    /// <summary>
+    /// Re-scanne les agents bloquants déjà présents dans le buffer GPU,
+    /// au cas où ils auraient été spawnés avant que Instance soit créé.
+    /// </summary>
+    /// <summary>
+    /// Attend la fin du spawn initial de SlimeMapRenderer, puis re-scanne
+    /// tous les agents bloquants avec sprite pour les enregistrer.
+    /// Nécessaire car le spawn se fait en coroutine et peut dépasser Start().
+    /// </summary>
+    private IEnumerator Start()
+    {
+        // Attendre que SlimeMapRenderer ait fini son spawn initial
+        while (SlimeMapRenderer.Instance == null || !SlimeMapRenderer.Instance.InitialSpawnDone)
+            yield return null;
+        yield return null; // une frame supplémentaire pour que RegisterBlockingAgents finisse
+
+        var smr = SlimeMapRenderer.Instance;
+        var lib = SpeciesLibrary.Instance;
+        if (smr == null || lib == null) yield break;
+
+        int total = 0;
+        for (int s = 0; s < smr.numActiveSlots; s++)
+        {
+            if (!smr.speciesBlocksMovement[s]) continue;
+            var def = lib.Get(smr.speciesIds[s]);
+            if (def == null || def.spriteTilesW <= 0) continue;
+
+            foreach (Vector2 pos in smr.GetBlockingPositions(s))
+            {
+                Register(pos, def);
+                total++;
+            }
+        }
+        Debug.Log($"[UnitSpriteRenderer] Re-scanné {total} agent(s) bloquants avec sprite.");
+    }
+
+    private float _dbgTimer;
     private void LateUpdate()
     {
         var smr = SlimeMapRenderer.Instance;
         if (smr == null || smr.DisplayTarget == null || quadMesh == null) return;
 
+        _dbgTimer += Time.deltaTime;
+        if (_dbgTimer >= 3f)
+        {
+            _dbgTimer = 0f;
+            int total = 0;
+            foreach (var kv in entries) total += kv.Value.Count;
+            var terrain2 = TerrainMapRenderer.Instance;
+            float tw = terrain2 != null ? terrain2.Width  : smr.Width;
+            float th = terrain2 != null ? terrain2.Height : smr.Height;
+            Bounds b2 = smr.DisplayTarget.bounds;
+            // Log first entry
+            foreach (var kv in entries)
+            {
+                if (!materials.TryGetValue(kv.Key, out var m2) || m2 == null) break;
+                if (kv.Value.Count == 0) break;
+                var e0 = kv.Value[0];
+                int tcx0 = (int)(e0.pos.x * tw / smr.Width);
+                int tcy0 = (int)(e0.pos.y * th / smr.Height);
+                float wx0 = b2.min.x + ((tcx0 + (0.5f - e0.def.spriteAnchorX)*e0.def.spriteTilesW) / tw) * b2.size.x;
+                float wy0 = b2.min.y + ((tcy0 + (0.5f - e0.def.spriteAnchorY)*e0.def.spriteTilesH) / th) * b2.size.y;
+                float sx0 = e0.def.spriteTilesW * b2.size.x / tw;
+                float sy0 = e0.def.spriteTilesH * b2.size.y / th;
+                float sz0 = b2.center.z - 0.1f;
+                Debug.Log($"[USR] entries={total} pos0=({wx0:F1},{wy0:F1},{sz0:F2}) scale=({sx0:F1},{sy0:F1}) bounds={b2.min}..{b2.max} mapW={smr.Width} terrW={tw}");
+                break;
+            }
+        }
+
         Bounds b    = smr.DisplayTarget.bounds;
         float  mapW = smr.Width;
         float  mapH = smr.Height;
-        float  sz   = b.center.z - 0.1f; // légèrement devant le quad slime map
+        float  zBase = b.center.z; // Z de référence de la carte
+
+        // Résolution de la grille terrain (même snap entier que le système de blocage)
+        var   terrain = TerrainMapRenderer.Instance;
+        float terrW   = terrain != null ? terrain.Width  : mapW;
+        float terrH   = terrain != null ? terrain.Height : mapH;
 
         foreach (var kv in entries)
         {
@@ -62,17 +134,33 @@ public class UnitSpriteRenderer : MonoBehaviour
             {
                 SpeciesDefinition def = e.def;
 
-                // Centre du sprite en pixels sim (en tenant compte de l'ancre)
-                float csx = e.pos.x + (0.5f - def.spriteAnchorX) * def.spriteTilesW;
-                float csy = e.pos.y + (0.5f - def.spriteAnchorY) * def.spriteTilesH;
+                // Position d'ancre en pixels terrain (entiers, identique au blocage)
+                int   tcx   = (int)(e.pos.x * terrW / mapW);
+                int   tcy   = (int)(e.pos.y * terrH / mapH);
 
-                // Conversion pixels sim → coordonnées monde
-                float wx = b.min.x + (csx / mapW) * b.size.x;
-                float wy = b.min.y + (csy / mapH) * b.size.y;
+                // spriteTilesW/H = dimensions en pixels terrain (échelle 1:1 avec la grille terrain)
+                float stW   = def.spriteTilesW;
+                float stH   = def.spriteTilesH;
 
-                // Taille monde = tiles × (taille monde par pixel sim)
-                float scaleX = def.spriteTilesW * b.size.x / mapW;
-                float scaleY = def.spriteTilesH * b.size.y / mapH;
+                // L'ancre Y bas (spriteAnchorY) représente le pied de l'objet → c'est ce Y qu'on utilise pour le sorting
+                float anchorWorldY = b.min.y + (tcy / terrH) * b.size.y;
+
+                // Centre du sprite en pixels terrain (ancre appliquée)
+                float csxT  = tcx + (0.5f - def.spriteAnchorX) * stW;
+                float csyT  = tcy + (0.5f - def.spriteAnchorY) * stH;
+
+                // Conversion pixels terrain → coordonnées monde
+                float wx = b.min.x + (csxT / terrW) * b.size.x;
+                float wy = b.min.y + (csyT / terrH) * b.size.y;
+
+                // Y-Sorting : même formule que AgentTactical.shader
+                // Bas de l'écran (anchorWorldY petit) → Z petit → plus proche de la caméra
+                float normY = Mathf.Clamp01((anchorWorldY - b.min.y) / Mathf.Max(0.0001f, b.size.y));
+                float sz    = (zBase - 1.0f) + normY * 0.9f;
+
+                // Taille monde
+                float scaleX = stW * b.size.x / terrW;
+                float scaleY = stH * b.size.y / terrH;
 
                 Matrix4x4 matrix = Matrix4x4.TRS(
                     new Vector3(wx, wy, sz),
@@ -102,7 +190,7 @@ public class UnitSpriteRenderer : MonoBehaviour
             entries[def.spriteName] = new List<SpriteEntry>();
 
         entries[def.spriteName].Add(new SpriteEntry { pos = pos, def = def });
-        EnsureMaterial(def.spriteName);
+        EnsureMaterial(def);
     }
 
     /// <summary>Retire une unité morte du rendu.</summary>
@@ -115,8 +203,9 @@ public class UnitSpriteRenderer : MonoBehaviour
 
     // ── Chargement texture ───────────────────────────────────────────
 
-    private void EnsureMaterial(string spriteName)
+    private void EnsureMaterial(SpeciesDefinition def)
     {
+        string spriteName = def.spriteName;
         if (materials.ContainsKey(spriteName)) return;
 
         string path = Path.Combine(Application.streamingAssetsPath, "Sprites", spriteName + ".png");
@@ -133,14 +222,57 @@ public class UnitSpriteRenderer : MonoBehaviour
             filterMode = FilterMode.Point,
             wrapMode   = TextureWrapMode.Clamp
         };
-        tex.LoadImage(bytes); // redimensionne automatiquement
+        tex.LoadImage(bytes);
 
-        var mat = new Material(Shader.Find("Unlit/Transparent"))
+        // Si spriteFramePixelW/H est défini, extraire la première frame en nouveaux pixels
+        Texture2D useTex = tex;
+        if (def.spriteFramePixelW > 0 && def.spriteFramePixelH > 0
+            && def.spriteFramePixelW <= tex.width && def.spriteFramePixelH <= tex.height)
         {
-            mainTexture = tex
+            int fw = def.spriteFramePixelW;
+            int fh = def.spriteFramePixelH;
+            // Unity Texture2D : y=0 en BAS → première frame PNG (haut) = srcY = tex.height - fh
+            int srcY = tex.height - fh;
+            Color32[] all    = tex.GetPixels32();
+            Color32[] cropped = new Color32[fw * fh];
+            for (int row = 0; row < fh; row++)
+            for (int col = 0; col < fw; col++)
+                cropped[row * fw + col] = all[(srcY + row) * tex.width + col];
+
+            // Color-key blanc : pixels presque-blancs et (presque-)opaques → transparent
+            // Nécessaire quand le fond du PNG est blanc opaque (même si le sprite a un alpha partiel)
+            int keyed = 0;
+            for (int i = 0; i < cropped.Length; i++)
+            {
+                Color32 px = cropped[i];
+                if (px.r > 240 && px.g > 240 && px.b > 240 && px.a > 240)
+                { cropped[i] = new Color32(0, 0, 0, 0); keyed++; }
+            }
+            if (keyed > 0)
+                Debug.Log($"[SPRITES] {spriteName} : color-key blanc appliqué à {keyed} pixels");
+
+            useTex = new Texture2D(fw, fh, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode   = TextureWrapMode.Clamp
+            };
+            useTex.SetPixels32(cropped);
+            useTex.Apply();
+            Destroy(tex);
+            Debug.Log($"[SPRITES] Chargé : {spriteName}, frame extraite {fw}×{fh}px");
+        }
+        else
+        {
+            Debug.Log($"[SPRITES] Chargé : {spriteName} ({tex.width}×{tex.height}px) texture complète");
+        }
+
+        // Evolution/UnitSprite : ZTest Always, alpha correct, Y-sorting gèré par le Z calculé
+        var mat = new Material(Shader.Find("Evolution/UnitSprite") ?? Shader.Find("Sprites/Default"))
+        {
+            mainTexture = useTex
         };
+
         materials[spriteName] = mat;
-        Debug.Log($"[SPRITES] Chargé : {spriteName} ({tex.width}×{tex.height}px)");
     }
 
     // ── Mesh quad centré (−0.5…+0.5) ────────────────────────────────

@@ -26,6 +26,8 @@
   "seedInterval": 5.0,
   "blocksMovement": true,
   "spriteName": "arbre",
+  "spriteFramePixelW": 192,
+  "spriteFramePixelH": 288,
   "spriteTilesW": 6,
   "spriteTilesH": 9,
   "spriteAnchorX": 0.5,

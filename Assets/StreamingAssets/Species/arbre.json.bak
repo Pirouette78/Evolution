@@ -26,12 +26,12 @@
   "seedInterval": 5.0,
   "blocksMovement": true,
   "spriteName": "arbre",
-  "spriteTilesW": 9,
-  "spriteTilesH": 6,
+  "spriteTilesW": 6,
+  "spriteTilesH": 9,
   "spriteAnchorX": 0.5,
-  "spriteAnchorY": 0.0,
-  "blockOffsetX": -5.0,
-  "blockOffsetY": -5.0,
-  "blockTilesW": 10.0,
-  "blockTilesH": 10.0
+  "spriteAnchorY": 0.17,
+  "blockOffsetX": -1.0,
+  "blockOffsetY": -1.0,
+  "blockTilesW": 2.0,
+  "blockTilesH": 2.0
 }

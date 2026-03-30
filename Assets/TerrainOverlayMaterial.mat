@@ -40,8 +40,8 @@ Material:
     - _TileSize: 32
     m_Colors:
     - _ForestOffset: {r: 7, g: 0, b: 0, a: 0}
-    - _GrassOffset: {r: 7, g: 0, b: 0, a: 0}
-    - _RockOffset: {r: 0, g: 0, b: 0, a: 0}
+    - _GrassOffset: {r: 14, g: 0, b: 0, a: 0}
+    - _RockOffset: {r: 14, g: 0, b: 0, a: 0}
     - _SandOffset: {r: 7, g: 0, b: 0, a: 0}
     - _SnowOffset: {r: 0, g: 0, b: 0, a: 0}
     - _Tint: {r: 1, g: 1, b: 1, a: 1}
