@@ -175,7 +175,6 @@ public class SlimeMapRenderer : MonoBehaviour
         public int     radius;                    // disque
     }
     private List<BlockEntry>[] blockingRegistry;
-    private uint[] prevBlockingAliveCounts = new uint[MaxSlots];
     private readonly Agent[] singleAgentReadback = new Agent[1];
 
     /// <summary>
@@ -211,7 +210,6 @@ public class SlimeMapRenderer : MonoBehaviour
         agentInteractionMatrixData = new float[MaxSlots * MaxSlots];
         DeliveryCounts         = new int[MaxSlots];
         speciesBlocksMovement  = new bool[MaxSlots];
-        prevBlockingAliveCounts = new uint[MaxSlots];
         blockingRegistry = new List<BlockEntry>[MaxSlots];
         for (int i = 0; i < MaxSlots; i++)
             blockingRegistry[i] = new List<BlockEntry>();
@@ -953,13 +951,16 @@ public class SlimeMapRenderer : MonoBehaviour
                 SlimeShader.Dispatch(countAliveKernel, countGroups, 1, 1);
                 speciesCountsBuffer.GetData(AliveSpeciesCounts);
 
-                // Détection de mort d'unités bloquantes
+                // Détection de mort d'unités bloquantes.
+                // Condition : registry > vivants → des morts sont présents.
+                // Robuste même si deaths et spawns arrivent dans le même step
+                // (l'ancienne condition "compteur en baisse" ratait ce cas).
                 for (int s = 0; s < numActiveSlots; s++)
                 {
                     if (!speciesBlocksMovement[s]) continue;
-                    if (AliveSpeciesCounts[s] < prevBlockingAliveCounts[s])
+                    if (blockingRegistry[s] != null &&
+                        blockingRegistry[s].Count > AliveSpeciesCounts[s])
                         HandleBlockingAgentDeaths(s);
-                    prevBlockingAliveCounts[s] = AliveSpeciesCounts[s];
                 }
 
                 // Lire et réinitialiser les compteurs de livraison GPU
@@ -1060,6 +1061,10 @@ public class SlimeMapRenderer : MonoBehaviour
         if (anyRemoved)
         {
             walkabilityDirty = true;
+            // Reconstruire le masque d'émission végétal : le disque du pollen
+            // de l'arbre mort persisterait sinon et continuerait d'émettre du trail.
+            if (speciesSettings[slot].behaviorType == 6)
+                RebuildVegetalEmissionMap();
             Debug.Log($"[RENDERER] Blocking agent(s) died in slot {slot} — walkability rebuild scheduled.");
         }
     }

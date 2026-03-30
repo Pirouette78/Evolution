@@ -66,6 +66,10 @@ public class UnitSpriteRenderer : MonoBehaviour
         var lib = SpeciesLibrary.Instance;
         if (smr == null || lib == null) yield break;
 
+        // Vider avant de re-scanner : RegisterBlockingAgents a déjà enregistré
+        // les arbres initiaux (Instance existait), donc sans ce clear ils seraient en double.
+        entries.Clear();
+
         int total = 0;
         for (int s = 0; s < smr.numActiveSlots; s++)
         {
@@ -115,6 +119,10 @@ public class UnitSpriteRenderer : MonoBehaviour
                 break;
             }
         }
+
+        // Arbres/sprites visibles uniquement en mode tactique (comme les agents)
+        if (ZoomLevelController.Instance == null || !ZoomLevelController.Instance.IsInTacticalMode)
+            return;
 
         Bounds b    = smr.DisplayTarget.bounds;
         float  mapW = smr.Width;
