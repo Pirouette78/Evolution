@@ -150,7 +150,7 @@ Shader "Evolution/AgentTactical"
 
                 fixed4 c = UNITY_SAMPLE_TEX2DARRAY(_SpriteArray, float3(uv.x, uv.y, spIndex));
 
-                //c.a *= _GlobalAlpha;
+                c.a *= _GlobalAlpha;
                 clip(c.a - 0.01);
                 return c;
             }

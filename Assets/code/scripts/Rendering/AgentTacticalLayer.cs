@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections;
 using System.IO;
 
 public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
@@ -11,30 +12,41 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
     private Texture2DArray _spriteArray;
     private Vector4[] _spriteData = new Vector4[32]; // cols, rows, uScale, vScale
 
+    // Nombre de slots pour lesquels le tableau a été construit (-1 = jamais)
+    private int _builtForSlots = -1;
+
     private void Start()
     {
         if (ZoomLevelController.Instance != null)
-        {
             ZoomLevelController.Instance.RegisterLayer(this);
-        }
 
         if (agentMesh == null) agentMesh = CreateQuad();
         if (agentMaterial == null)
         {
             Shader shader = Shader.Find("Evolution/AgentTactical");
-            if (shader != null) 
+            if (shader != null)
             {
                 agentMaterial = new Material(shader);
-                agentMaterial.enableInstancing = true; // REQUIS.
+                agentMaterial.enableInstancing = true;
             }
             else Debug.LogError("[AgentTacticalLayer] Shader Evolution/AgentTactical introuvable !");
         }
         else
         {
-            agentMaterial.enableInstancing = true; // REQUIS.
+            agentMaterial.enableInstancing = true;
         }
 
         _mpb = new MaterialPropertyBlock();
+
+        // Construction différée : attendre que SlimeMapRenderer ait fini son spawn initial
+        StartCoroutine(BuildSpriteArrayWhenReady());
+    }
+
+    private IEnumerator BuildSpriteArrayWhenReady()
+    {
+        while (SlimeMapRenderer.Instance == null || !SlimeMapRenderer.Instance.InitialSpawnDone)
+            yield return null;
+        yield return null; // une frame supplémentaire
 
         BuildSpriteArray();
     }
@@ -52,6 +64,15 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
 
     private void BuildSpriteArray()
     {
+        var smr = SlimeMapRenderer.Instance;
+        var lib = SpeciesLibrary.Instance;
+        if (smr == null || lib == null) return;
+
+        int numSlots = smr.numActiveSlots;
+
+        // Détruire l'ancienne texture avant d'en créer une nouvelle
+        if (_spriteArray != null) Destroy(_spriteArray);
+
         int size = 1024;
         _spriteArray = new Texture2DArray(size, size, SlimeMapRenderer.MaxSlots, TextureFormat.RGBA32, false)
         {
@@ -59,47 +80,31 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
             wrapMode = TextureWrapMode.Clamp
         };
 
-        // Clear to transparent
         Color32[] clearColors = new Color32[size * size];
         for (int i = 0; i < SlimeMapRenderer.MaxSlots; i++)
         {
             _spriteArray.SetPixels32(clearColors, i);
-            _spriteData[i] = new Vector4(1, 1, 0, 0); // fallback invisible
+            _spriteData[i] = new Vector4(1, 1, 0, 0); // fallback = cercle rouge debug
         }
 
-        var smr = SlimeMapRenderer.Instance;
-        var lib = SpeciesLibrary.Instance;
-        if (smr == null || lib == null)
-        {
-            Debug.LogWarning($"[AgentTacticalLayer] BuildSpriteArray: smr={smr != null}, lib={lib != null} → early exit");
-            return;
-        }
-
-        Debug.Log($"[AgentTacticalLayer] BuildSpriteArray: {smr.numActiveSlots} slots");
-        for (int i = 0; i < smr.numActiveSlots; i++)
+        for (int i = 0; i < numSlots; i++)
         {
             string id = smr.speciesIds[i];
             var def = lib.Get(id);
-            if (def == null) { Debug.LogWarning($"[AgentTacticalLayer] Slot {i} ({id}): def null"); continue; }
+            if (def == null) continue;
 
-            // Espèces avec sprite grande-taille (arbres, bâtiments) → gérées par UnitSpriteRenderer
             if (def.spriteTilesW > 0)
             {
-                _spriteData[i] = new Vector4(0, 0, 0, 0); // cols=0 → shader clip(-1)
-                Debug.Log($"[AgentTacticalLayer] Slot {i} ({id}): tileSprite, skipped (UnitSpriteRenderer)");
+                _spriteData[i] = new Vector4(0, 0, 0, 0); // géré par UnitSpriteRenderer
                 continue;
             }
 
-            if (string.IsNullOrEmpty(def.spriteName))
-            {
-                Debug.Log($"[AgentTacticalLayer] Slot {i} ({id}): no spriteName");
-                continue;
-            }
+            if (string.IsNullOrEmpty(def.spriteName)) continue;
 
             string path = Path.Combine(Application.streamingAssetsPath, "Sprites", def.spriteName + ".png");
             if (!File.Exists(path))
             {
-                Debug.LogWarning($"[AgentTacticalLayer] Slot {i} ({id}): FILE NOT FOUND: {path}");
+                Debug.LogWarning($"[AgentTacticalLayer] Sprite introuvable : {path}");
                 continue;
             }
 
@@ -107,7 +112,6 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
             Texture2D tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
             tex.LoadImage(bytes);
 
-            // Copy texture to array slice (bottom-left aligned)
             Color32[] pixels = tex.GetPixels32();
             Color32[] slicePixels = new Color32[size * size];
             int w = Mathf.Min(tex.width, size);
@@ -123,71 +127,52 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
             int rows = Mathf.Max(1, def.spriteFramesH);
             _spriteData[i] = new Vector4(cols, rows, w / (float)size, h / (float)size);
 
-            Debug.Log($"[AgentTacticalLayer] Slot {i} ({id}): loaded {def.spriteName} {tex.width}x{tex.height}px → cols={cols} rows={rows} uScale={w/(float)size:F3} vScale={h/(float)size:F3}");
-
+            Debug.Log($"[AgentTacticalLayer] Slot {i} ({id}): {def.spriteName} {tex.width}x{tex.height}px cols={cols} rows={rows}");
             Destroy(tex);
         }
 
         _spriteArray.Apply();
+        _builtForSlots = numSlots;
+        Debug.Log($"[AgentTacticalLayer] SpriteArray construit pour {numSlots} slots.");
     }
 
     public void OnEnterTactical(Vector4 cameraBounds)
     {
-        // Re-check sprites in case species changed
-        BuildSpriteArray();
+        // Ne rebuilder que si les espèces ont changé depuis la dernière construction
+        var smr = SlimeMapRenderer.Instance;
+        if (smr != null && smr.numActiveSlots != _builtForSlots)
+            BuildSpriteArray();
     }
 
-    private float _camBoundsLogTimer = 0f;
     public void OnCameraBoundsChanged(Vector4 cameraBounds)
     {
         var renderer = SlimeMapRenderer.Instance;
-        if (renderer == null) { Debug.LogWarning("[AgentTacticalLayer] OnCameraBoundsChanged: renderer null"); return; }
+        if (renderer == null) return;
+        if (renderer.VisibleArgsBuffer == null || renderer.VisibleAgentIdsBuffer == null) return;
+        if (agentMesh == null || agentMaterial == null) return;
 
-        if (renderer.VisibleArgsBuffer == null || renderer.VisibleAgentIdsBuffer == null)
-        {
-            Debug.LogWarning($"[AgentTacticalLayer] OnCameraBoundsChanged: argsBuffer={renderer.VisibleArgsBuffer != null} idsBuffer={renderer.VisibleAgentIdsBuffer != null}");
-            return;
-        }
-        if (agentMesh == null || agentMaterial == null)
-        {
-            Debug.LogWarning($"[AgentTacticalLayer] OnCameraBoundsChanged: mesh={agentMesh != null} mat={agentMaterial != null}");
-            return;
-        }
-
-        // Assigner les buffers et textures au MaterialPropertyBlock
         float spriteAlpha = ZoomLevelController.Instance != null ? ZoomLevelController.Instance.SpriteAlpha : 1f;
         _mpb.SetFloat("_GlobalAlpha", spriteAlpha);
 
-        _camBoundsLogTimer += Time.deltaTime;
-        if (_camBoundsLogTimer >= 2f)
-        {
-            _camBoundsLogTimer = 0f;
-            uint[] args = new uint[5];
-            renderer.VisibleArgsBuffer.GetData(args);
-            Debug.Log($"[AgentTacticalLayer] Draw: alpha={spriteAlpha:F2} instances={args[1]} spriteArray={_spriteArray != null} mesh={agentMesh != null} mat={agentMaterial != null} spriteData[1]={_spriteData[1]}");
-        }
-
         _mpb.SetBuffer("_VisibleAgentIds", renderer.VisibleAgentIdsBuffer);
         _mpb.SetBuffer("_AgentBuffer", renderer.AgentBuffer);
-        
+
         if (_spriteArray != null)
         {
             _mpb.SetTexture("_SpriteArray", _spriteArray);
             _mpb.SetVectorArray("_SpriteData", _spriteData);
         }
 
-        // Paramètres pour convertir a.position (0..1024) vers coords monde du Quad (DisplayTarget)
-        Bounds drawBounds = new Bounds();
+        Bounds drawBounds;
         if (renderer.DisplayTarget != null)
         {
             Bounds db = renderer.DisplayTarget.bounds;
-            // On s'assure que db a de l'épaisseur pour ne pas qu'Unity culle la geometry plate
-            db.Expand(new Vector3(500f, 500f, 1000f)); 
-            drawBounds = db; // Unity world bounds for culling
-            
+            db.Expand(new Vector3(500f, 500f, 1000f));
+            drawBounds = db;
+
             Bounds org = renderer.DisplayTarget.bounds;
             _mpb.SetVector("_MapWorldBounds", new Vector4(org.min.x, org.min.y, org.size.x, org.size.y));
-            _mpb.SetVector("_MapSimParams", new Vector4(renderer.Width, renderer.Height, org.center.z - 0.2f, 0));
+            _mpb.SetVector("_MapSimParams", new Vector4(renderer.Width, renderer.Height, org.center.z, 0));
         }
         else
         {
@@ -198,55 +183,16 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
             _mpb.SetVector("_MapSimParams", new Vector4(mw, mh, 0, 0));
         }
 
-        Graphics.DrawMeshInstancedIndirect(
-            agentMesh,
-            0,
-            agentMaterial,
-            drawBounds,
-            renderer.VisibleArgsBuffer,
-            0,
-            _mpb
-        );
+        Graphics.DrawMeshInstancedIndirect(agentMesh, 0, agentMaterial, drawBounds,
+            renderer.VisibleArgsBuffer, 0, _mpb);
     }
 
-    public void OnExitTactical()
-    {
-        // Appelé quand le zoom recule
-    }
-    
-    private float _debugTimer = 0f;
-    private uint[] _debugArgs = new uint[5];
-    private void Update()
-    {
-        if (ZoomLevelController.Instance != null && ZoomLevelController.Instance.IsInTacticalMode)
-        {
-            _debugTimer += Time.deltaTime;
-            if (_debugTimer >= 2f)
-            {
-                _debugTimer = 0f;
-                var smr = SlimeMapRenderer.Instance;
-                if (smr != null && smr.VisibleArgsBuffer != null)
-                {
-                    smr.VisibleArgsBuffer.GetData(_debugArgs);
-                    
-                    Vector4 simBounds = ZoomLevelController.Instance.CameraSimBounds;
-                    Bounds db = smr.DisplayTarget != null ? smr.DisplayTarget.bounds : new Bounds();
-                    
-                    Debug.Log($"[AgentTacticalLayer] Args: {_debugArgs[1]} agents. " +
-                              $"CamSim={simBounds}. " + 
-                              $"DisplayBounds: Min={db.min}, Max={db.max}. " +
-                              $"MapW={smr.Width}, MapH={smr.Height}");
-                }
-            }
-        }
-    }
+    public void OnExitTactical() { }
 
     private void OnDestroy()
     {
         if (ZoomLevelController.Instance != null)
-        {
             ZoomLevelController.Instance.UnregisterLayer(this);
-        }
         if (_spriteArray != null) Destroy(_spriteArray);
     }
 }
