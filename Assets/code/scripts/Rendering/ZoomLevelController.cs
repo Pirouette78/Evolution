@@ -23,6 +23,8 @@ public class ZoomLevelController : MonoBehaviour
     public float StrategicThreshold = 80f;
     [Tooltip("En-dessous : mode tactique actif, sprites d'agents autorisés.")]
     public float TacticalThreshold = 30f;
+    [Tooltip("En-dessous : sprites d'unités (arbres, agents) affichés.")]
+    public float SpriteThreshold = 20f;
 
     // ── Références ────────────────────────────────────────────────────────
     [Header("Materials")]
@@ -38,12 +40,14 @@ public class ZoomLevelController : MonoBehaviour
     public float TerrainAlpha  { get; private set; }
     /// <summary>True quand OrthoSize < TacticalThreshold.</summary>
     public bool  IsInTacticalMode { get; private set; }
+    /// <summary>True quand OrthoSize < SpriteThreshold.</summary>
+    public bool  IsSpritesVisible { get; private set; }
     /// <summary>Bounds caméra en espace simulation (0-512). (minX, minY, maxX, maxY).</summary>
     public Vector4 CameraSimBounds { get; private set; }
 
     // ── Couches tactiques ──────────────────────────────────────────────────
     private readonly List<ITacticalLayer> _layers = new();
-    private bool _wasInTacticalMode;
+    private bool _wasSpritesVisible;
 
     // ── Privé ─────────────────────────────────────────────────────────────
     private Camera _cam;
@@ -96,6 +100,7 @@ public class ZoomLevelController : MonoBehaviour
         SlimeAlpha   = 1f - TacticalBlend;
         TerrainAlpha = TacticalBlend;
         IsInTacticalMode = ortho < TacticalThreshold;
+        IsSpritesVisible = ortho < SpriteThreshold;
 
         // ── Shader uniform slimeDisplayAlpha ────────────────────────────
         // Set avant que SlimeMapRenderer dispatche ComposeDisplay (grâce à DefaultExecutionOrder -10)
@@ -139,17 +144,17 @@ public class ZoomLevelController : MonoBehaviour
         );
 
         // ── Notifications aux couches ────────────────────────────────────
-        bool enteringTactical = IsInTacticalMode && !_wasInTacticalMode;
-        bool exitingTactical  = !IsInTacticalMode && _wasInTacticalMode;
+        bool enteringSprites = IsSpritesVisible && !_wasSpritesVisible;
+        bool exitingSprites  = !IsSpritesVisible && _wasSpritesVisible;
 
-        if (enteringTactical)
+        if (enteringSprites)
             foreach (var l in _layers) l.OnEnterTactical(CameraSimBounds);
-        else if (exitingTactical)
+        else if (exitingSprites)
             foreach (var l in _layers) l.OnExitTactical();
-        else if (IsInTacticalMode)
+        else if (IsSpritesVisible)
             foreach (var l in _layers) l.OnCameraBoundsChanged(CameraSimBounds);
 
-        _wasInTacticalMode = IsInTacticalMode;
+        _wasSpritesVisible = IsSpritesVisible;
     }
 
     private void OnDestroy()

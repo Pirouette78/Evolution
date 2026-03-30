@@ -130,7 +130,7 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
     {
         var renderer = SlimeMapRenderer.Instance;
         if (renderer == null) return;
-        
+
         if (renderer.VisibleArgsBuffer == null || renderer.VisibleAgentIdsBuffer == null) return;
         if (agentMesh == null || agentMaterial == null) return;
 

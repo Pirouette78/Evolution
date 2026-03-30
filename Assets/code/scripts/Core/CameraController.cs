@@ -9,7 +9,8 @@ using UnityEngine.InputSystem;
 public class CameraController : MonoBehaviour
 {
     [Header("Zoom")]
-    public float ZoomSpeed = 500f;
+    [Tooltip("Facteur multiplicatif par cran de molette (ex: 1.15 = +15% par cran). Zoom logarithmique.")]
+    public float ZoomFactor = 1.15f;
     public float MinOrthoSize = 10f;
     public float MaxOrthoSize = 300f;
 
@@ -62,9 +63,10 @@ public class CameraController : MonoBehaviour
         float scroll = mouse.scroll.ReadValue().y;
         if (Mathf.Abs(scroll) < 0.01f) return;
 
-        // scroll is typically ±120 per notch, normalise
-        float delta = (scroll / 120f) * 5f; // Multiplie par 5 pour un zoom plus rapide
-        float newSize = cam.orthographicSize - delta * ZoomSpeed;
+        // Zoom logarithmique : chaque cran multiplie l'orthoSize par ZoomFactor.
+        // Step proportionnel au zoom courant → perception uniforme à toutes les distances.
+        float notches = scroll * 50f / 120f;
+        float newSize = cam.orthographicSize * Mathf.Pow(ZoomFactor, -notches);
         cam.orthographicSize = Mathf.Clamp(newSize, MinOrthoSize, MaxOrthoSize);
     }
 

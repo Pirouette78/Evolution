@@ -989,8 +989,8 @@ public class SlimeMapRenderer : MonoBehaviour
             // 5. Compose the final display map (utilise slimeDisplayAlpha set par ZoomLevelController)
             SlimeShader.Dispatch(composeKernel, texGroupsX, texGroupsY, 1);
 
-            // 6. Culling tactique (seulement en mode tactique, après que les agents ont été mis à jour)
-            if (ZoomLevelController.Instance != null && ZoomLevelController.Instance.IsInTacticalMode)
+            // 6. Culling tactique (dès que les sprites sont visibles, pas seulement en mode tactique)
+            if (ZoomLevelController.Instance != null && ZoomLevelController.Instance.IsSpritesVisible)
                 DispatchCullAgents(ZoomLevelController.Instance.CameraSimBounds);
 
             // ── Flush walkabilité (une seule fois par frame) ────────────────

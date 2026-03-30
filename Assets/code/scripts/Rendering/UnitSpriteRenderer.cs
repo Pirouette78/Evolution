@@ -120,8 +120,7 @@ public class UnitSpriteRenderer : MonoBehaviour
             }
         }
 
-        // Arbres/sprites visibles uniquement en mode tactique (comme les agents)
-        if (ZoomLevelController.Instance == null || !ZoomLevelController.Instance.IsInTacticalMode)
+        if (ZoomLevelController.Instance == null || !ZoomLevelController.Instance.IsSpritesVisible)
             return;
 
         Bounds b    = smr.DisplayTarget.bounds;
