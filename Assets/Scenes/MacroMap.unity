@@ -1572,8 +1572,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CameraController
   ZoomFactor: 1.15
-  MinOrthoSize: 10
-  MaxOrthoSize: 300
+  MinOrthoSize: 1
+  MaxOrthoSize: 720
   PanSpeed: 500
   EdgePanThreshold: 15
   MapMinX: 0
