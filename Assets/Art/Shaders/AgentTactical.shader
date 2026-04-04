@@ -11,7 +11,7 @@ Shader "Evolution/AgentTactical"
         //        Tags { "Queue"="AlphaTest" "RenderType"="TransparentCutout" "IgnoreProjector"="True" }
         LOD 100
 
-        //Blend SrcAlpha OneMinusSrcAlpha
+        Blend SrcAlpha OneMinusSrcAlpha
         Cull Off
         ZWrite On
         //ZTest Always

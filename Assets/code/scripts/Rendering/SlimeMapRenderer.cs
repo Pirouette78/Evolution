@@ -28,9 +28,9 @@ public class SlimeMapRenderer : MonoBehaviour
     [Header("Compute Shader (assign in Inspector)")]
     public ComputeShader SlimeShader;
 
-    [Header("Simulation Settings")]
-    public int Width = 512;
-    public int Height = 512;
+    [Header("Simulation Settings (Hérité du Terrain)")]
+    [HideInInspector] public int Width = 512;
+    [HideInInspector] public int Height = 512;
     [Range(1, 8)]       public int   StepsPerFrame     = 1;
     
     [Header("Initial Spawn")]

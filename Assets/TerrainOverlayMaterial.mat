@@ -40,7 +40,7 @@ Material:
     m_Colors:
     - _ForestOffset: {r: 7, g: 0, b: 0, a: 0}
     - _GrassOffset: {r: 14, g: 0, b: 0, a: 0}
-    - _MapSize: {r: 2560, g: 1440, b: 0, a: 0}
+    - _MapSize: {r: 512, g: 512, b: 0, a: 0}
     - _RockOffset: {r: 14, g: 0, b: 0, a: 0}
     - _SandOffset: {r: 7, g: 0, b: 0, a: 0}
     - _SnowOffset: {r: 0, g: 0, b: 0, a: 0}

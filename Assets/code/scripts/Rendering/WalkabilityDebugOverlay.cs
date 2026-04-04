@@ -44,7 +44,7 @@ public class WalkabilityDebugOverlay : MonoBehaviour
         var terrain = TerrainMapRenderer.Instance;
         if (terrain == null) return;
 
-        if (isDirty)
+        if (isDirty && Visible)
         {
             RebuildDebugTexture(terrain);
             isDirty = false;

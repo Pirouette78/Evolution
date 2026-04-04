@@ -256,6 +256,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
     bool useNavigation = (settings.behaviorType == 2);
     bool isVegetal     = (settings.behaviorType == 6);
     bool stayPut = false;
+    float currentSpeed = settings.moveSpeed;
 
     if (isVegetal)
     {
@@ -462,11 +463,12 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
                     local_density += AgentMap[int3(sx, sy, agent.speciesIndex)];
                 }
             if (local_density > settings.densityLimit)
-                density_factor = max(0.0, 1.0 - (local_density - settings.densityLimit) / settings.densityLimit);
+                density_factor = max(0.1, 1.0 - (local_density - settings.densityLimit) / settings.densityLimit);
         }
         weightForward *= density_factor;
         weightLeft    *= density_factor;
         weightRight   *= density_factor;
+        currentSpeed = settings.moveSpeed * density_factor;
 
         // ── Répulsion courte portée ───────────────────────────────────
         // Pousse l'agent à l'écart des directions encombrées (intra-espèce).
@@ -498,7 +500,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
     if (!stayPut)
     {
         float2 dir = float2(cos(agent.angle), sin(agent.angle));
-        newPos = agent.position + dir * settings.moveSpeed * deltaTime;
+        newPos = agent.position + dir * currentSpeed * deltaTime;
 
         if (newPos.x < 1 || newPos.x >= (float)width  - 1 ||
             newPos.y < 1 || newPos.y >= (float)height - 1)
@@ -560,7 +562,8 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
             {
                 float excess = (totalDensity - settings.densityLimit)
                                / max(settings.densityLimit, 0.001);
-                float speedFactor = saturate(1.0 - excess);
+                // Vitesse minimum de 10% garantie pour éviter un blocage mathématique parfait (freeze)
+                float speedFactor = max(0.1, saturate(1.0 - excess));
                 newPos = lerp(agent.position, newPos, speedFactor);
 
                 // Déblocage — stratégie escalade 3 niveaux
@@ -580,7 +583,9 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
                     else if (dRight < dLeft  - 0.001) bypassDir = -perp;
                     else    bypassDir = (id.x & 1u) ?  perp : -perp;
 
-                    float nudge = (1.0 - speedFactor) * settings.moveSpeed * deltaTime;
+                    // Embouteillage visuel : on réduit la vitesse de contournement mais on la garde assez
+                    // forte (30%) pour éviter les blocages totaux
+                    float nudge = (1.0 - speedFactor) * settings.moveSpeed * deltaTime * 0.30;
 
                     // Niveau 1 : bypass latéral (côté moins dense)
                     float2 nudged = newPos + bypassDir * nudge;
@@ -594,8 +599,9 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
                         bool level2 = false;
                         if (dot(repForce, repForce) > 0.0001)
                         {
+                            // Embouteillage visuel : vitesse de dégagement à 30%
                             float2 scattered = agent.position
-                                             + normalize(repForce) * settings.moveSpeed * deltaTime;
+                                             + normalize(repForce) * settings.moveSpeed * deltaTime * 0.30;
                             level2 = (scattered.x >= 1 && scattered.x < (float)width  - 1 &&
                                       scattered.y >= 1 && scattered.y < (float)height - 1 &&
                                       (useTerrainCollision == 0 || isWalkable(scattered)));

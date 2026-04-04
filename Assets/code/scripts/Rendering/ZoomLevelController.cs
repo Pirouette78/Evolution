@@ -91,10 +91,8 @@ public class ZoomLevelController : MonoBehaviour
         SlimeAlpha   = 1f - TacticalBlend;   // slime disparaît en zoomant
         TerrainAlpha = TacticalBlend;          // terrain apparaît en mode tactique
 
-        // Sprites visibles dès StrategicThreshold (pas seulement en mode tactique)
-        // Fondu sur une petite zone autour du seuil stratégique pour éviter un cut brutal.
-        SpriteAlpha = Mathf.SmoothStep(0f, 1f,
-            Mathf.InverseLerp(StrategicThreshold + 5f, StrategicThreshold - 5f, ortho));
+        // Sprites visibles dès StrategicThreshold (alpha=0), et totalement opaques à TacticalThreshold (alpha=1)
+        SpriteAlpha = TacticalBlend;
 
         IsInTacticalMode = ortho < TacticalThreshold;
 
