@@ -2,8 +2,8 @@
   "id": "globuleblanc",
   "displayName": "Globule Blanc",
   "color": [0.706, 0.706, 0.706],
-  "moveSpeed": 120.0,
-  "turnSpeed": 20.0,
+  "moveSpeed": 20.0,
+  "turnSpeed": 30.0,
   "sensorAngleDeg": 30.0,
   "sensorOffsetDst": 25.0,
   "sensorSize": 2,
@@ -23,8 +23,8 @@
   "spriteName": "professor_walk_cycle_no_hat",
   "spriteFramesW": 9,
   "spriteFramesH": 4,
-  "spriteTilesW": 8,
-  "spriteTilesH": 8,
+  "spriteTilesW": 2,
+  "spriteTilesH": 2,
   "spriteAnchorX": 0.5,
   "spriteAnchorY": 0.0
 }

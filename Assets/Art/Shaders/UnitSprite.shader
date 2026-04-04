@@ -12,8 +12,8 @@ Shader "Evolution/UnitSprite"
 
         Blend SrcAlpha OneMinusSrcAlpha
         Cull Off
-        ZWrite Off
-        ZTest Always   // Toujours visible, le Y-sorting en Z gère l'ordre d'affichage
+        ZWrite On
+        ZTest LEqual   // Active le Z-Buffer pour le Y-sorting avec les agents
 
         Pass
         {
