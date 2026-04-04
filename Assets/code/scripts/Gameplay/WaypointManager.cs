@@ -1,6 +1,9 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using Unity.Jobs;
+using Unity.Collections;
+using Unity.Burst;
 
 /// <summary>
 /// Manages waypoints (Sources and Destinations) for species navigation,
@@ -62,6 +65,26 @@ public class WaypointManager : MonoBehaviour
     private Texture2DArray flowFieldTexture;
     private bool           flowFieldReady = false;
 
+    // Burst Job types and tracking
+    public struct DijkstraNode
+    {
+        public float cost;
+        public int idx;
+    }
+
+    private struct PendingFlowJob
+    {
+        public int waypointIndex;
+        public JobHandle handle;
+        public NativeArray<bool> walkable;
+        public NativeArray<float> dist;
+        public NativeArray<int> parent;
+        public NativeArray<DijkstraNode> heap;
+        public NativeArray<Vector2> outputSimSlice;
+    }
+
+    private Queue<PendingFlowJob> pendingJobs = new Queue<PendingFlowJob>();
+
     private void Awake()
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
@@ -106,6 +129,41 @@ public class WaypointManager : MonoBehaviour
         if (smr == null || !smr.IsReady) return;
 
         float dt = Time.deltaTime;
+
+        // ── Phase 0 : Update Async Flow Fields ────────────────────────────
+        bool textureApplied = false;
+        while (pendingJobs.Count > 0)
+        {
+            var pJob = pendingJobs.Peek();
+            if (pJob.handle.IsCompleted)
+            {
+                pJob.handle.Complete();
+                
+                // Zero-conversion copy on GPU side directly ! Overcomes the 0.3s freeze caused by ToArray() and Color[] conversion
+                var rawTexData = flowFieldTexture.GetPixelData<Vector2>(0, pJob.waypointIndex);
+                rawTexData.CopyFrom(pJob.outputSimSlice);
+                
+                textureApplied = true;
+
+                pJob.outputSimSlice.Dispose();
+                pJob.heap.Dispose();
+                pJob.parent.Dispose();
+                pJob.dist.Dispose();
+                pJob.walkable.Dispose();
+
+                pendingJobs.Dequeue();
+            }
+            else
+            {
+                break;
+            }
+        }
+        if (textureApplied)
+        {
+            // true=updateMipmaps (false since we don't have them), false=makeNoLongerReadable
+            flowFieldTexture.Apply(false, false);
+            flowFieldReady = true;
+        }
 
         // ── Phase A : Production locale ───────────────────────────────────
         // Les bâtiments producteurs (Poumon…) remplissent leur propre stock local.
@@ -414,7 +472,7 @@ public class WaypointManager : MonoBehaviour
         int W = SlimeMapRenderer.Instance.Width;
         int H = SlimeMapRenderer.Instance.Height;
 
-        flowFieldTexture = new Texture2DArray(W, H, SlimeMapRenderer.MaxSlots, TextureFormat.RGHalf, false)
+        flowFieldTexture = new Texture2DArray(W, H, SlimeMapRenderer.MaxSlots, TextureFormat.RGFloat, false)
         {
             filterMode = FilterMode.Point,
             wrapMode   = TextureWrapMode.Clamp
@@ -427,47 +485,73 @@ public class WaypointManager : MonoBehaviour
     private void RecomputeAllFlowFields()
     {
         int count = Mathf.Min(waypointList.Count, SlimeMapRenderer.MaxSlots);
-        for (int i = 0; i < count; i++) ComputeFlowFieldForIndex(i, applyTexture: false);
-        flowFieldTexture.Apply();
+        for (int i = 0; i < count; i++) ComputeFlowFieldForIndex(i);
+        // Do not call Apply here, texture is applied asynchronously in Update
     }
 
-    /// <summary>Compute Dijkstra flow field for a single waypoint slice.</summary>
-    private void ComputeFlowFieldForIndex(int wi, bool applyTexture = true)
+    /// <summary>Queue an async Burst job to compute Dijkstra flow field.</summary>
+    private void ComputeFlowFieldForIndex(int wi)
     {
         if (wi < 0 || wi >= waypointList.Count) return;
         var terrain = TerrainMapRenderer.Instance;
-        int terrW = terrain.Width;
-        int terrH = terrain.Height;
+        int trueTerrW = terrain.Width;
+        int trueTerrH = terrain.Height;
         int simW  = SlimeMapRenderer.Instance.Width;
         int simH  = SlimeMapRenderer.Instance.Height;
 
-        // Scale waypoint position from sim space → terrain space for Dijkstra
+        // SCALE DOWN FOR SPEED (Divise la charge CPU/Burst par 16 !)
+        int div = 4;
+        int terrW = Mathf.Max(1, trueTerrW / div);
+        int terrH = Mathf.Max(1, trueTerrH / div);
+
         Vector2 target = waypointList[wi].position;
         int tx = Mathf.Clamp((int)(target.x * terrW / (float)simW), 0, terrW - 1);
         int ty = Mathf.Clamp((int)(target.y * terrH / (float)simH), 0, terrH - 1);
 
-        Color[] terrSlice = DijkstraFlowField(terrain.WalkabilityGrid, terrW, terrH, tx, ty);
-
-        // Resize to sim dimensions if needed (nearest-neighbour — directions are unit vectors so no lerp needed)
-        Color[] simSlice;
-        if (terrW == simW && terrH == simH)
+        // Prep data for Burst
+        NativeArray<bool> walkableNative = new NativeArray<bool>(terrW * terrH, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+        bool[,] wGrid = terrain.WalkabilityGrid;
+        
+        // Flatten et sous-échantillonnage de la grille sur le Main Thread (très rapide)
+        // On check le centre de chaque bloc 4x4
+        for (int y = 0; y < terrH; y++)
         {
-            simSlice = terrSlice;
-        }
-        else
-        {
-            simSlice = new Color[simW * simH];
-            for (int sy = 0; sy < simH; sy++)
-            for (int sx = 0; sx < simW; sx++)
+            for (int x = 0; x < terrW; x++)
             {
-                int terrX = Mathf.Clamp((int)(sx * terrW / (float)simW), 0, terrW - 1);
-                int terrY = Mathf.Clamp((int)(sy * terrH / (float)simH), 0, terrH - 1);
-                simSlice[sy * simW + sx] = terrSlice[terrY * terrW + terrX];
+                // Vérifier si le centre du bloc div*div est walkable
+                int sampleX = Mathf.Clamp(x * div + div / 2, 0, trueTerrW - 1);
+                int sampleY = Mathf.Clamp(y * div + div / 2, 0, trueTerrH - 1);
+                walkableNative[y * terrW + x] = wGrid[sampleX, sampleY];
             }
         }
 
-        flowFieldTexture.SetPixels(simSlice, wi);
-        if (applyTexture) flowFieldTexture.Apply();
+        var job = new DijkstraJob
+        {
+            W = terrW,
+            H = terrH,
+            targetX = tx,
+            targetY = ty,
+            simW = simW,
+            simH = simH,
+            walkable = walkableNative,
+            dist = new NativeArray<float>(terrW * terrH, Allocator.Persistent, NativeArrayOptions.UninitializedMemory),
+            parent = new NativeArray<int>(terrW * terrH, Allocator.Persistent, NativeArrayOptions.UninitializedMemory),
+            heap = new NativeArray<DijkstraNode>(terrW * terrH, Allocator.Persistent, NativeArrayOptions.UninitializedMemory),
+            outputSimSlice = new NativeArray<Vector2>(simW * simH, Allocator.Persistent, NativeArrayOptions.UninitializedMemory)
+        };
+
+        JobHandle handle = job.Schedule();
+
+        pendingJobs.Enqueue(new PendingFlowJob
+        {
+            waypointIndex = wi,
+            handle = handle,
+            walkable = job.walkable,
+            dist = job.dist,
+            parent = job.parent,
+            heap = job.heap,
+            outputSimSlice = job.outputSimSlice
+        });
     }
 
     private void UploadToGPU()
@@ -476,99 +560,153 @@ public class WaypointManager : MonoBehaviour
         SlimeMapRenderer.Instance.SetWaypoints(waypointList.ToArray());
     }
 
-    // ── Dijkstra flow field ──────────────────────────────────────────
+    // ── Burst Dijkstra Flow Field ────────────────────────────────────
 
-    /// <summary>
-    /// Calcule le flow field Dijkstra depuis targetX/Y.
-    /// Coût cardinaux = 1.0, diagonaux = √2 — élimine le biais BFS vers les diagonales.
-    /// </summary>
-    private static Color[] DijkstraFlowField(bool[,] walkable, int W, int H, int targetX, int targetY)
+    [BurstCompile]
+    private struct DijkstraJob : IJob
     {
-        float[] dist   = new float[W * H];
-        int[]   parent = new int[W * H];
-        for (int i = 0; i < dist.Length; i++) { dist[i] = float.MaxValue; parent[i] = -1; }
+        public int W;
+        public int H;
+        public int targetX;
+        public int targetY;
+        public int simW;
+        public int simH;
 
-        int targetIdx = targetY * W + targetX;
-        dist[targetIdx]   = 0f;
-        parent[targetIdx] = targetIdx;
+        [ReadOnly] public NativeArray<bool> walkable;
+        
+        // Scratchpads from main thread (prevents Temp allocation overflow)
+        public NativeArray<float> dist;
+        public NativeArray<int> parent;
+        public NativeArray<DijkstraNode> heap;
 
-        // Min-heap : (cost, cellIndex)
-        var heap = new List<(float cost, int idx)>(W * H / 4);
-        heap.Add((0f, targetIdx));
+        // Output
+        public NativeArray<Vector2> outputSimSlice;
 
-        int[]   dx    = { 1, -1,  0,  0,  1, -1,  1, -1 };
-        int[]   dy    = { 0,  0,  1, -1,  1, -1, -1,  1 };
-        float[] dcost = { 1f, 1f, 1f, 1f, 1.41421356f, 1.41421356f, 1.41421356f, 1.41421356f };
-
-        while (heap.Count > 0)
+        public void Execute()
         {
-            var (curCost, cur) = heap[0];
-            HeapPop(heap);
+            for (int i = 0; i < dist.Length; i++) { dist[i] = float.MaxValue; parent[i] = -1; }
 
-            if (curCost > dist[cur]) continue; // entrée périmée
+            int targetIdx = targetY * W + targetX;
+            dist[targetIdx] = 0f;
+            parent[targetIdx] = targetIdx;
 
-            int cx = cur % W, cy = cur / W;
-            for (int d = 0; d < 8; d++)
+            int heapCount = 1;
+            heap[0] = new DijkstraNode { cost = 0f, idx = targetIdx };
+
+            NativeArray<int> dx = new NativeArray<int>(8, Allocator.Temp);
+            dx[0] = 1; dx[1] = -1; dx[2] = 0; dx[3] = 0; dx[4] = 1; dx[5] = -1; dx[6] = 1; dx[7] = -1;
+
+            NativeArray<int> dy = new NativeArray<int>(8, Allocator.Temp);
+            dy[0] = 0; dy[1] = 0; dy[2] = 1; dy[3] = -1; dy[4] = 1; dy[5] = -1; dy[6] = -1; dy[7] = 1;
+
+            NativeArray<float> dcost = new NativeArray<float>(8, Allocator.Temp);
+            dcost[0] = 1f; dcost[1] = 1f; dcost[2] = 1f; dcost[3] = 1f; 
+            dcost[4] = 1.41421356f; dcost[5] = 1.41421356f; dcost[6] = 1.41421356f; dcost[7] = 1.41421356f;
+
+            while (heapCount > 0)
             {
-                int nx = cx + dx[d], ny = cy + dy[d];
-                if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
-                if (!walkable[nx, ny]) continue;
-                int   ni      = ny * W + nx;
-                float newCost = curCost + dcost[d];
-                if (newCost >= dist[ni]) continue;
-                dist[ni]   = newCost;
-                parent[ni] = cur;
-                HeapPush(heap, (newCost, ni));
+                var cur = heap[0];
+                heapCount--;
+                heap[0] = heap[heapCount];
+                int idx = 0;
+                while (true)
+                {
+                    int s = idx, l = 2 * idx + 1, r = 2 * idx + 2;
+                    if (l < heapCount && heap[l].cost < heap[s].cost) s = l;
+                    if (r < heapCount && heap[r].cost < heap[s].cost) s = r;
+                    if (s == idx) break;
+                    var tmp = heap[idx]; heap[idx] = heap[s]; heap[s] = tmp;
+                    idx = s;
+                }
+
+                if (cur.cost > dist[cur.idx]) continue;
+
+                int cx = cur.idx % W, cy = cur.idx / W;
+                for (int d = 0; d < 8; d++)
+                {
+                    int nx = cx + dx[d], ny = cy + dy[d];
+                    if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+                    
+                    int ni = ny * W + nx;
+                    if (!walkable[ni]) continue;
+
+                    float newCost = cur.cost + dcost[d];
+                    if (newCost >= dist[ni]) continue;
+
+                    dist[ni] = newCost;
+                    parent[ni] = cur.idx;
+
+                    var n = new DijkstraNode { cost = newCost, idx = ni };
+                    heap[heapCount] = n;
+                    int i = heapCount;
+                    heapCount++;
+                    while (i > 0)
+                    {
+                        int p = (i - 1) / 2;
+                        if (heap[p].cost <= heap[i].cost) break;
+                        var tmp = heap[p]; heap[p] = heap[i]; heap[i] = tmp;
+                        i = p;
+                    }
+                }
             }
-        }
+            
+            dx.Dispose(); dy.Dispose(); dcost.Dispose();
 
-        Color[] slice = new Color[W * H];
-        for (int y = 0; y < H; y++)
-        for (int x = 0; x < W; x++)
-        {
-            int idx = y * W + x;
-            if (parent[idx] == -1) { slice[idx] = Color.black; continue; }
-            int px = parent[idx] % W, py = parent[idx] / W;
-            if (px == x && py == y) { slice[idx] = Color.black; continue; }
-            float dirX = px - x, dirY = py - y;
-            float len  = Mathf.Sqrt(dirX * dirX + dirY * dirY);
-            slice[idx] = new Color(dirX / len, dirY / len, 0f, 0f);
-        }
-        return slice;
-    }
+            // Direct mapping to sim slice (Nearest Neighbour)
+            for (int sy = 0; sy < simH; sy++)
+            {
+                for (int sx = 0; sx < simW; sx++)
+                {
+                    int terrX = (int)(sx * (float)W / simW);
+                    if (terrX >= W) terrX = W - 1; else if (terrX < 0) terrX = 0;
+                    
+                    int terrY = (int)(sy * (float)H / simH);
+                    if (terrY >= H) terrY = H - 1; else if (terrY < 0) terrY = 0;
 
-    private static void HeapPush(List<(float, int)> heap, (float, int) item)
-    {
-        heap.Add(item);
-        int i = heap.Count - 1;
-        while (i > 0)
-        {
-            int p = (i - 1) / 2;
-            if (heap[p].Item1 <= heap[i].Item1) break;
-            (heap[p], heap[i]) = (heap[i], heap[p]);
-            i = p;
-        }
-    }
+                    int terrIdx = terrY * W + terrX;
+                    int pIdx = parent[terrIdx];
 
-    private static void HeapPop(List<(float, int)> heap)
-    {
-        int last = heap.Count - 1;
-        heap[0] = heap[last];
-        heap.RemoveAt(last);
-        int i = 0, n = heap.Count;
-        while (true)
-        {
-            int s = i, l = 2*i+1, r = 2*i+2;
-            if (l < n && heap[l].Item1 < heap[s].Item1) s = l;
-            if (r < n && heap[r].Item1 < heap[s].Item1) s = r;
-            if (s == i) break;
-            (heap[i], heap[s]) = (heap[s], heap[i]);
-            i = s;
+                    if (pIdx == -1) 
+                    { 
+                        outputSimSlice[sy * simW + sx] = Vector2.zero; 
+                    }
+                    else 
+                    {
+                        int px = pIdx % W;
+                        int py = pIdx / W;
+                        if (px == terrX && py == terrY) 
+                        {
+                            outputSimSlice[sy * simW + sx] = Vector2.zero;
+                        }
+                        else
+                        {
+                            float dirX = px - terrX, dirY = py - terrY;
+                            float len = Mathf.Sqrt(dirX * dirX + dirY * dirY);
+                            if (len == 0f)
+                                outputSimSlice[sy * simW + sx] = Vector2.zero;
+                            else
+                                outputSimSlice[sy * simW + sx] = new Vector2(dirX / len, dirY / len);
+                        }
+                    }
+                }
+            }
         }
     }
 
     private void OnDestroy()
     {
         if (flowFieldTexture != null) Destroy(flowFieldTexture);
+
+        // Abort and cleanup pending jobs so we don't leak NativeArrays
+        while (pendingJobs.Count > 0)
+        {
+            var pJob = pendingJobs.Dequeue();
+            pJob.handle.Complete();
+            pJob.outputSimSlice.Dispose();
+            pJob.heap.Dispose();
+            pJob.parent.Dispose();
+            pJob.dist.Dispose();
+            pJob.walkable.Dispose();
+        }
     }
 }

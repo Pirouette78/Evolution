@@ -9,8 +9,8 @@ public class TerrainMapRenderer : MonoBehaviour
     public static TerrainMapRenderer Instance { get; private set; }
 
     [Header("Map Dimensions")]
-    public int Width = 512;
-    public int Height = 512;
+    public int Width = 2560;
+    public int Height = 1440;
 
     [Header("Noise Settings")]
     public NoiseSettings Noise = new NoiseSettings();
