@@ -11,6 +11,7 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
     private MaterialPropertyBlock _mpb;
     private Texture2DArray _spriteArray;
     private Vector4[] _spriteData = new Vector4[32]; // cols, rows, uScale, vScale
+    private Vector4[] _spriteScaleAnchor = new Vector4[32]; // stW, stH, ancX, ancY
 
     // Nombre de slots pour lesquels le tableau a été construit (-1 = jamais)
     private int _builtForSlots = -1;
@@ -93,9 +94,10 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
             var def = lib.Get(id);
             if (def == null) continue;
 
-            if (def.spriteTilesW > 0)
+            if (def.spriteTilesW > 0 && def.blocksMovement)
             {
                 _spriteData[i] = new Vector4(0, 0, 0, 0); // géré par UnitSpriteRenderer
+                _spriteScaleAnchor[i] = new Vector4(1, 1, 0.5f, 0.5f);
                 continue;
             }
 
@@ -126,6 +128,10 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
             int cols = Mathf.Max(1, def.spriteFramesW);
             int rows = Mathf.Max(1, def.spriteFramesH);
             _spriteData[i] = new Vector4(cols, rows, w / (float)size, h / (float)size);
+
+            float stW = def.spriteTilesW > 0 ? def.spriteTilesW : 8.0f;
+            float stH = def.spriteTilesH > 0 ? def.spriteTilesH : 8.0f;
+            _spriteScaleAnchor[i] = new Vector4(stW, stH, def.spriteAnchorX, def.spriteAnchorY);
 
             Debug.Log($"[AgentTacticalLayer] Slot {i} ({id}): {def.spriteName} {tex.width}x{tex.height}px cols={cols} rows={rows}");
             Destroy(tex);
@@ -161,6 +167,7 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
         {
             _mpb.SetTexture("_SpriteArray", _spriteArray);
             _mpb.SetVectorArray("_SpriteData", _spriteData);
+            _mpb.SetVectorArray("_SpriteScaleAnchor", _spriteScaleAnchor);
         }
 
         Bounds drawBounds;

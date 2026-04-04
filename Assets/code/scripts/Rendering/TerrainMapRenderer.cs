@@ -69,6 +69,11 @@ public class TerrainMapRenderer : MonoBehaviour
 
     private void Start()
     {
+        if (DisplayTarget != null)
+        {
+            DisplayTarget.transform.localScale = new Vector3(Width, Height, 1f);
+            DisplayTarget.transform.position = new Vector3(Width / 2f, Height / 2f, DisplayTarget.transform.position.z);
+        }
         GenerateMap();
     }
 
@@ -276,6 +281,7 @@ public class TerrainMapRenderer : MonoBehaviour
         if (ZoomLevelController.Instance != null && ZoomLevelController.Instance.TerrainOverlayMaterial != null)
         {
             ZoomLevelController.Instance.TerrainOverlayMaterial.SetTexture("_MainTex", mapDataTexture);
+            ZoomLevelController.Instance.TerrainOverlayMaterial.SetVector("_MapSize", new Vector4(Width, Height, 0, 0));
         }
     }
 

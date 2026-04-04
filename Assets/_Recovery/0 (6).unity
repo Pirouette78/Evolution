@@ -152,8 +152,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SlimeMapRenderer
   SlimeShader: {fileID: 7200000, guid: 1e2bbf2f985345f4da6320ea9dcb187c, type: 3}
-  Width: 2560
-  Height: 1440
+  Width: 1024
+  Height: 1024
   StepsPerFrame: 1
   InitialAgentCount: 5000
   DisplayTarget: {fileID: 104352733}
@@ -996,8 +996,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c71fde7df3398844d8bc98c419004b68, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TerrainMapRenderer
-  Width: 2560
-  Height: 1440
+  Width: 512
+  Height: 512
   Noise:
     Scale: 50
     Octaves: 6
@@ -1070,7 +1070,7 @@ MeshCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 338005910}
-  m_Material: {fileID: 1318573155}
+  m_Material: {fileID: 0}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -1205,8 +1205,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 967141075ba4cbc4299c169d2c37b034, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ZoomLevelController
-  StrategicThreshold: 80
-  TacticalThreshold: 30
+  StrategicThreshold: 40
+  TacticalThreshold: 20
   TerrainOverlayMaterial: {fileID: 2100000, guid: 95dfc0b4f6d2a8840b98e67291d7aba0, type: 2}
 --- !u!4 &481338757
 Transform:
@@ -1223,19 +1223,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!134 &522680089
-PhysicsMaterial:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_Name: 
-  serializedVersion: 2
-  m_DynamicFriction: 0.6
-  m_StaticFriction: 0.6
-  m_Bounciness: 0
-  m_FrictionCombine: 0
-  m_BounceCombine: 0
 --- !u!1 &672226058
 GameObject:
   m_ObjectHideFlags: 0
@@ -1304,19 +1291,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!134 &1318573155
-PhysicsMaterial:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_Name: 
-  serializedVersion: 2
-  m_DynamicFriction: 0.6
-  m_StaticFriction: 0.6
-  m_Bounciness: 0
-  m_FrictionCombine: 0
-  m_BounceCombine: 0
 --- !u!1 &1730244605
 GameObject:
   m_ObjectHideFlags: 0
@@ -1392,7 +1366,7 @@ MeshCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1730244605}
-  m_Material: {fileID: 522680089}
+  m_Material: {fileID: 0}
   m_IncludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -1424,8 +1398,8 @@ Transform:
   m_GameObject: {fileID: 1730244605}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 1280, y: 720, z: -0.01}
-  m_LocalScale: {x: 2560, y: 1440, z: 1}
+  m_LocalPosition: {x: 256, y: 256, z: -0.01}
+  m_LocalScale: {x: 512, y: 512, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -1577,9 +1551,9 @@ MonoBehaviour:
   PanSpeed: 500
   EdgePanThreshold: 15
   MapMinX: 0
-  MapMaxX: 2560
+  MapMaxX: 512
   MapMinY: 0
-  MapMaxY: 1440
+  MapMaxY: 512
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

@@ -19,5 +19,12 @@
   "repulsionStrength": 3.0,
   "repulsionRadius": 5.0,
   "densityLimit": 4.0,
-   "agentRadius": 5
+  "agentRadius": 1,
+  "spriteName": "professor_walk_cycle_no_hat",
+  "spriteFramesW": 9,
+  "spriteFramesH": 4,
+  "spriteTilesW": 8,
+  "spriteTilesH": 8,
+  "spriteAnchorX": 0.5,
+  "spriteAnchorY": 0.0
 }

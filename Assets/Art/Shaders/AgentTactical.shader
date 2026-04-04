@@ -43,6 +43,7 @@ Shader "Evolution/AgentTactical"
 
             UNITY_DECLARE_TEX2DARRAY(_SpriteArray);
             float4 _SpriteData[32]; // x=cols, y=rows, z=uScale, w=vScale
+            float4 _SpriteScaleAnchor[32]; // x=w, y=h, z=ancX, w=ancY
             float  _GlobalAlpha;
 
             // [min.x, min.y, size.x, size.y] in WORLD SPACE of DisplayTarget
@@ -76,15 +77,23 @@ Shader "Evolution/AgentTactical"
                 float2 worldPos2D = _MapWorldBounds.xy
                                   + (a.position / _MapSimParams.xy) * _MapWorldBounds.zw;
 
-                // --- Scale of the quad (world units per sprite) --------------------
-                // One sprite = (worldSize / mapSize) * spritePixels
-                // We use 8-sim-pixel radius (agentRadius=1 default, x8 for visibility)
-                float pixelToWorld = max(_MapWorldBounds.z / _MapSimParams.x,
-                                         _MapWorldBounds.w / _MapSimParams.y);
-                float scale = pixelToWorld * 8.0;
+                // --- Fetch scale & anchor for this species ---
+                float4 scaleAnchor = _SpriteScaleAnchor[a.speciesIndex];
+                float stW = scaleAnchor.x;
+                float stH = scaleAnchor.y;
+                float ancX = scaleAnchor.z;
+                float ancY = scaleAnchor.w;
+                
+                // One sprite unit = pixelToWorld
+                float pixelToWorldX = _MapWorldBounds.z / _MapSimParams.x;
+                float pixelToWorldY = _MapWorldBounds.w / _MapSimParams.y;
+                
+                float scaleX = stW * pixelToWorldX;
+                float scaleY = stH * pixelToWorldY;
 
-                // Local quad vertex offset in world XY
-                float2 offset   = v.vertex.xy * scale;
+                // Local quad vertex offset with anchor applied
+                float2 uvOffset = v.vertex.xy + float2(0.5 - ancX, 0.5 - ancY);
+                float2 offset = float2(uvOffset.x * scaleX, uvOffset.y * scaleY);
                 float2 finalXY  = worldPos2D + offset;
 
                 // --- Z : Y-sorting, bas de l'écran → devant (Z petit = proche caméra)

@@ -22,5 +22,9 @@
   "agentRadius": 1,
   "spriteName": "professor_walk_cycle_no_hat",
   "spriteFramesW": 9,
-  "spriteFramesH": 4
+  "spriteFramesH": 4,
+  "spriteTilesW": 1,
+  "spriteTilesH": 1,
+  "spriteAnchorX": 0.5,
+  "spriteAnchorY": 0.0
 }

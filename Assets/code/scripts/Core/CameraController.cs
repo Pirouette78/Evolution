@@ -39,10 +39,7 @@ public class CameraController : MonoBehaviour
         cam = GetComponent<Camera>();
         if (cam == null) cam = Camera.main;
 
-        // Centre on map at startup
-        float centerX = (MapMinX + MapMaxX) * 0.5f;
-        float centerY = (MapMinY + MapMaxY) * 0.5f;
-        cam.transform.position = new Vector3(centerX, centerY, cam.transform.position.z);
+        // Removed hardcoded centering: The camera will now start exactly where it is placed in the scene.
     }
 
     private void Update()
@@ -132,8 +129,10 @@ public class CameraController : MonoBehaviour
     private void ClampPosition()
     {
         Vector3 pos = cam.transform.position;
-        pos.x = Mathf.Clamp(pos.x, MapMinX, MapMaxX);
-        pos.y = Mathf.Clamp(pos.y, MapMinY, MapMaxY);
+        float mx = TerrainMapRenderer.Instance != null ? TerrainMapRenderer.Instance.Width : MapMaxX;
+        float my = TerrainMapRenderer.Instance != null ? TerrainMapRenderer.Instance.Height : MapMaxY;
+        pos.x = Mathf.Clamp(pos.x, MapMinX, mx);
+        pos.y = Mathf.Clamp(pos.y, MapMinY, my);
         cam.transform.position = pos;
     }
 }

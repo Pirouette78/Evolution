@@ -256,6 +256,18 @@ public class SlimeMapRenderer : MonoBehaviour
 
     private void Start()
     {
+        if (TerrainMapRenderer.Instance != null)
+        {
+            Width = TerrainMapRenderer.Instance.Width;
+            Height = TerrainMapRenderer.Instance.Height;
+        }
+
+        if (DisplayTarget != null)
+        {
+            DisplayTarget.transform.localScale = new Vector3(Width, Height, 1);
+            DisplayTarget.transform.position = new Vector3(Width / 2f, Height / 2f, DisplayTarget.transform.position.z);
+        }
+
         // Try to load shader from Resources if not assigned in Inspector
         if (SlimeShader == null)
         {

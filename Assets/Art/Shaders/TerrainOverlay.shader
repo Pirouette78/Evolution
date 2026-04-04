@@ -7,7 +7,7 @@ Shader "Evolution/TerrainOverlay"
         _Alpha ("Alpha", Range(0, 1)) = 1
         _Tint ("Tint Color", Color) = (1, 1, 1, 1)
 
-        _MapSize ("Map Size (Width/Height)", Float) = 512
+        _MapSize ("Map Size (Width, Height)", Vector) = (1280, 720, 0, 0)
         _TileSize ("Tile Size (Pixels)", Float) = 32
 
         // Starting column/row for the 7x7 block of each terrain
@@ -42,7 +42,7 @@ Shader "Evolution/TerrainOverlay"
             float _Alpha;
             float4 _Tint;
 
-            float _MapSize;
+            float4 _MapSize;
             float _TileSize;
 
             float4 _WaterOffset;
@@ -154,7 +154,7 @@ Shader "Evolution/TerrainOverlay"
 
                 float atlasCols = round(_TilesetTex_TexelSize.z / _TileSize);
                 float atlasRows = round(_TilesetTex_TexelSize.w / _TileSize);
-                float2 subUV = frac(i.uv * _MapSize);
+                float2 subUV = frac(i.uv * _MapSize.xy);
 
                 // Layer 0 (Base layer) is drawn as a full solid tile.
                 // In Godot 47-blob, solid block is at (1, 4)
