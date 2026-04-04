@@ -157,17 +157,24 @@ public class WaypointOverlayRenderer : MonoBehaviour
         return Color.HSVToRGB(hue, 1f, 1f);
     }
 
-    private Vector3 MapToWorld(Vector2 pixelPos)
+    private Vector3 MapToWorld(Vector2 worldTilePos)
     {
-        var renderer = SlimeMapRenderer.Instance.DisplayTarget;
+        var smr = SlimeMapRenderer.Instance;
+        var renderer = smr.DisplayTarget;
         if (renderer == null) return Vector3.zero;
 
         Bounds b = renderer.bounds;
-        int mapW = SlimeMapRenderer.Instance.Width;
-        int mapH = SlimeMapRenderer.Instance.Height;
 
-        float wx = b.min.x + (pixelPos.x / mapW) * b.size.x;
-        float wy = b.min.y + (pixelPos.y / mapH) * b.size.y;
+        // Convertir world tile → sim pixel du chunk actif
+        var wcr = WorldChunkRegistry.Instance;
+        Vector2 chunkOrigin = wcr != null
+            ? wcr.ChunkOriginTile(wcr.ActiveChunk.x, wcr.ActiveChunk.y)
+            : Vector2.zero;
+        float ratio = smr.SimRatio;
+        Vector2 simPos = (worldTilePos - chunkOrigin) * ratio;
+
+        float wx = b.min.x + (simPos.x / smr.Width)  * b.size.x;
+        float wy = b.min.y + (simPos.y / smr.Height) * b.size.y;
         return new Vector3(wx, wy, b.center.z - 0.01f);
     }
 

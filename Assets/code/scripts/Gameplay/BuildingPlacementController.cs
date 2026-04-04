@@ -112,9 +112,11 @@ public class BuildingPlacementController : MonoBehaviour
         // Confirm: left click on a walkable map pixel
         if (mouse.leftButton.wasPressedThisFrame && currentMousePixel.HasValue && mouseIsWalkable)
         {
+            // Convertir sim pixel → world tile space avant de créer le WaypointData
+            Vector2 worldTilePos = SimPixelToWorldTile(currentMousePixel.Value);
             var wp = new WaypointData
             {
-                position     = currentMousePixel.Value,
+                position     = worldTilePos,
                 type         = pendingWaypointType,
                 speciesIndex = pendingSpeciesIndex
             };
@@ -172,6 +174,17 @@ public class BuildingPlacementController : MonoBehaviour
     }
 
     // ── Coordinate helpers ──────────────────────────────────────────
+
+    /// <summary>Convertit sim pixel space → world tile space via WorldChunkRegistry.</summary>
+    private static Vector2 SimPixelToWorldTile(Vector2 simPixel)
+    {
+        var wcr = WorldChunkRegistry.Instance;
+        if (wcr == null) return simPixel;  // pas de chunk system → position déjà utilisable
+        var smr = SlimeMapRenderer.Instance;
+        float ratio = smr != null ? smr.SimRatio : 1f;
+        Vector2 chunkOrigin = wcr.ChunkOriginTile(wcr.ActiveChunk.x, wcr.ActiveChunk.y);
+        return chunkOrigin + simPixel / ratio;
+    }
 
     private Vector2? GetMouseMapPosition(Mouse mouse, out bool walkable)
     {

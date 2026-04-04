@@ -152,8 +152,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SlimeMapRenderer
   SlimeShader: {fileID: 7200000, guid: 1e2bbf2f985345f4da6320ea9dcb187c, type: 3}
-  Width: 2048
-  Height: 2048
+  Width: 1024
+  Height: 1024
   StepsPerFrame: 1
   InitialAgentCount: 5000
   DisplayTarget: {fileID: 104352733}
@@ -1205,8 +1205,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 967141075ba4cbc4299c169d2c37b034, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ZoomLevelController
-  StrategicThreshold: 80
-  TacticalThreshold: 30
+  StrategicThreshold: 40
+  TacticalThreshold: 20
   TerrainOverlayMaterial: {fileID: 2100000, guid: 95dfc0b4f6d2a8840b98e67291d7aba0, type: 2}
 --- !u!4 &481338757
 Transform:
@@ -1545,7 +1545,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: af967105380b1bc47ac06c83803e10af, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CameraController
-  ZoomSpeed: 200
+  ZoomFactor: 1.15
   MinOrthoSize: 10
   MaxOrthoSize: 300
   PanSpeed: 500

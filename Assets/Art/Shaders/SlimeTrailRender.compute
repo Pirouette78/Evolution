@@ -12,6 +12,7 @@
 #pragma kernel RebuildVegetalDisks
 #pragma kernel ApplyVegetalEmission
 #pragma kernel CullAgents
+#pragma kernel KillAllAgents
 
 #define MAX_SLOTS 32
 
@@ -101,7 +102,14 @@ int numWaypoints;
 StructuredBuffer<float>   waypointStockIn;   // stock actuel par waypoint (CPU → GPU)
 RWStructuredBuffer<int>   deliveryCounters;  // compteur atomique de livraisons (GPU → CPU)
 
-Texture2DArray<float2> FlowFieldMap;
+Texture2DArray<float2>  FlowFieldMap;
+
+// ── Coarse flow field (Phase 2 — world-scale navigation) ─────────────────────
+Texture2DArray<float2>  CoarseFlowFieldMap;
+SamplerState            sampler_linear_clamp;   // inline sampler : bilinear + clamp
+float4 chunkWorldOrigin;    // (worldTileOriginX, worldTileOriginY, 0, 0) en terrain tiles
+float2 worldSize;           // (WorldWidth, WorldHeight) en terrain tiles
+float  simToWorldScale;     // = TerrainWidth / SimWidth (= 1/SimRatio)
 
 float deltaTime;
 float time;
@@ -211,28 +219,60 @@ float senseAgentsAt(Agent agent, float sensorAngleOffset, float dist, int kernel
     return sum;
 }
 
-// Navigate toward a waypoint using its flow field slice.
+// Navigate toward a waypoint using fine (local) + coarse (global) flow fields.
+// Fine  : FlowFieldMap     — sim pixel space, BFS sur le chunk actif.
+// Coarse: CoarseFlowFieldMap — world tile UV, BFS sur tout le monde.
+// Blend : fin pur si proche du waypoint, coarse pur si loin / waypoint hors-chunk.
 // Returns true if the agent has arrived (distance < arrivalRadius).
-// Si flowDir == (0,0) (cellule inatteignable), l'agent tourne sur lui-même
-// pour sortir de la zone par collision terrain.
 bool navigateViaFlowField(inout Agent agent, SpeciesSettings settings, int waypointIdx)
 {
-    float2 flowDir = FlowFieldMap.Load(int4((int)agent.position.x, (int)agent.position.y, waypointIdx, 0)).rg;
-    if (dot(flowDir, flowDir) > 0.0001)
+    // ── Fine flow field ──────────────────────────────────────────────────────
+    float2 fineDir = FlowFieldMap.Load(
+        int4((int)agent.position.x, (int)agent.position.y, waypointIdx, 0)).rg;
+    bool fineValid = dot(fineDir, fineDir) > 0.0001;
+
+    // ── Coarse flow field ────────────────────────────────────────────────────
+    // Convertir sim pixel → world tile → UV normalisé [0..1]
+    float2 worldTile = agent.position * simToWorldScale + chunkWorldOrigin.xy;
+    float2 coarseUV  = worldTile / worldSize;
+    float2 coarseDir = CoarseFlowFieldMap.SampleLevel(
+        sampler_linear_clamp, float3(coarseUV.x, coarseUV.y, (float)waypointIdx), 0).rg;
+    bool coarseValid = dot(coarseDir, coarseDir) > 0.0001;
+
+    // ── Blend ────────────────────────────────────────────────────────────────
+    float2 finalDir = float2(0, 0);
+    if (fineValid)
     {
-        float targetAngle = atan2(flowDir.y, flowDir.x);
-        float angleDiff   = fmod(targetAngle - agent.angle + 3.14159 * 3.0, 6.28318) - 3.14159;
-        agent.angle += clamp(angleDiff, -settings.turnSpeed * deltaTime, settings.turnSpeed * deltaTime);
+        // Distance au waypoint en espace sim (peut être hors-bounds si waypoint hors-chunk)
+        float2 toWp = waypoints[waypointIdx].position - agent.position;
+        float  dist = length(toWp);
+        // t=0 : 100% fin (< 64px), t=1 : 100% coarse (> 256px)
+        float t = saturate((dist - 64.0) / 192.0);
+        finalDir = lerp(fineDir, coarseValid ? coarseDir : fineDir, t);
+    }
+    else if (coarseValid)
+    {
+        finalDir = coarseDir;
     }
     else
     {
-        // Cellule inatteignable : rotation continue pour sortir par rebond terrain
+        // Aucun champ valide : rotation aléatoire pour s'échapper
         uint rngSpin = hash((uint)(agent.position.x * 1000.0) + (uint)(agent.position.y * 7919.0));
         float spinDir = (rngSpin & 1u) ? 1.0 : -1.0;
         agent.angle  += spinDir * settings.turnSpeed * deltaTime;
+        float2 toWp = waypoints[waypointIdx].position - agent.position;
+        return (length(toWp) < settings.arrivalRadius);
     }
-    float2 toWp = waypoints[waypointIdx].position - agent.position;
-    return (length(toWp) < settings.arrivalRadius);
+
+    if (dot(finalDir, finalDir) > 0.0001)
+    {
+        float targetAngle = atan2(finalDir.y, finalDir.x);
+        float angleDiff   = fmod(targetAngle - agent.angle + 3.14159 * 3.0, 6.28318) - 3.14159;
+        agent.angle += clamp(angleDiff, -settings.turnSpeed * deltaTime, settings.turnSpeed * deltaTime);
+    }
+
+    float2 toWpFinal = waypoints[waypointIdx].position - agent.position;
+    return (length(toWpFinal) < settings.arrivalRadius);
 }
 
 
@@ -932,4 +972,13 @@ void CullAgents(uint3 id : SV_DispatchThreadID)
 
     if (inFrustum)
         VisibleAgentIds.Append((int)id.x);
+}
+
+// ── KillAllAgents ─────────────────────────────────────────────────────────────
+// Marque tous les agents comme morts (age = -1). Utilisé lors du changement de chunk.
+[numthreads(256,1,1)]
+void KillAllAgents(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= numAgents) return;
+    agents[id.x].age = -1.0;
 }

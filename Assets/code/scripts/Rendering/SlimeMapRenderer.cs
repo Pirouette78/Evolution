@@ -13,7 +13,7 @@ public enum SpeciesType { Plante, Animal, Champignon, Insecte, Bacterie, Algue, 
 [System.Serializable]
 public struct WaypointData
 {
-    public Vector2 position;     // pixel space (0..map size)
+    public Vector2 position;     // world tile space (0..WorldWidth/Height). Projeté en sim pixel avant upload GPU.
     public int     type;         // 0 = Source, 1 = Destination
     public int     speciesIndex; // owner species slot
 }
@@ -78,6 +78,7 @@ public class SlimeMapRenderer : MonoBehaviour
     private int updateKernel, drawKernel, diffuseKernel, clearKernel, composeKernel, clearCountsKernel, countAliveKernel, clearDeliveryKernel, clearAgentMapKernel, seedKernel;
     private int clearVegEmitKernel, rebuildVegDisksKernel, applyVegEmitKernel;
     private int cullKernel = -1;
+    private int killAllKernel = -1;
 
     // ── Culling tactique (utilisé par ZoomLevelController + futures couches) ────
     /// <summary>Buffer AppendStructuredBuffer contenant les IDs des agents dans le frustum caméra.
@@ -328,6 +329,7 @@ public class SlimeMapRenderer : MonoBehaviour
         rebuildVegDisksKernel= SlimeShader.FindKernel("RebuildVegetalDisks");
         applyVegEmitKernel   = SlimeShader.FindKernel("ApplyVegetalEmission");
         cullKernel           = SlimeShader.FindKernel("CullAgents");
+        killAllKernel        = SlimeShader.FindKernel("KillAllAgents");
 
         // Initialiser slimeDisplayAlpha à 1 (pleine opacité) — ZoomLevelController le modifiera ensuite
         SlimeShader.SetFloat("slimeDisplayAlpha", 1f);
@@ -400,6 +402,14 @@ public class SlimeMapRenderer : MonoBehaviour
         flowFieldMapIsOwned = true;
         SlimeShader.SetTexture(updateKernel, "FlowFieldMap", flowFieldMap);
 
+        // Fallback coarse flow field — replaced at runtime by WaypointManager.RebuildCoarseFlowFields()
+        var coarseFallback = new Texture2DArray(1, 1, MaxSlots, TextureFormat.RGHalf, false);
+        coarseFallback.Apply();
+        SlimeShader.SetTexture(updateKernel, "CoarseFlowFieldMap", coarseFallback);
+        SlimeShader.SetVector("chunkWorldOrigin", Vector4.zero);
+        SlimeShader.SetVector("worldSize", new Vector4(4096f, 4096f, 0f, 0f));
+        SlimeShader.SetFloat("simToWorldScale", 1f);
+
         // Fallback for TerrainWalkabilityMap in case terrain isn't ready when UpdateAgents runs
         SlimeShader.SetTexture(updateKernel, "TerrainWalkabilityMap", Texture2D.whiteTexture);
         SlimeShader.SetTexture(seedKernel,   "TerrainWalkabilityMap", Texture2D.whiteTexture);
@@ -462,6 +472,16 @@ public class SlimeMapRenderer : MonoBehaviour
             SlimeShader.SetInt("useTerrainCollision", 0);
             Debug.LogWarning("[RENDERER] Walkability texture not ready — terrain collision disabled.");
         }
+    }
+
+    /// <summary>
+    /// Recache les données terrain depuis TerrainMapRenderer.Instance.
+    /// À appeler après GenerateMapForChunk() pour que le shader et le spawn utilisent le bon terrain.
+    /// </summary>
+    public void RefreshTerrainCache()
+    {
+        var terrain = TerrainMapRenderer.Instance;
+        if (terrain != null) CacheTerrainData(terrain);
     }
 
     // ================== Public API =================================
@@ -682,6 +702,60 @@ public class SlimeMapRenderer : MonoBehaviour
         flowFieldMap = tex;
         flowFieldMapIsOwned = false;
         SlimeShader.SetTexture(updateKernel, "FlowFieldMap", flowFieldMap);
+    }
+
+    /// <summary>Uploade le coarse flow field (monde entier) vers le shader.</summary>
+    public void SetCoarseFlowField(Texture2DArray tex)
+    {
+        if (tex == null) return;
+        SlimeShader.SetTexture(updateKernel, "CoarseFlowFieldMap", tex);
+    }
+
+    /// <summary>Met à jour l'origine du chunk actif en world tiles (utilisé pour le blend coarse/fine).</summary>
+    public void SetChunkWorldOrigin(Vector2 originTile)
+    {
+        SlimeShader.SetVector("chunkWorldOrigin", new Vector4(originTile.x, originTile.y, 0f, 0f));
+    }
+
+    /// <summary>
+    /// Met à jour les dimensions mondiales et le scale sim→world pour le shader coarse.
+    /// simToWorldScale = TerrainWidth / SimWidth (inverse de SimRatio).
+    /// </summary>
+    public void SetWorldDimensions(float worldW, float worldH, float simToWorldScale)
+    {
+        SlimeShader.SetVector("worldSize", new Vector4(worldW, worldH, 0f, 0f));
+        SlimeShader.SetFloat("simToWorldScale", simToWorldScale);
+    }
+
+    /// <summary>Ratio sim pixels / terrain tile. Ex: sim=1024 terrain=512 → SimRatio=2.</summary>
+    public float SimRatio => (TerrainMapRenderer.Instance != null && TerrainMapRenderer.Instance.Width > 0)
+        ? (float)Width / TerrainMapRenderer.Instance.Width : 1f;
+
+    /// <summary>
+    /// Marque tous les agents comme morts sur le GPU. Utilisé lors du changement de chunk.
+    /// Réinitialise aussi currentAgentCount et nextSpawnIndex.
+    /// </summary>
+    public void KillAllAgents()
+    {
+        if (!isInitialized || killAllKernel < 0 || currentAgentCount == 0) return;
+        SlimeShader.SetInt("numAgents", currentAgentCount);
+        int groups = Mathf.CeilToInt(currentAgentCount / 256f);
+        SlimeShader.Dispatch(killAllKernel, groups, 1, 1);
+        currentAgentCount = 0;
+        nextSpawnIndex    = 0;
+        // Vider aussi le registre des agents bloquants
+        if (blockingRegistry != null)
+            for (int i = 0; i < MaxSlots; i++) blockingRegistry[i].Clear();
+        Debug.Log("[RENDERER] KillAllAgents dispatched.");
+    }
+
+    /// <summary>
+    /// Spawne count agents pour un slot d'espèce donné à des positions aléatoires sur terrain.
+    /// </summary>
+    public void SpawnAgentsForSlot(int slot, int count)
+    {
+        if (count <= 0 || slot < 0 || slot >= MaxSlots) return;
+        AddAgents(count, forceSpecies: slot);
     }
 
     public void AddAgentsAt(int count, int speciesIndex, Vector2 position)

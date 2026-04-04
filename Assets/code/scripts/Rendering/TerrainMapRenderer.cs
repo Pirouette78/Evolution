@@ -54,6 +54,12 @@ public class TerrainMapRenderer : MonoBehaviour
     public Texture2D GetMapDataTexture()      => mapDataTexture;
     public Texture2D GetWalkabilityTexture()  => walkabilityTexture;
 
+    /// <summary>
+    /// Position (en terrain tiles) du coin bas-gauche du chunk actif dans le monde.
+    /// (0,0) par défaut jusqu'à ce que GenerateMapForChunk() soit appelé.
+    /// </summary>
+    public Vector2Int ChunkOrigin { get; private set; } = Vector2Int.zero;
+
     private void Awake()
     {
         if (Instance != null && Instance != this)
@@ -80,9 +86,37 @@ public class TerrainMapRenderer : MonoBehaviour
         Noise.Validate();
         HeightMap = NoiseMapGenerator.Generate(Width, Height, Noise);
         BuildWalkabilityGrid();
+        DestroyTextures();
         BuildTexture();
         ApplyTexture();
         Debug.Log($"[TERRAIN] Map generated ({Width}x{Height}), WaterThreshold={WaterThreshold}");
+    }
+
+    /// <summary>
+    /// Génère le terrain pour le chunk (cx, cy) en décalant le bruit Perlin.
+    /// Chaque chunk a un terrain unique et continu avec ses voisins.
+    /// </summary>
+    public void GenerateMapForChunk(int cx, int cy)
+    {
+        ChunkOrigin = new Vector2Int(cx * Width, cy * Height);
+        Noise.Validate();
+        // Copier les settings et ajouter l'offset du chunk dans l'espace Perlin.
+        // L'offset en tiles = cx*Width/cy*Height garantit la continuité aux bords.
+        var chunkNoise = new NoiseSettings
+        {
+            Scale      = Noise.Scale,
+            Octaves    = Noise.Octaves,
+            Persistance= Noise.Persistance,
+            Lacunarity = Noise.Lacunarity,
+            Seed       = Noise.Seed,
+            Offset     = Noise.Offset + new Vector2(cx * Width, cy * Height)
+        };
+        HeightMap = NoiseMapGenerator.Generate(Width, Height, chunkNoise);
+        BuildWalkabilityGrid();
+        DestroyTextures();
+        BuildTexture();
+        ApplyTexture();
+        Debug.Log($"[TERRAIN] Chunk ({cx},{cy}) generated at world origin {ChunkOrigin}");
     }
 
     /// <summary>
@@ -279,10 +313,81 @@ public class TerrainMapRenderer : MonoBehaviour
         }
     }
 
+    private void DestroyTextures()
+    {
+        if (terrainTexture != null)     { Destroy(terrainTexture);     terrainTexture     = null; }
+        if (mapDataTexture != null)     { Destroy(mapDataTexture);     mapDataTexture     = null; }
+        if (walkabilityTexture != null) { Destroy(walkabilityTexture); walkabilityTexture = null; }
+    }
+
+    // ── Chunk streaming helpers ──────────────────────────────────────
+
+    /// <summary>
+    /// Generates heightmap + walkability for chunk (cx, cy). Entirely thread-safe — no Unity API.
+    /// Safe to call from Task.Run(). noiseCopy must be a detached copy (not the live Noise field).
+    /// </summary>
+    public static (float[,] heightMap, bool[,] walkability) GenerateChunkDataRaw(
+        int cx, int cy, int width, int height, NoiseSettings noiseCopy, float waterThreshold)
+    {
+        var chunkNoise = new NoiseSettings
+        {
+            Scale       = noiseCopy.Scale,
+            Octaves     = noiseCopy.Octaves,
+            Persistance = noiseCopy.Persistance,
+            Lacunarity  = noiseCopy.Lacunarity,
+            Seed        = noiseCopy.Seed,
+            Offset      = noiseCopy.Offset + new Vector2(cx * width, cy * height)
+        };
+        float[,] hm = NoiseMapGenerator.Generate(width, height, chunkNoise);
+        bool[,]  wk = new bool[width, height];
+        for (int y = 0; y < height; y++)
+        for (int x = 0; x < width;  x++)
+            wk[x, y] = hm[x, y] >= waterThreshold;
+        return (hm, wk);
+    }
+
+    /// <summary>
+    /// Applies pre-computed height/walkability data (from a background thread) to this renderer.
+    /// Only rebuilds textures on the main thread — much faster than a full GenerateMapForChunk().
+    /// </summary>
+    public void ApplyPrecomputedChunkData(int cx, int cy, float[,] heightMap, bool[,] walkability)
+    {
+        ChunkOrigin      = new Vector2Int(cx * Width, cy * Height);
+        HeightMap        = heightMap;
+        WalkabilityGrid  = walkability;
+        unitBlockingGrid = new int[Width, Height];
+        DestroyTextures();
+        BuildTexture();
+        ApplyTexture();
+        Debug.Log($"[TERRAIN] Chunk ({cx},{cy}) applied from pre-computed data, origin={ChunkOrigin}.");
+    }
+
+    /// <summary>
+    /// Builds a low-resolution preview Texture2D using the same colour ramp as the main terrain.
+    /// Uses nearest-neighbour sampling. Caller owns and must Destroy the returned texture.
+    /// </summary>
+    public Texture2D BuildLowResTexture(float[,] srcHeightMap, int srcW, int srcH, int texRes)
+    {
+        var tex = new Texture2D(texRes, texRes, TextureFormat.RGB24, false)
+        {
+            filterMode = FilterMode.Bilinear,
+            wrapMode   = TextureWrapMode.Clamp
+        };
+        var pixels = new Color[texRes * texRes];
+        for (int y = 0; y < texRes; y++)
+        for (int x = 0; x < texRes; x++)
+        {
+            int sx = Mathf.Clamp(x * srcW / texRes, 0, srcW - 1);
+            int sy = Mathf.Clamp(y * srcH / texRes, 0, srcH - 1);
+            pixels[y * texRes + x] = HeightToColour(srcHeightMap[sx, sy]);
+        }
+        tex.SetPixels(pixels);
+        tex.Apply();
+        return tex;
+    }
+
     private void OnDestroy()
     {
-        if (terrainTexture != null)     Destroy(terrainTexture);
-        if (mapDataTexture != null)     Destroy(mapDataTexture);
-        if (walkabilityTexture != null) Destroy(walkabilityTexture);
+        DestroyTextures();
     }
 }
