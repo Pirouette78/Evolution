@@ -42,6 +42,9 @@ public class UnitSpriteRenderer : MonoBehaviour
     private readonly Dictionary<string, List<SpriteEntry>> entries = new Dictionary<string, List<SpriteEntry>>();
     private readonly Dictionary<string, List<BuildingSpriteEntry>> buildingEntries = new Dictionary<string, List<BuildingSpriteEntry>>();
 
+    private BuildingSpriteEntry? previewBuilding = null;
+    private bool previewIsWalkable = false;
+
     private Mesh quadMesh;
     private MaterialPropertyBlock _mpb;
 
@@ -222,6 +225,44 @@ public class UnitSpriteRenderer : MonoBehaviour
                 Graphics.DrawMesh(quadMesh, matrix, mat, 0, null, 0, _mpb);
             }
         }
+
+        if (previewBuilding.HasValue)
+        {
+            var e = previewBuilding.Value;
+            var def = e.def;
+
+            if (materials.TryGetValue(def.spriteName, out Material mat) && mat != null)
+            {
+                int   tcx   = (int)(e.pos.x * terrW / mapW);
+                int   tcy   = (int)(e.pos.y * terrH / mapH);
+
+                float stW   = def.spriteTilesW;
+                float stH   = def.spriteTilesH;
+
+                float anchorWorldY = b.min.y + (tcy / terrH) * b.size.y;
+                float csxT  = tcx + (0.5f - def.spriteAnchorX) * stW;
+                float csyT  = tcy + (0.5f - def.spriteAnchorY) * stH;
+
+                float wx = b.min.x + (csxT / terrW) * b.size.x;
+                float wy = b.min.y + (csyT / terrH) * b.size.y;
+
+                float normY = Mathf.Clamp01((anchorWorldY - b.min.y) / Mathf.Max(0.0001f, b.size.y));
+                float sz    = (zBase - 1.0f) + normY * 0.9f - 0.05f; // Slightly in front
+
+                float scaleX = stW * b.size.x / terrW;
+                float scaleY = stH * b.size.y / terrH;
+
+                Matrix4x4 matrix = Matrix4x4.TRS(
+                    new Vector3(wx, wy, sz),
+                    Quaternion.identity,
+                    new Vector3(scaleX, scaleY, 1f));
+
+                _mpb.SetColor("_Color", previewIsWalkable 
+                    ? new Color(0.7f, 1f, 0.7f, spriteAlpha * 0.8f) 
+                    : new Color(1f, 0.3f, 0.3f, spriteAlpha * 0.8f));
+                Graphics.DrawMesh(quadMesh, matrix, mat, 0, null, 0, _mpb);
+            }
+        }
     }
 
     private void OnDestroy()
@@ -271,6 +312,20 @@ public class UnitSpriteRenderer : MonoBehaviour
         if (def == null || !buildingEntries.TryGetValue(def.spriteName, out var list)) return;
         for (int i = list.Count - 1; i >= 0; i--)
             if (list[i].pos == pos) { list.RemoveAt(i); break; }
+    }
+
+    /// <summary>Définit le bâtiment en cours de prévisualisation (placement).</summary>
+    public void SetPreviewBuilding(Vector2 pos, BuildingDefinition def, bool isWalkable)
+    {
+        if (def == null || def.spriteTilesW <= 0 || string.IsNullOrEmpty(def.spriteName))
+        {
+            previewBuilding = null;
+            return;
+        }
+
+        previewBuilding = new BuildingSpriteEntry { pos = pos, def = def };
+        previewIsWalkable = isWalkable;
+        EnsureMaterial(def.spriteName, def.spriteFramePixelW, def.spriteFramePixelH);
     }
 
     // ── Chargement texture ───────────────────────────────────────────

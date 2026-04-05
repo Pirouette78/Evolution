@@ -330,6 +330,32 @@ public class WaypointManager : MonoBehaviour
                 ? BuildingLibrary.Instance.Get(buildingName)
                 : null;
 
+            if (def != null)
+            {
+                var terrain = TerrainMapRenderer.Instance;
+                var smr = SlimeMapRenderer.Instance;
+                if (terrain != null && smr != null && def.blockTilesW > 0f)
+                {
+                    float scaleX = terrain.Width  / (float)smr.Width;
+                    float scaleY = terrain.Height / (float)smr.Height;
+                    int cx = (int)(wp.position.x * scaleX);
+                    int cy = (int)(wp.position.y * scaleY);
+
+                    int offX  = Mathf.RoundToInt(def.blockOffsetX);
+                    int offY  = Mathf.RoundToInt(def.blockOffsetY);
+                    int rectW = Mathf.Max(1, Mathf.RoundToInt(def.blockTilesW));
+                    int rectH = Mathf.Max(1, Mathf.RoundToInt(def.blockTilesH));
+
+                    terrain.SetUnitBlockRect(cx, cy, offX, offY, rectW, rectH, true);
+                    RebuildAllFlowFields();
+                }
+
+                if (def.spriteTilesW > 0 && UnitSpriteRenderer.Instance != null)
+                {
+                    UnitSpriteRenderer.Instance.RegisterBuilding(wp.position, def);
+                }
+            }
+
             string playerId = PlayerLibrary.Instance?.GetPlayerIdForSlot(wp.speciesIndex);
             var outputs = def?.ResolvedOutputs();
 

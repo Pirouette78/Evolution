@@ -97,6 +97,16 @@ public class BuildingPlacementController : MonoBehaviour
 
         // Update cursor position every frame
         currentMousePixel = GetMouseMapPosition(mouse, out mouseIsWalkable);
+        
+        var def = GetDefinition(PendingBuildingName);
+        if (currentMousePixel.HasValue)
+        {
+            UnitSpriteRenderer.Instance?.SetPreviewBuilding(currentMousePixel.Value, def, mouseIsWalkable);
+        }
+        else
+        {
+            UnitSpriteRenderer.Instance?.SetPreviewBuilding(Vector2.zero, null, false);
+        }
 
         // Skip the frame the palette button was clicked (avoids immediate accidental placement)
         if (Time.frameCount <= placementStartFrame + 1) return;
@@ -120,6 +130,7 @@ public class BuildingPlacementController : MonoBehaviour
             };
             WaypointManager.Instance?.AddWaypoint(wp, PendingBuildingName);
             IsPlacing = false;
+            UnitSpriteRenderer.Instance?.SetPreviewBuilding(Vector2.zero, null, false);
             OnPlacementConfirmed?.Invoke(wp);
         }
     }
@@ -141,7 +152,33 @@ public class BuildingPlacementController : MonoBehaviour
         float pulse  = 1f + 0.15f * Mathf.Sin(Time.time * 6f);
         float radius = 20f * pulse;
 
-        DrawCircle(worldPos, radius, col, 16);
+        var def = GetDefinition(PendingBuildingName);
+        if (def != null && def.blockTilesW > 0f)
+        {
+            var smr = SlimeMapRenderer.Instance;
+            var terrain = TerrainMapRenderer.Instance;
+            if (smr != null && terrain != null && smr.DisplayTarget != null && terrain.WalkabilityGrid != null)
+            {
+                float cellWorldW = smr.DisplayTarget.bounds.size.x / terrain.WalkabilityGrid.GetLength(0);
+                float cellWorldH = smr.DisplayTarget.bounds.size.y / terrain.WalkabilityGrid.GetLength(1);
+                
+                float w = def.blockTilesW * cellWorldW;
+                float h = def.blockTilesH * cellWorldH;
+
+                float centerX = worldPos.x + (def.blockOffsetX + def.blockTilesW * 0.5f - 0.5f) * cellWorldW;
+                float centerY = worldPos.y + (def.blockOffsetY + def.blockTilesH * 0.5f - 0.5f) * cellWorldH;
+
+                DrawRect(new Vector3(centerX, centerY, worldPos.z), w, h, col);
+            }
+            else
+            {
+                DrawCircle(worldPos, radius, col, 16);
+            }
+        }
+        else
+        {
+            DrawCircle(worldPos, radius, col, 16);
+        }
 
         // Inner dot: green for Source, orange for Destination
         Color innerCol = pendingWaypointType == 0
@@ -168,6 +205,7 @@ public class BuildingPlacementController : MonoBehaviour
     public void CancelPlacement()
     {
         IsPlacing = false;
+        UnitSpriteRenderer.Instance?.SetPreviewBuilding(Vector2.zero, null, false);
         OnPlacementCancelled?.Invoke();
     }
 
@@ -193,13 +231,42 @@ public class BuildingPlacementController : MonoBehaviour
         if (px < 0 || px >= smr.Width || py < 0 || py >= smr.Height) return null;
 
         var terrain = TerrainMapRenderer.Instance;
+        var def = GetDefinition(PendingBuildingName);
         if (terrain != null && terrain.WalkabilityGrid != null)
         {
             int gridW = terrain.WalkabilityGrid.GetLength(0);
             int gridH = terrain.WalkabilityGrid.GetLength(1);
             int gx = Mathf.Clamp((int)(px * gridW / (float)smr.Width),  0, gridW - 1);
             int gy = Mathf.Clamp((int)(py * gridH / (float)smr.Height), 0, gridH - 1);
-            walkable = terrain.WalkabilityGrid[gx, gy];
+            
+            walkable = true;
+            if (def != null && def.blockTilesW > 0f)
+            {
+                int offX = Mathf.RoundToInt(def.blockOffsetX);
+                int offY = Mathf.RoundToInt(def.blockOffsetY);
+                int bw = Mathf.Max(1, Mathf.RoundToInt(def.blockTilesW));
+                int bh = Mathf.Max(1, Mathf.RoundToInt(def.blockTilesH));
+
+                for (int y = gy + offY; y < gy + offY + bh; y++)
+                {
+                    for (int x = gx + offX; x < gx + offX + bw; x++)
+                    {
+                        if (x < 0 || x >= gridW || y < 0 || y >= gridH || !terrain.WalkabilityGrid[x, y])
+                        {
+                            walkable = false;
+                            break;
+                        }
+                    }
+                    if (!walkable) break;
+                }
+            }
+            else
+            {
+                walkable = terrain.WalkabilityGrid[gx, gy];
+            }
+
+            px = (int)((gx + 0.5f) * smr.Width / (float)gridW);
+            py = (int)((gy + 0.5f) * smr.Height / (float)gridH);
         }
         else
         {
@@ -238,6 +305,20 @@ public class BuildingPlacementController : MonoBehaviour
             float a = i * Mathf.PI * 2f / segments;
             GL.Vertex(center + new Vector3(Mathf.Cos(a) * worldR, Mathf.Sin(a) * worldR, 0f));
         }
+        GL.End();
+    }
+
+    private void DrawRect(Vector3 center, float worldW, float worldH, Color color)
+    {
+        float halfW = worldW * 0.5f;
+        float halfH = worldH * 0.5f;
+        GL.Begin(GL.LINE_STRIP);
+        GL.Color(color);
+        GL.Vertex3(center.x - halfW, center.y - halfH, 0f);
+        GL.Vertex3(center.x + halfW, center.y - halfH, 0f);
+        GL.Vertex3(center.x + halfW, center.y + halfH, 0f);
+        GL.Vertex3(center.x - halfW, center.y + halfH, 0f);
+        GL.Vertex3(center.x - halfW, center.y - halfH, 0f); // Close
         GL.End();
     }
 
