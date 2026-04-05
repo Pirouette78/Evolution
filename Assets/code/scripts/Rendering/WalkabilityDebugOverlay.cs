@@ -21,7 +21,9 @@ public class WalkabilityDebugOverlay : MonoBehaviour
 
     private Texture2D debugTex;
     private bool      isDirty = true;
-    public  bool      Visible = true;
+    public  bool      Visible = false; // Désactivé par défaut pour les perfs
+
+    private Color32[] rawPixels;
 
     private int blockedCellCount = 0;  // pour debug log
 
@@ -101,24 +103,29 @@ public class WalkabilityDebugOverlay : MonoBehaviour
         var   grid   = terrain.WalkabilityGrid;
         var   hmap   = terrain.HeightMap;
         float wt     = terrain.WaterThreshold;
-        var   pixels = new Color32[w * h];
+
+        if (rawPixels == null || rawPixels.Length != w * h)
+            rawPixels = new Color32[w * h];
 
         blockedCellCount = 0;
         for (int y = 0; y < h; y++)
-        for (int x = 0; x < w; x++)
         {
-            if (!grid[x, y] && hmap[x, y] >= wt)
+            int rowOffset = y * w;
+            for (int x = 0; x < w; x++)
             {
-                pixels[y * w + x] = new Color32(255, 0, 0, 180);  // bloqué par unité → rouge
-                blockedCellCount++;
-            }
-            else
-            {
-                pixels[y * w + x] = new Color32(0, 0, 0, 0);       // transparent
+                if (!grid[x, y] && hmap[x, y] >= wt)
+                {
+                    rawPixels[rowOffset + x] = new Color32(255, 0, 0, 180);  // bloqué par unité → rouge
+                    blockedCellCount++;
+                }
+                else
+                {
+                    rawPixels[rowOffset + x] = new Color32(0, 0, 0, 0);       // transparent
+                }
             }
         }
 
-        debugTex.SetPixels32(pixels);
+        debugTex.SetPixels32(rawPixels);
         debugTex.Apply();
         Debug.Log($"[WALKABILITY-DBG] Texture reconstruite — {blockedCellCount} cellules bloquées (non-eau)");
     }

@@ -49,6 +49,7 @@ public class TerrainMapRenderer : MonoBehaviour
     private Texture2D terrainTexture;
     private Texture2D mapDataTexture;
     private Texture2D walkabilityTexture;  // White = land, Black = water
+    private byte[]    rawWalkPixels;
 
     public Texture2D GetTexture()             => terrainTexture;
     public Texture2D GetMapDataTexture()      => mapDataTexture;
@@ -164,11 +165,20 @@ public class TerrainMapRenderer : MonoBehaviour
     public void RebuildWalkabilityTexture()
     {
         if (walkabilityTexture == null) return;
-        Color[] walkPixels = new Color[Width * Height];
+
+        if (rawWalkPixels == null || rawWalkPixels.Length != Width * Height)
+            rawWalkPixels = new byte[Width * Height];
+
         for (int y = 0; y < Height; y++)
+        {
+            int rowOffset = y * Width;
             for (int x = 0; x < Width; x++)
-                walkPixels[y * Width + x] = WalkabilityGrid[x, y] ? Color.white : Color.black;
-        walkabilityTexture.SetPixels(walkPixels);
+            {
+                rawWalkPixels[rowOffset + x] = WalkabilityGrid[x, y] ? (byte)255 : (byte)0;
+            }
+        }
+
+        walkabilityTexture.SetPixelData(rawWalkPixels, 0);
         walkabilityTexture.Apply();
     }
 
@@ -234,13 +244,8 @@ public class TerrainMapRenderer : MonoBehaviour
         walkabilityTexture.filterMode = FilterMode.Point;
         walkabilityTexture.wrapMode   = TextureWrapMode.Clamp;
 
-        Color[] walkPixels = new Color[Width * Height];
-        for (int y = 0; y < Height; y++)
-            for (int x = 0; x < Width; x++)
-                walkPixels[y * Width + x] = WalkabilityGrid[x, y] ? Color.white : Color.black;
+        RebuildWalkabilityTexture();
 
-        walkabilityTexture.SetPixels(walkPixels);
-        walkabilityTexture.Apply();
         Debug.Log("[TERRAIN] Walkability texture & Auto-Tiling Data generated.");
     }
 

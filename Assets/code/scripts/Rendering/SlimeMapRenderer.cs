@@ -70,6 +70,7 @@ public class SlimeMapRenderer : MonoBehaviour
     private int maxAgents = 600000;
     private int currentAgentCount = 0;
     private int nextSpawnIndex = 0;   // index circulaire pour réutiliser les slots morts
+    private bool[] isCheckingDeaths = new bool[32]; // MaxSlots = 32
     private bool isInitialized = false;
     private bool initialSpawnDone = false;
     public  bool InitialSpawnDone => initialSpawnDone;
@@ -973,7 +974,13 @@ public class SlimeMapRenderer : MonoBehaviour
                         if (!speciesBlocksMovement[s]) continue;
                         if (blockingRegistry[s] != null &&
                             blockingRegistry[s].Count > AliveSpeciesCounts[s])
-                            HandleBlockingAgentDeaths(s);
+                        {
+                            if (!isCheckingDeaths[s])
+                            {
+                                isCheckingDeaths[s] = true;
+                                HandleBlockingAgentDeaths(s);
+                            }
+                        }
                     }
                 });
 
@@ -1062,37 +1069,42 @@ public class SlimeMapRenderer : MonoBehaviour
     private void HandleBlockingAgentDeaths(int slot)
     {
         var registry = blockingRegistry[slot];
-        if (registry == null || registry.Count == 0) return;
-
-        for (int i = registry.Count - 1; i >= 0; i--)
+        if (registry == null || registry.Count == 0) 
         {
-            BlockEntry entry = registry[i];
-
-            if (entry.bufferIdx >= currentAgentCount)
-            {
-                RemoveBlockingEntry(slot, entry);
-                registry.RemoveAt(i);
-            }
-            else
-            {
-                var capturedEntry = entry;
-                int byteOffset = entry.bufferIdx * 40; // sizeof(Agent) == 40
-                UnityEngine.Rendering.AsyncGPUReadback.Request(agentBuffer, 40, byteOffset, req => 
-                {
-                    if (req.hasError || !isInitialized || !Application.isPlaying || registry == null) return;
-                    var agentArray = req.GetData<Agent>();
-                    if (agentArray.Length > 0)
-                    {
-                        var agent = agentArray[0];
-                        if (agent.age < 0 || agent.speciesIndex != slot)
-                        {
-                            RemoveBlockingEntry(slot, capturedEntry);
-                            registry.Remove(capturedEntry);
-                        }
-                    }
-                });
-            }
+            isCheckingDeaths[slot] = false;
+            return;
         }
+
+        // On lance UN SEUL readback pour tout le buffer au lieu de milliers de requêtes individuelles
+        // (La mémoire de GetData est un NativeArray zéro-allocation, le transfert PCIe asynchrone est rapide)
+        UnityEngine.Rendering.AsyncGPUReadback.Request(agentBuffer, req => 
+        {
+            isCheckingDeaths[slot] = false;
+            if (req.hasError || !isInitialized || !Application.isPlaying || registry == null) return;
+            
+            var agentArray = req.GetData<Agent>();
+            if (agentArray.Length == 0) return;
+
+            for (int i = registry.Count - 1; i >= 0; i--)
+            {
+                BlockEntry entry = registry[i];
+
+                if (entry.bufferIdx >= currentAgentCount || entry.bufferIdx >= agentArray.Length)
+                {
+                    RemoveBlockingEntry(slot, entry);
+                    registry.RemoveAt(i);
+                }
+                else
+                {
+                    var agent = agentArray[entry.bufferIdx];
+                    if (agent.age < 0 || agent.speciesIndex != slot)
+                    {
+                        RemoveBlockingEntry(slot, entry);
+                        registry.RemoveAt(i);
+                    }
+                }
+            }
+        });
     }
 
     // ================== VegetalEmissionMap =======================

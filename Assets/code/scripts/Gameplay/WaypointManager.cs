@@ -65,6 +65,7 @@ public class WaypointManager : MonoBehaviour
     private readonly List<WaypointData> waypointList  = new List<WaypointData>();
     private readonly List<string>       waypointNames = new List<string>();
     private readonly List<HiveData>     hiveList      = new List<HiveData>();
+    private readonly float[]            wpStocksCache = new float[SlimeMapRenderer.MaxSlots];
 
     // Shared flow field texture (MaxSlots slices, reused across recomputations)
     private Texture2DArray flowFieldTexture;
@@ -190,14 +191,14 @@ public class WaypointManager : MonoBehaviour
 
         // ── Phase B : Livraison (lecture des compteurs GPU) ───────────────
         // Upload des stocks actuels vers le GPU (lu par les agents au chargement)
-        float[] wpStocks = new float[SlimeMapRenderer.MaxSlots];
+        System.Array.Clear(wpStocksCache, 0, SlimeMapRenderer.MaxSlots);
         foreach (var hive in hiveList)
         {
             if (!hive.processResources) continue;
             int wi = hive.waypointIndex;
-            if (wi >= 0 && wi < SlimeMapRenderer.MaxSlots) wpStocks[wi] = hive.localStock;
+            if (wi >= 0 && wi < SlimeMapRenderer.MaxSlots) wpStocksCache[wi] = hive.localStock;
         }
-        smr.SetWaypointStocks(wpStocks);
+        smr.SetWaypointStocks(wpStocksCache);
 
         // Appliquer les livraisons lues depuis le GPU (frame précédente)
         foreach (var dest in hiveList)
