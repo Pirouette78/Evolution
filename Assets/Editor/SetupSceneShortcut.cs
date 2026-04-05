@@ -7,18 +7,28 @@ using Unity.Scenes;
 [InitializeOnLoad]
 public class SetupSceneShortcut {
     static SetupSceneShortcut() {
-        EditorApplication.delayCall += DoSetup;
+        if (!EditorPrefs.GetBool("SceneSetupDone_Evo", false)) {
+            EditorApplication.delayCall += DoSetup;
+        }
     }
     
     [MenuItem("Evolution/Setup Mission Scene")]
     static void DoSetup() {
         if (UnityEditor.EditorApplication.isPlayingOrWillChangePlaymode) return;
-        
+        // Find existing TerrainMapRenderer to extract current user dimensions, to avoid hardcoding
+        var existingTerrain = Object.FindAnyObjectByType<TerrainMapRenderer>();
+        int mapWidth = 2560;
+        int mapHeight = 1440;
+        if (existingTerrain != null && existingTerrain.Width > 0) {
+            mapWidth = existingTerrain.Width;
+            mapHeight = existingTerrain.Height;
+        }
+
         var cam = Camera.main;
         if (cam != null) {
-            cam.transform.position = new Vector3(256, 256, -10);
+            cam.transform.position = new Vector3(mapWidth / 2f, mapHeight / 2f, -10f);
             cam.orthographic = true;
-            cam.orthographicSize = 256;
+            cam.orthographicSize = mapHeight / 2f;
 
             var camCtrl = cam.GetComponent<CameraController>();
             if (camCtrl == null) camCtrl = cam.gameObject.AddComponent<CameraController>();
@@ -53,8 +63,8 @@ public class SetupSceneShortcut {
             terrainGO = GameObject.CreatePrimitive(PrimitiveType.Quad);
             terrainGO.name = "TerrainLayer";
         }
-        terrainGO.transform.position = new Vector3(256f, 256f, 1f); // z=1 (behind)
-        terrainGO.transform.localScale = new Vector3(512f, 512f, 1f);
+        terrainGO.transform.position = new Vector3(mapWidth / 2f, mapHeight / 2f, 1f); // z=1 (behind)
+        terrainGO.transform.localScale = new Vector3((float)mapWidth, (float)mapHeight, 1f);
 
         var terrainMR = terrainGO.GetComponent<MeshRenderer>();
         if (terrainMR == null) terrainMR = terrainGO.AddComponent<MeshRenderer>();
@@ -72,10 +82,12 @@ public class SetupSceneShortcut {
         terrainMR.sharedMaterial = terrainMat;
 
         var terrainRenderer = terrainGO.GetComponent<TerrainMapRenderer>();
-        if (terrainRenderer == null) terrainRenderer = terrainGO.AddComponent<TerrainMapRenderer>();
+        if (terrainRenderer == null) {
+            terrainRenderer = terrainGO.AddComponent<TerrainMapRenderer>();
+            terrainRenderer.Width = mapWidth;
+            terrainRenderer.Height = mapHeight;
+        }
         terrainRenderer.DisplayTarget = terrainMR;
-        terrainRenderer.Width = 512;
-        terrainRenderer.Height = 512;
 
         // Remove SlimeMapRenderer from terrain if it was there from old setup
         var oldSlime = terrainGO.GetComponent<SlimeMapRenderer>();
@@ -91,8 +103,8 @@ public class SetupSceneShortcut {
             strategyGO = GameObject.CreatePrimitive(PrimitiveType.Quad);
             strategyGO.name = "StrategyLayer";
         }
-        strategyGO.transform.position = new Vector3(256f, 256f, 0f); // z=0 (in front)
-        strategyGO.transform.localScale = new Vector3(512f, 512f, 1f);
+        strategyGO.transform.position = new Vector3(mapWidth / 2f, mapHeight / 2f, 0f); // z=0 (in front)
+        strategyGO.transform.localScale = new Vector3((float)mapWidth, (float)mapHeight, 1f);
 
         var strategyMR = strategyGO.GetComponent<MeshRenderer>();
         if (strategyMR == null) strategyMR = strategyGO.AddComponent<MeshRenderer>();
@@ -167,8 +179,8 @@ public class SetupSceneShortcut {
 
             var terrainAuth = authoring.GetComponent<TerrainMapAuthoring>();
             if (terrainAuth == null) terrainAuth = authoring.gameObject.AddComponent<TerrainMapAuthoring>();
-            terrainAuth.Width = 512;
-            terrainAuth.Height = 512;
+            terrainAuth.Width = mapWidth;
+            terrainAuth.Height = mapHeight;
             terrainAuth.WaterThreshold = 0.35f;
             EditorUtility.SetDirty(terrainAuth);
         }

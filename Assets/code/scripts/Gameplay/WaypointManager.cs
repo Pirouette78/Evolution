@@ -56,6 +56,11 @@ public class WaypointManager : MonoBehaviour
     [Header("Ruches initiales (optionnel)")]
     public HiveData[] InitialHives = new HiveData[0];
 
+    [Header("Flow Field Performance")]
+    [Tooltip("Définit la réduction de résolution pour le Dijkstra. 4 = 16x plus rapide. 1 = natif.")]
+    [Range(1, 128)]
+    public int flowFieldDownscale = 4;
+
     // ── Runtime lists ────────────────────────────────────────────────
     private readonly List<WaypointData> waypointList  = new List<WaypointData>();
     private readonly List<string>       waypointNames = new List<string>();
@@ -63,6 +68,7 @@ public class WaypointManager : MonoBehaviour
 
     // Shared flow field texture (MaxSlots slices, reused across recomputations)
     private Texture2DArray flowFieldTexture;
+    private Texture2D      tempSliceTexture; // used for zero-copy slice uploads
     private bool           flowFieldReady = false;
 
     // Burst Job types and tracking
@@ -140,8 +146,12 @@ public class WaypointManager : MonoBehaviour
                 pJob.handle.Complete();
                 
                 // Zero-conversion copy on GPU side directly ! Overcomes the 0.3s freeze caused by ToArray() and Color[] conversion
-                var rawTexData = flowFieldTexture.GetPixelData<Vector2>(0, pJob.waypointIndex);
+                var rawTexData = tempSliceTexture.GetPixelData<Vector2>(0);
                 rawTexData.CopyFrom(pJob.outputSimSlice);
+                
+                // N'upload que l'unique slice calculée au lieu des 176 Mo du tableau complet !
+                tempSliceTexture.Apply(false, false);
+                Graphics.CopyTexture(tempSliceTexture, 0, 0, flowFieldTexture, pJob.waypointIndex, 0);
                 
                 textureApplied = true;
 
@@ -160,8 +170,6 @@ public class WaypointManager : MonoBehaviour
         }
         if (textureApplied)
         {
-            // true=updateMipmaps (false since we don't have them), false=makeNoLongerReadable
-            flowFieldTexture.Apply(false, false);
             flowFieldReady = true;
         }
 
@@ -480,6 +488,8 @@ public class WaypointManager : MonoBehaviour
         Color[] empty = new Color[W * H];
         for (int s = 0; s < SlimeMapRenderer.MaxSlots; s++) flowFieldTexture.SetPixels(empty, s);
         flowFieldTexture.Apply();
+
+        tempSliceTexture = new Texture2D(W, H, TextureFormat.RGFloat, false);
     }
 
     private void RecomputeAllFlowFields()
@@ -499,8 +509,8 @@ public class WaypointManager : MonoBehaviour
         int simW  = SlimeMapRenderer.Instance.Width;
         int simH  = SlimeMapRenderer.Instance.Height;
 
-        // SCALE DOWN FOR SPEED (Divise la charge CPU/Burst par 16 !)
-        int div = 4;
+        // SCALE DOWN FOR SPEED
+        int div = Mathf.Max(1, flowFieldDownscale);
         int terrW = Mathf.Max(1, trueTerrW / div);
         int terrH = Mathf.Max(1, trueTerrH / div);
 

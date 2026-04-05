@@ -9,7 +9,7 @@
   "produces": [
     { "resource": "oxygen", "amount": 5.0 }
   ],
-  "spriteName": "arbre",
+    "spriteName": "arbre",
   "spriteFramePixelW": 192,
   "spriteFramePixelH": 288,
   "spriteTilesW": 6,

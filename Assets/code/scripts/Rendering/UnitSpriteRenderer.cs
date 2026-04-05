@@ -30,10 +30,17 @@ public class UnitSpriteRenderer : MonoBehaviour
         public SpeciesDefinition def;
     }
 
+    private struct BuildingSpriteEntry
+    {
+        public Vector2          pos;
+        public BuildingDefinition def;
+    }
+
     // Matériaux par spriteName (chargés lazily à la première registration)
     private readonly Dictionary<string, Material>        materials = new Dictionary<string, Material>();
     // Instances à rendre, groupées par spriteName (une DrawMesh par instance)
     private readonly Dictionary<string, List<SpriteEntry>> entries = new Dictionary<string, List<SpriteEntry>>();
+    private readonly Dictionary<string, List<BuildingSpriteEntry>> buildingEntries = new Dictionary<string, List<BuildingSpriteEntry>>();
 
     private Mesh quadMesh;
     private MaterialPropertyBlock _mpb;
@@ -179,6 +186,42 @@ public class UnitSpriteRenderer : MonoBehaviour
                 Graphics.DrawMesh(quadMesh, matrix, mat, 0, null, 0, _mpb);
             }
         }
+
+        foreach (var kv in buildingEntries)
+        {
+            if (!materials.TryGetValue(kv.Key, out Material mat) || mat == null) continue;
+
+            foreach (var e in kv.Value)
+            {
+                BuildingDefinition def = e.def;
+
+                int   tcx   = (int)(e.pos.x * terrW / mapW);
+                int   tcy   = (int)(e.pos.y * terrH / mapH);
+
+                float stW   = def.spriteTilesW;
+                float stH   = def.spriteTilesH;
+
+                float anchorWorldY = b.min.y + (tcy / terrH) * b.size.y;
+                float csxT  = tcx + (0.5f - def.spriteAnchorX) * stW;
+                float csyT  = tcy + (0.5f - def.spriteAnchorY) * stH;
+
+                float wx = b.min.x + (csxT / terrW) * b.size.x;
+                float wy = b.min.y + (csyT / terrH) * b.size.y;
+
+                float normY = Mathf.Clamp01((anchorWorldY - b.min.y) / Mathf.Max(0.0001f, b.size.y));
+                float sz    = (zBase - 1.0f) + normY * 0.9f;
+
+                float scaleX = stW * b.size.x / terrW;
+                float scaleY = stH * b.size.y / terrH;
+
+                Matrix4x4 matrix = Matrix4x4.TRS(
+                    new Vector3(wx, wy, sz),
+                    Quaternion.identity,
+                    new Vector3(scaleX, scaleY, 1f));
+
+                Graphics.DrawMesh(quadMesh, matrix, mat, 0, null, 0, _mpb);
+            }
+        }
     }
 
     private void OnDestroy()
@@ -199,7 +242,7 @@ public class UnitSpriteRenderer : MonoBehaviour
             entries[def.spriteName] = new List<SpriteEntry>();
 
         entries[def.spriteName].Add(new SpriteEntry { pos = pos, def = def });
-        EnsureMaterial(def);
+        EnsureMaterial(def.spriteName, def.spriteFramePixelW, def.spriteFramePixelH);
     }
 
     /// <summary>Retire une unité morte du rendu.</summary>
@@ -210,11 +253,30 @@ public class UnitSpriteRenderer : MonoBehaviour
             if (list[i].pos == pos) { list.RemoveAt(i); break; }
     }
 
+    /// <summary>Enregistre un bâtiment avec sprite pour le rendu.</summary>
+    public void RegisterBuilding(Vector2 pos, BuildingDefinition def)
+    {
+        if (def == null || def.spriteTilesW <= 0 || string.IsNullOrEmpty(def.spriteName)) return;
+
+        if (!buildingEntries.ContainsKey(def.spriteName))
+            buildingEntries[def.spriteName] = new List<BuildingSpriteEntry>();
+
+        buildingEntries[def.spriteName].Add(new BuildingSpriteEntry { pos = pos, def = def });
+        EnsureMaterial(def.spriteName, def.spriteFramePixelW, def.spriteFramePixelH);
+    }
+
+    /// <summary>Retire un bâtiment du rendu.</summary>
+    public void UnregisterBuilding(Vector2 pos, BuildingDefinition def)
+    {
+        if (def == null || !buildingEntries.TryGetValue(def.spriteName, out var list)) return;
+        for (int i = list.Count - 1; i >= 0; i--)
+            if (list[i].pos == pos) { list.RemoveAt(i); break; }
+    }
+
     // ── Chargement texture ───────────────────────────────────────────
 
-    private void EnsureMaterial(SpeciesDefinition def)
+    private void EnsureMaterial(string spriteName, int spriteFramePixelW, int spriteFramePixelH)
     {
-        string spriteName = def.spriteName;
         if (materials.ContainsKey(spriteName)) return;
 
         string path = Path.Combine(Application.streamingAssetsPath, "Sprites", spriteName + ".png");
@@ -235,11 +297,11 @@ public class UnitSpriteRenderer : MonoBehaviour
 
         // Si spriteFramePixelW/H est défini, extraire la première frame en nouveaux pixels
         Texture2D useTex = tex;
-        if (def.spriteFramePixelW > 0 && def.spriteFramePixelH > 0
-            && def.spriteFramePixelW <= tex.width && def.spriteFramePixelH <= tex.height)
+        if (spriteFramePixelW > 0 && spriteFramePixelH > 0
+            && spriteFramePixelW <= tex.width && spriteFramePixelH <= tex.height)
         {
-            int fw = def.spriteFramePixelW;
-            int fh = def.spriteFramePixelH;
+            int fw = spriteFramePixelW;
+            int fh = spriteFramePixelH;
             // Unity Texture2D : y=0 en BAS → première frame PNG (haut) = srcY = tex.height - fh
             int srcY = tex.height - fh;
             Color32[] all    = tex.GetPixels32();
