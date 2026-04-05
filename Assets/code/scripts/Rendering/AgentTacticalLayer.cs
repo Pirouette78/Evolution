@@ -180,6 +180,10 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
             Bounds org = renderer.DisplayTarget.bounds;
             _mpb.SetVector("_MapWorldBounds", new Vector4(org.min.x, org.min.y, org.size.x, org.size.y));
             _mpb.SetVector("_MapSimParams", new Vector4(renderer.Width, renderer.Height, org.center.z, 0));
+            
+            float tw = TerrainMapRenderer.Instance != null ? TerrainMapRenderer.Instance.Width : renderer.Width;
+            float th = TerrainMapRenderer.Instance != null ? TerrainMapRenderer.Instance.Height : renderer.Height;
+            _mpb.SetVector("_MapTerrainParams", new Vector4(tw, th, 0, 0));
         }
         else
         {
@@ -188,6 +192,7 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
             drawBounds = new Bounds(new Vector3(mw/2f, mh/2f, 0f), new Vector3(mw, mh, 1000f));
             _mpb.SetVector("_MapWorldBounds", new Vector4(0, 0, mw, mh));
             _mpb.SetVector("_MapSimParams", new Vector4(mw, mh, 0, 0));
+            _mpb.SetVector("_MapTerrainParams", new Vector4(mw, mh, 0, 0));
         }
 
         Graphics.DrawMeshInstancedIndirect(agentMesh, 0, agentMaterial, drawBounds,

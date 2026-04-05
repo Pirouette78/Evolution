@@ -28,9 +28,9 @@ public class SlimeMapRenderer : MonoBehaviour
     [Header("Compute Shader (assign in Inspector)")]
     public ComputeShader SlimeShader;
 
-    [Header("Simulation Settings (Hérité du Terrain)")]
-    [HideInInspector] public int Width = 512;
-    [HideInInspector] public int Height = 512;
+    [Header("Simulation Settings")]
+    public int Width = 512;
+    public int Height = 512;
     [Range(1, 8)]       public int   StepsPerFrame     = 1;
     
     [Header("Initial Spawn")]
@@ -257,16 +257,12 @@ public class SlimeMapRenderer : MonoBehaviour
 
     private void Start()
     {
-        if (TerrainMapRenderer.Instance != null)
-        {
-            Width = TerrainMapRenderer.Instance.Width;
-            Height = TerrainMapRenderer.Instance.Height;
-        }
-
         if (DisplayTarget != null)
         {
-            DisplayTarget.transform.localScale = new Vector3(Width, Height, 1);
-            DisplayTarget.transform.position = new Vector3(Width / 2f, Height / 2f, DisplayTarget.transform.position.z);
+            float visualW = TerrainMapRenderer.Instance != null ? TerrainMapRenderer.Instance.Width : Width;
+            float visualH = TerrainMapRenderer.Instance != null ? TerrainMapRenderer.Instance.Height : Height;
+            DisplayTarget.transform.localScale = new Vector3(visualW, visualH, 1);
+            DisplayTarget.transform.position = new Vector3(visualW / 2f, visualH / 2f, DisplayTarget.transform.position.z);
         }
 
         // Try to load shader from Resources if not assigned in Inspector

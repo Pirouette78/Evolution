@@ -50,6 +50,8 @@ Shader "Evolution/AgentTactical"
             float4 _MapWorldBounds;
             // [mapW, mapH, center.z, 0]
             float4 _MapSimParams;
+            // [terrW, terrH, 0, 0]
+            float4 _MapTerrainParams;
 
             struct appdata_t {
                 float4 vertex    : POSITION;
@@ -85,8 +87,8 @@ Shader "Evolution/AgentTactical"
                 float ancY = scaleAnchor.w;
                 
                 // One sprite unit = pixelToWorld
-                float pixelToWorldX = _MapWorldBounds.z / _MapSimParams.x;
-                float pixelToWorldY = _MapWorldBounds.w / _MapSimParams.y;
+                float pixelToWorldX = _MapWorldBounds.z / _MapTerrainParams.x;
+                float pixelToWorldY = _MapWorldBounds.w / _MapTerrainParams.y;
                 
                 float scaleX = stW * pixelToWorldX;
                 float scaleY = stH * pixelToWorldY;
