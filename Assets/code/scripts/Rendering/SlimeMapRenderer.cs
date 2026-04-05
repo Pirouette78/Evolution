@@ -961,22 +961,28 @@ public class SlimeMapRenderer : MonoBehaviour
                 SlimeShader.SetBuffer(countAliveKernel, "speciesSettings", speciesSettingsBuffer);
                 SlimeShader.SetBuffer(countAliveKernel, "speciesCounts", speciesCountsBuffer);
                 SlimeShader.Dispatch(countAliveKernel, countGroups, 1, 1);
-                speciesCountsBuffer.GetData(AliveSpeciesCounts);
-
-                // Détection de mort d'unités bloquantes.
-                // Condition : registry > vivants → des morts sont présents.
-                // Robuste même si deaths et spawns arrivent dans le même step
-                // (l'ancienne condition "compteur en baisse" ratait ce cas).
-                for (int s = 0; s < numActiveSlots; s++)
+                UnityEngine.Rendering.AsyncGPUReadback.Request(speciesCountsBuffer, req => 
                 {
-                    if (!speciesBlocksMovement[s]) continue;
-                    if (blockingRegistry[s] != null &&
-                        blockingRegistry[s].Count > AliveSpeciesCounts[s])
-                        HandleBlockingAgentDeaths(s);
-                }
+                    if (req.hasError || !isInitialized || !Application.isPlaying) return;
+                    req.GetData<uint>().CopyTo(AliveSpeciesCounts);
+
+                    // Détection de mort d'unités bloquantes.
+                    // Condition : registry > vivants → des morts sont présents.
+                    for (int s = 0; s < numActiveSlots; s++)
+                    {
+                        if (!speciesBlocksMovement[s]) continue;
+                        if (blockingRegistry[s] != null &&
+                            blockingRegistry[s].Count > AliveSpeciesCounts[s])
+                            HandleBlockingAgentDeaths(s);
+                    }
+                });
 
                 // Lire et réinitialiser les compteurs de livraison GPU
-                deliveryCounterBuffer.GetData(DeliveryCounts);
+                UnityEngine.Rendering.AsyncGPUReadback.Request(deliveryCounterBuffer, req => 
+                {
+                    if (req.hasError || !isInitialized || !Application.isPlaying) return;
+                    req.GetData<int>().CopyTo(DeliveryCounts);
+                });
                 SlimeShader.Dispatch(clearDeliveryKernel, 1, 1, 1);
             }
 
@@ -1027,6 +1033,28 @@ public class SlimeMapRenderer : MonoBehaviour
 
     // ================== Unités bloquant la marchabilité ===========
 
+    private void RemoveBlockingEntry(int slot, BlockEntry entry)
+    {
+        var terrain = TerrainMapRenderer.Instance;
+        var def     = SpeciesLibrary.Instance?.Get(speciesIds[slot]);
+
+        float scaleX = (terrain != null && Width > 0) ? terrain.Width  / (float)Width  : 1f;
+        float scaleY = (terrain != null && Width > 0) ? terrain.Height / (float)Height : 1f;
+        int cx = (int)(entry.pos.x * scaleX), cy = (int)(entry.pos.y * scaleY);
+        if (entry.isRect)
+            terrain?.SetUnitBlockRect(cx, cy, entry.offX, entry.offY, entry.rectW, entry.rectH, false);
+        else
+            terrain?.SetUnitBlock(cx, cy, entry.radius, false);
+
+        if (def != null && def.spriteTilesW > 0)
+            UnitSpriteRenderer.Instance?.Unregister(entry.pos, def);
+
+        walkabilityDirty = true;
+        if (speciesSettings[slot].behaviorType == 6)
+            RebuildVegetalEmissionMap();
+        Debug.Log($"[RENDERER] Blocking agent(s) died in slot {slot} — walkability rebuild scheduled.");
+    }
+
     /// <summary>
     /// Vérifie si des agents bloquants du slot donné sont morts depuis la dernière frame
     /// et met à jour la walkability + flow fields en conséquence.
@@ -1036,49 +1064,34 @@ public class SlimeMapRenderer : MonoBehaviour
         var registry = blockingRegistry[slot];
         if (registry == null || registry.Count == 0) return;
 
-        var terrain = TerrainMapRenderer.Instance;
-        var def     = SpeciesLibrary.Instance?.Get(speciesIds[slot]);
-        bool anyRemoved = false;
-
         for (int i = registry.Count - 1; i >= 0; i--)
         {
             BlockEntry entry = registry[i];
 
-            // Si l'index dépasse le buffer courant, le slot a été recyclé → traiter comme mort
-            bool dead = entry.bufferIdx >= currentAgentCount;
-            if (!dead)
+            if (entry.bufferIdx >= currentAgentCount)
             {
-                agentBuffer.GetData(singleAgentReadback, 0, entry.bufferIdx, 1);
-                dead = singleAgentReadback[0].age < 0 || singleAgentReadback[0].speciesIndex != slot;
+                RemoveBlockingEntry(slot, entry);
+                registry.RemoveAt(i);
             }
-
-            if (!dead) continue;
-
-            // Débloquer les cellules
-            float scaleX = (terrain != null && Width > 0) ? terrain.Width  / (float)Width  : 1f;
-            float scaleY = (terrain != null && Width > 0) ? terrain.Height / (float)Height : 1f;
-            int cx = (int)(entry.pos.x * scaleX), cy = (int)(entry.pos.y * scaleY);
-            if (entry.isRect)
-                terrain?.SetUnitBlockRect(cx, cy, entry.offX, entry.offY, entry.rectW, entry.rectH, false);
             else
-                terrain?.SetUnitBlock(cx, cy, entry.radius, false);
-
-            // Notifier le rendu de sprites
-            if (def != null && def.spriteTilesW > 0)
-                UnitSpriteRenderer.Instance?.Unregister(entry.pos, def);
-
-            registry.RemoveAt(i);
-            anyRemoved = true;
-        }
-
-        if (anyRemoved)
-        {
-            walkabilityDirty = true;
-            // Reconstruire le masque d'émission végétal : le disque du pollen
-            // de l'arbre mort persisterait sinon et continuerait d'émettre du trail.
-            if (speciesSettings[slot].behaviorType == 6)
-                RebuildVegetalEmissionMap();
-            Debug.Log($"[RENDERER] Blocking agent(s) died in slot {slot} — walkability rebuild scheduled.");
+            {
+                var capturedEntry = entry;
+                int byteOffset = entry.bufferIdx * 40; // sizeof(Agent) == 40
+                UnityEngine.Rendering.AsyncGPUReadback.Request(agentBuffer, 40, byteOffset, req => 
+                {
+                    if (req.hasError || !isInitialized || !Application.isPlaying || registry == null) return;
+                    var agentArray = req.GetData<Agent>();
+                    if (agentArray.Length > 0)
+                    {
+                        var agent = agentArray[0];
+                        if (agent.age < 0 || agent.speciesIndex != slot)
+                        {
+                            RemoveBlockingEntry(slot, capturedEntry);
+                            registry.Remove(capturedEntry);
+                        }
+                    }
+                });
+            }
         }
     }
 
@@ -1127,20 +1140,24 @@ public class SlimeMapRenderer : MonoBehaviour
         SlimeShader.SetTexture(seedKernel, "AgentMap",         AgentMap);
         SlimeShader.Dispatch  (seedKernel, gx, gy, 1);
 
-        // Readback : lire tous les slots, spawner ceux avec w=1
-        seedCandidateBuffer.GetData(seedCandidateRead, 0, 0, MAX_SEEDS);
-        int spawned = 0;
-        for (int i = 0; i < MAX_SEEDS; i++)
+        // Readback asynchrone : lire tous les slots, spawner ceux avec w=1 (différé)
+        UnityEngine.Rendering.AsyncGPUReadback.Request(seedCandidateBuffer, req => 
         {
-            if (seedCandidateRead[i].w < 0.5f) continue; // slot vide
-            Vector4 c    = seedCandidateRead[i];
-            int     slot = (int)c.z;
-            if (slot < 0 || slot >= MaxSlots) continue;
-            AddAgentsAt(1, slot, new Vector2(c.x, c.y));
-            spawned++;
-        }
-        if (spawned > 0)
-            RebuildVegetalEmissionMap();
+            if (req.hasError || !isInitialized || !Application.isPlaying) return;
+            var data = req.GetData<Vector4>();
+            int spawned = 0;
+            for (int i = 0; i < MAX_SEEDS; i++)
+            {
+                if (data[i].w < 0.5f) continue; // slot vide
+                Vector4 c    = data[i];
+                int     slot = (int)c.z;
+                if (slot < 0 || slot >= MaxSlots) continue;
+                AddAgentsAt(1, slot, new Vector2(c.x, c.y));
+                spawned++;
+            }
+            if (spawned > 0)
+                RebuildVegetalEmissionMap();
+        });
     }
 
     // ================== Culling tactique ==================================
