@@ -82,6 +82,9 @@ struct SpeciesSettings {
     int   trailEmitRadius;      // rayon d'émission de traînée (0 = pixel unique, >0 = disque pollen)
     float seedProbHigh;         // probabilité de germination quand traînée = 1.0 (ex: 0.01 = 1%)
     float seedProbLow;          // probabilité quand traînée = 0.25 (ex: 0.0025 = 0.25%)
+    float particleLifeScanRadius; // rayon du disque Particle Life (pixels sim)
+    float particleLifeStepSize;   // pas d'échantillonnage Particle Life (pixels sim)
+    float navDensityLimit;        // seuil de densité frontale pour freinage navigation
 };
 
 struct Waypoint {
@@ -414,9 +417,10 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
             if (abs(aw) < 0.001) continue;
 
             float2 forceDir = float2(0.0, 0.0);
-            int scanR = 20;
-            for (int dx = -scanR; dx <= scanR; dx += 4) {
-                for (int dy = -scanR; dy <= scanR; dy += 4) {
+            int scanR    = max(1, (int)settings.particleLifeScanRadius);
+            int stepSize = max(1, (int)settings.particleLifeStepSize);
+            for (int dx = -scanR; dx <= scanR; dx += stepSize) {
+                for (int dy = -scanR; dy <= scanR; dy += stepSize) {
                     float d = length(float2(dx, dy));
                     if (d <= (float)settings.agentRadius || d > (float)scanR) continue;
                     int sx = clamp((int)agent.position.x + dx, 0, width  - 1);
@@ -452,7 +456,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
             int cx = (int)agent.position.x;
             int cy = (int)agent.position.y;
             int selfR2  = settings.agentRadius * settings.agentRadius;
-            int outerR  = settings.agentRadius + 4;
+            int outerR  = settings.agentRadius + max(1, (int)settings.particleLifeStepSize);
             int outerR2 = outerR * outerR;
             for (int ddx = -outerR; ddx <= outerR; ddx++)
                 for (int ddy = -outerR; ddy <= outerR; ddy++) {
@@ -474,7 +478,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
         // Pousse l'agent à l'écart des directions encombrées (intra-espèce).
         // Le rayon effectif est au moins agentRadius+2 pour éviter de lire son propre disque.
         if (settings.repulsionStrength > 0.0) {
-            float effRepR = max(settings.repulsionRadius, (float)settings.agentRadius + 2.0);
+            float effRepR = max(settings.repulsionRadius, (float)settings.agentRadius + settings.particleLifeStepSize);
             float repF = senseAgentsAt(agent, 0,                        effRepR, 1, agent.speciesIndex);
             float repL = senseAgentsAt(agent,  settings.sensorAngleRad, effRepR, 1, agent.speciesIndex);
             float repR = senseAgentsAt(agent, -settings.sensorAngleRad, effRepR, 1, agent.speciesIndex);
@@ -522,7 +526,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
             // un vecteur de poussée s'éloignant de la masse voisine.
             // Appliqué sur newPos directement — l'angle reste intact.
             int cx = (int)agent.position.x, cy = (int)agent.position.y;
-            int iR   = clamp((int)settings.repulsionRadius, 1, 8);
+            int iR   = max(1, (int)settings.repulsionRadius);
             int step = max(1, (int)(iR * 0.34));
             float2 repForce = float2(0.0, 0.0);
             float totalDensity = 0.0;
@@ -558,10 +562,10 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
             // Ralentissement progressif puis arrêt selon densité frontale
             // densityLimit = seuil de début de ralentissement (0 = désactivé)
             // à 2×densityLimit l'agent s'arrête complètement
-            if (settings.densityLimit > 0.0)
+            if (settings.navDensityLimit > 0.0)
             {
-                float excess = (totalDensity - settings.densityLimit)
-                               / max(settings.densityLimit, 0.001);
+                float excess = (totalDensity - settings.navDensityLimit)
+                               / max(settings.navDensityLimit, 0.001);
                 // Vitesse minimum de 10% garantie pour éviter un blocage mathématique parfait (freeze)
                 float speedFactor = max(0.1, saturate(1.0 - excess));
                 newPos = lerp(agent.position, newPos, speedFactor);

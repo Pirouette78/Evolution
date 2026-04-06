@@ -19,7 +19,7 @@
   "repulsionStrength": 0.0,
   "repulsionRadius": 0.0,
   "densityLimit": 0.0,
-  "agentRadius": 1,
+  "agentRadius": 2,
   "trailEmitRadius": 20,
   "seedProbHigh": 0.00005,
   "seedProbLow": 0.0000005,

@@ -150,7 +150,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::WaypointManager
   InitialWaypoints: []
   InitialHives: []
-  flowFieldDownscale: 16
+  flowFieldDownscale: 4
 --- !u!4 &16178402
 Transform:
   m_ObjectHideFlags: 0
@@ -199,8 +199,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SlimeMapRenderer
   SlimeShader: {fileID: 7200000, guid: 1e2bbf2f985345f4da6320ea9dcb187c, type: 3}
-  Width: 2560
-  Height: 1440
+  Width: 1280
+  Height: 720
   StepsPerFrame: 1
   InitialAgentCount: 5000
   DisplayTarget: {fileID: 104352733}
@@ -233,6 +233,9 @@ MonoBehaviour:
     trailEmitRadius: 0
     seedProbHigh: 0
     seedProbLow: 0
+    particleLifeScanRadius: 0
+    particleLifeStepSize: 0
+    navDensityLimit: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -261,6 +264,9 @@ MonoBehaviour:
     trailEmitRadius: 0
     seedProbHigh: 0
     seedProbLow: 0
+    particleLifeScanRadius: 0
+    particleLifeStepSize: 0
+    navDensityLimit: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -289,6 +295,9 @@ MonoBehaviour:
     trailEmitRadius: 0
     seedProbHigh: 0
     seedProbLow: 0
+    particleLifeScanRadius: 0
+    particleLifeStepSize: 0
+    navDensityLimit: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -317,6 +326,9 @@ MonoBehaviour:
     trailEmitRadius: 0
     seedProbHigh: 0
     seedProbLow: 0
+    particleLifeScanRadius: 0
+    particleLifeStepSize: 0
+    navDensityLimit: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -345,6 +357,9 @@ MonoBehaviour:
     trailEmitRadius: 0
     seedProbHigh: 0
     seedProbLow: 0
+    particleLifeScanRadius: 0
+    particleLifeStepSize: 0
+    navDensityLimit: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -373,6 +388,9 @@ MonoBehaviour:
     trailEmitRadius: 0
     seedProbHigh: 0
     seedProbLow: 0
+    particleLifeScanRadius: 0
+    particleLifeStepSize: 0
+    navDensityLimit: 0
   AliveSpeciesCounts: 000000000000000000000000000000000000000000000000
   speciesTypes: 000000000000000000000000000000000000000000000000
   speciesBlocksMovement: 0000000000000000000000000000000000000000000000000000000000000000

@@ -137,7 +137,10 @@ public class SlimeMapRenderer : MonoBehaviour
         public int   agentRadius;           // rayon visuel en pixels
         public int   trailEmitRadius;       // rayon d'émission de traînée
         public float seedProbHigh;          // probabilité germination à trail=1.0
-        public float seedProbLow;           // probabilité germination à trail=0.25 → 112 bytes total
+        public float seedProbLow;           // probabilité germination à trail=0.25
+        public float particleLifeScanRadius;// rayon du disque Particle Life (pixels sim)
+        public float particleLifeStepSize;  // pas d'échantillonnage Particle Life
+        public float navDensityLimit;       // seuil de densité frontale pour freinage navigation → 128 bytes total
     }
 
     public enum DiplomaticState { Neutral, Ally, Peace, War }
@@ -217,7 +220,7 @@ public class SlimeMapRenderer : MonoBehaviour
 
         agentBuffer = new ComputeBuffer(maxAgents, sizeof(float)*6 + sizeof(int)*4);
         // struct size (40 bytes) = 6 floats (24) + 4 ints (16)
-        speciesSettingsBuffer = new ComputeBuffer(MaxSlots, 112);
+        speciesSettingsBuffer = new ComputeBuffer(MaxSlots, System.Runtime.InteropServices.Marshal.SizeOf<SpeciesSettings>());
         speciesCountsBuffer   = new ComputeBuffer(MaxSlots, sizeof(uint));
         slotColorsBuffer      = new ComputeBuffer(MaxSlots, sizeof(float) * 4);
         waypointStockBuffer   = new ComputeBuffer(MaxSlots, sizeof(float));
@@ -891,13 +894,55 @@ public class SlimeMapRenderer : MonoBehaviour
 
             float dt = GetScaledDeltaTime();
 
+            // We scale distances/sizes so that Simulation Space matches Terrain Space physically
+            float scaleS = TerrainMapRenderer.Instance != null && Width > 0 
+                ? (float)Width / TerrainMapRenderer.Instance.Width 
+                : 1f;
+
+            SpeciesSettings[] scaledSettings = new SpeciesSettings[MaxSlots];
+            for (int i = 0; i < MaxSlots; i++)
+            {
+                var original = speciesSettings[i];
+                var s = original;
+                if (scaleS != 1f)
+                {
+                    s.moveSpeed              *= scaleS;
+                    s.sensorOffsetDst        *= scaleS;
+                    s.sensorSize              = Mathf.Max(1, Mathf.RoundToInt(s.sensorSize * scaleS));
+                    s.arrivalRadius          *= scaleS;
+                    s.repulsionRadius        *= scaleS;
+                    s.agentRadius             = Mathf.Max(0, Mathf.RoundToInt(s.agentRadius * scaleS));
+                    s.trailEmitRadius         = Mathf.Max(0, Mathf.RoundToInt(s.trailEmitRadius * scaleS));
+                    s.particleLifeScanRadius *= scaleS;
+                    s.particleLifeStepSize   *= scaleS;
+
+                    // densityLimit — anneau de détection globale (agentRadius → agentRadius + step)
+                    float innerR_terrain = original.agentRadius;
+                    float outerR_terrain = original.agentRadius + Mathf.Max(1f, original.particleLifeStepSize);
+                    float area_terrain   = Mathf.Max(1f, Mathf.PI * (outerR_terrain * outerR_terrain - innerR_terrain * innerR_terrain));
+
+                    float innerR_sim = s.agentRadius; // already scaled above
+                    float outerR_sim = s.agentRadius + Mathf.Max(1f, s.particleLifeStepSize); // already scaled
+                    float area_sim   = Mathf.Max(1f, Mathf.PI * (outerR_sim * outerR_sim - innerR_sim * innerR_sim));
+
+                    s.densityLimit = original.densityLimit * (area_sim / area_terrain);
+
+                    // navDensityLimit — disque frontal de navigation (rayon = repulsionRadius)
+                    float navDisc_terrain  = Mathf.Max(1f, Mathf.PI * original.repulsionRadius * original.repulsionRadius);
+                    float repR_sim         = Mathf.Max(1f, original.repulsionRadius * scaleS);
+                    float navDisc_sim      = Mathf.PI * repR_sim * repR_sim;
+                    s.navDensityLimit = original.densityLimit * (navDisc_sim / navDisc_terrain);
+                }
+                scaledSettings[i] = s;
+            }
+
             // Per-frame global uniforms
             SlimeShader.SetFloat("time",             Time.time);
             SlimeShader.SetFloat("deltaTime",        dt);
+            SlimeShader.SetFloat("mapScale",         scaleS);
             SlimeShader.SetInt  ("numAgents",        currentAgentCount);
-            
-            // Push per-species settings and colors
-            speciesSettingsBuffer.SetData(speciesSettings);
+
+            speciesSettingsBuffer.SetData(scaledSettings);
             slotColorsBuffer.SetData(slotColors);
 
             SlimeShader.SetInt("numActiveSlots",     numActiveSlots);

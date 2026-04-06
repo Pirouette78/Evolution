@@ -69,6 +69,12 @@ public class UIController : MonoBehaviour
     private Slider repulsionRadiusSlider;   private Label repulsionRadiusLabel;
     private Slider densityLimitSlider;      private Label densityLimitLabel;
 
+    // ── Particle Life ──────────────────────────────────────────────
+    private Slider    plScanRadiusSlider;   private Label plScanRadiusLabel;
+    private Slider    plStepSizeSlider;     private Label plStepSizeLabel;
+    private SliderInt agentRadiusSlider;    private Label agentRadiusLabel;
+    private SliderInt trailEmitRadiusSlider;private Label trailEmitRadiusLabel;
+
     // ── Species count ──────────────────────────────────────────────
     private Label speciesCountLabel;
 
@@ -154,6 +160,12 @@ public class UIController : MonoBehaviour
         repulsionRadiusSlider   = root.Q<Slider>("RepulsionRadiusSlider");   repulsionRadiusLabel   = root.Q<Label>("RepulsionRadiusLabel");
         densityLimitSlider      = root.Q<Slider>("DensityLimitSlider");      densityLimitLabel      = root.Q<Label>("DensityLimitLabel");
 
+        // Particle Life
+        plScanRadiusSlider    = root.Q<Slider>   ("PLScanRadiusSlider");    plScanRadiusLabel    = root.Q<Label>("PLScanRadiusLabel");
+        plStepSizeSlider      = root.Q<Slider>   ("PLStepSizeSlider");      plStepSizeLabel      = root.Q<Label>("PLStepSizeLabel");
+        agentRadiusSlider     = root.Q<SliderInt>("AgentRadiusSlider");     agentRadiusLabel     = root.Q<Label>("AgentRadiusLabel");
+        trailEmitRadiusSlider = root.Q<SliderInt>("TrailEmitRadiusSlider"); trailEmitRadiusLabel = root.Q<Label>("TrailEmitRadiusLabel");
+
         // Map
         toggleStrategyMapButton = root.Q<Button>("ToggleStrategyMapButton");
         overlayModeButton       = root.Q<Button>("OverlayModeButton");
@@ -197,6 +209,18 @@ public class UIController : MonoBehaviour
         BindSlider(repulsionStrengthSlider, repulsionStrengthLabel, "F1", v => { var smr = SlimeMapRenderer.Instance; if (smr != null) { int sl = GetCurrentSpeciesSlot(); smr.speciesSettings[sl].repulsionStrength = v; } });
         BindSlider(repulsionRadiusSlider,   repulsionRadiusLabel,   "F1", v => { var smr = SlimeMapRenderer.Instance; if (smr != null) { int sl = GetCurrentSpeciesSlot(); smr.speciesSettings[sl].repulsionRadius   = v; } });
         BindSlider(densityLimitSlider,      densityLimitLabel,      "F1", v => { var smr = SlimeMapRenderer.Instance; if (smr != null) { int sl = GetCurrentSpeciesSlot(); smr.speciesSettings[sl].densityLimit      = v; } });
+
+        // Particle Life
+        BindSlider(plScanRadiusSlider, plScanRadiusLabel, "F0", v => { var smr = SlimeMapRenderer.Instance; if (smr != null) { int sl = GetCurrentSpeciesSlot(); smr.speciesSettings[sl].particleLifeScanRadius = v; } });
+        BindSlider(plStepSizeSlider,   plStepSizeLabel,   "F0", v => { var smr = SlimeMapRenderer.Instance; if (smr != null) { int sl = GetCurrentSpeciesSlot(); smr.speciesSettings[sl].particleLifeStepSize   = v; } });
+        agentRadiusSlider?.RegisterValueChangedCallback(e => {
+            if (agentRadiusLabel != null) agentRadiusLabel.text = e.newValue.ToString();
+            var smr = SlimeMapRenderer.Instance; if (smr != null) { int sl = GetCurrentSpeciesSlot(); smr.speciesSettings[sl].agentRadius = e.newValue; }
+        });
+        trailEmitRadiusSlider?.RegisterValueChangedCallback(e => {
+            if (trailEmitRadiusLabel != null) trailEmitRadiusLabel.text = e.newValue.ToString();
+            var smr = SlimeMapRenderer.Instance; if (smr != null) { int sl = GetCurrentSpeciesSlot(); smr.speciesSettings[sl].trailEmitRadius = e.newValue; }
+        });
 
         // Maps and Toggles
         playerSelectButtons[0] = root.Q<Button>("BtnSelectP1");
@@ -377,6 +401,15 @@ public class UIController : MonoBehaviour
             densityLimitSlider?.SetValueWithoutNotify(settings.densityLimit);
             if (densityLimitLabel != null) densityLimitLabel.text = settings.densityLimit.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
 
+            plScanRadiusSlider?.SetValueWithoutNotify(settings.particleLifeScanRadius);
+            if (plScanRadiusLabel != null) plScanRadiusLabel.text = settings.particleLifeScanRadius.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+            plStepSizeSlider?.SetValueWithoutNotify(settings.particleLifeStepSize);
+            if (plStepSizeLabel != null) plStepSizeLabel.text = settings.particleLifeStepSize.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+            agentRadiusSlider?.SetValueWithoutNotify(settings.agentRadius);
+            if (agentRadiusLabel != null) agentRadiusLabel.text = settings.agentRadius.ToString();
+            trailEmitRadiusSlider?.SetValueWithoutNotify(settings.trailEmitRadius);
+            if (trailEmitRadiusLabel != null) trailEmitRadiusLabel.text = settings.trailEmitRadius.ToString();
+
             if (toggleVisibility != null) {
                 toggleVisibility.SetValueWithoutNotify(SlimeMapRenderer.Instance.GetPlayerVisibility(firstSlot));
             }
@@ -443,6 +476,15 @@ public class UIController : MonoBehaviour
             if (repulsionRadiusLabel != null) repulsionRadiusLabel.text = s.repulsionRadius.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
             densityLimitSlider?.SetValueWithoutNotify(s.densityLimit);
             if (densityLimitLabel != null) densityLimitLabel.text = s.densityLimit.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+
+            plScanRadiusSlider?.SetValueWithoutNotify(s.particleLifeScanRadius);
+            if (plScanRadiusLabel != null) plScanRadiusLabel.text = s.particleLifeScanRadius.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+            plStepSizeSlider?.SetValueWithoutNotify(s.particleLifeStepSize);
+            if (plStepSizeLabel != null) plStepSizeLabel.text = s.particleLifeStepSize.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+            agentRadiusSlider?.SetValueWithoutNotify(s.agentRadius);
+            if (agentRadiusLabel != null) agentRadiusLabel.text = s.agentRadius.ToString();
+            trailEmitRadiusSlider?.SetValueWithoutNotify(s.trailEmitRadius);
+            if (trailEmitRadiusLabel != null) trailEmitRadiusLabel.text = s.trailEmitRadius.ToString();
             toggleVisibility?.SetValueWithoutNotify(smr.GetPlayerVisibility(slot));
         }
         if (toggleSpeciesOverlay != null && WaypointOverlayRenderer.Instance != null)

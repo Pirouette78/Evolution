@@ -19,5 +19,7 @@
   "repulsionStrength": 3.0,
   "repulsionRadius": 5.0,
   "densityLimit": 4.0,
+  "particleLifeScanRadius": 20.0,
+  "particleLifeStepSize": 4.0,
   "agentRadius": 1
 }

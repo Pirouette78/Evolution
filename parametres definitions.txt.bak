@@ -1,0 +1,75 @@
+Voici un guide visuel concret, paramètre par paramètre :
+
+---
+
+## Paramètres "Combat & Guerre"
+
+| Paramètre | Ce qu'on voit concrètement |
+|---|---|
+| `warDamageRate` | Vitesse à laquelle les traînées ennemies "brûlent" l'agent. Élevé → les agents meurent rapidement en territoire adverse. Bas → ils traversent sans dommage. |
+| `warMask` | **Bitmask interne** — ne pas toucher depuis le JSON, c'est calculé via la matrice diplomatique. |
+
+---
+
+## Paramètres "Comportement & Énergie"
+
+| Paramètre | Ce qu'on voit concrètement |
+|---|---|
+| `behaviorType` | Change completement le rôle : `Wanderer` = errance, `Scavenger` = mange les traînées, `Transporter` = fait des allers-retours waypoints, `Defender` = suit les ennemis, `Vegetal` = stationnaire (arbre). |
+| `energyConsumptionRate` | Pour `Scavenger` : vitesse à laquelle l'agent meurt de faim. Élevé → il cherche frénétiquement de la nourriture et meurt vite s'il n'en trouve pas. |
+| `energyReward` | Pour `Transporter` : quantité d'énergie déposée via traînée. Haut → la traînée nourrit beaucoup les `Scavengers` alliés au passage. |
+| `startingEnergy` | Énergie de départ à la naissance. Bas → les agents meurent très vite au début s'il n'y a pas de ressources disponibles. |
+
+---
+
+## Paramètres "Navigation (Waypoints)"
+
+| Paramètre | Ce qu'on voit concrètement |
+|---|---|
+| `arrivalRadius` | Rayon (px) pour considérer qu'un waypoint est "atteint". Petit → agents précis mais parfois bloqués s'ils ne trouvent pas exactement le centre. Grand → ils tournent demi-tour plus tôt, trajet moins précis. |
+| `loadingTime` | Secondes d'attente **à la source** avant de repartir. Long → on voit les agents s'accumuler et faire la queue à la source. |
+| `unloadingTime` | Secondes d'attente **à la destination**. Long → embouteillage visible à l'arrivée. |
+| `waitForStock` | `1` = agent attend que le stock soit disponible avant de partir (file d'attente), `0` = part immédiatement même à vide. |
+
+---
+
+## Paramètres "Combat au Contact"
+
+| Paramètre | Ce qu'on voit concrètement |
+|---|---|
+| `trailErasePower` | Vitesse à laquelle l'agent **efface la traînée ennemie** sous ses pieds. Élevé → on voit l'agent "nettoyer" son chemin comme un aspirateur, laissant un sillon propre. |
+| `maxHealth` | Points de vie au combat. Bas → agents fragiles, meurent au premier contact ennemi. Élevé → survivent longtemps. Indépendant de `maxAge`. |
+
+---
+
+## Paramètres "Répulsion & Densité"
+
+| Paramètre | Ce qu'on voit concrètement |
+|---|---|
+| `repulsionStrength` | Force avec laquelle les agents **se repoussent entre eux**. `0` → ils se superposent. Élevé → ils forment une grille espacée, comme des billes qui se repoussent. |
+| `repulsionRadius` | Distance (px) à laquelle ils commencent à se repousser. Petit → ils se touchent presque avant de réagir. Grand → ils maintiennent une grande bulle personnelle. |
+| `densityLimit` | Seuil de surpopulation locale. Dépasse → l'agent **perd son attraction** pour les traînées et commence à fuir la zone bondée. Visible : la foule se disperse d'elle-même au lieu de s'entasser. |
+
+---
+
+## Paramètres "Visuel & Traînée"
+
+| Paramètre | Ce qu'on voit concrètement |
+|---|---|
+| `agentRadius` | Taille du disque de l'agent dans `AgentMap` (carte de présence). Affecte ce que **les autres** voient de lui. `0` = un pixel, `3` = large disque. Aussi : son propre "corps" exclu du scan de densité. |
+| `trailEmitRadius` | Taille du disque de traînée émis. `0` = tracé fin 1px. `20` = grosse tache de pollenisation visible (arbre). Donne le côté "épaisseur" à la trace laissée. |
+| `seedProbHigh` | Probabilité de faire germer un nouvel arbre à chaque frame là où la traînée est saturée (=1.0). Ex: `0.00005` = très rare. Visible : nouveaux arbres qui poussent lentement. |
+| `seedProbLow` | Idem mais dans les zones peu couvertes (traînée ~0.25). Presque toujours plus bas que `seedProbHigh`. |
+
+---
+
+## Paramètres "Particle Life" (nouveaux)
+
+| Paramètre | Ce qu'on voit concrètement |
+|---|---|
+| `particleLifeScanRadius` | **Rayon de perception directe** d'autres agents réels. Élevé → les agents réagissent à des voisins lointains (attraction/répulsion à longue portée façon particule Particle Life). Bas → ils ne voient que leurs voisins immédiats. |
+| `particleLifeStepSize` | **Précision du scan**. Petit (`1`) = scan pixel par pixel, très précis mais coûteux en GPU. Grand (`4-8`) = scan en grille lâche, rapide mais moins fin. Pas de changement visuel majeur sauf à des valeurs extrêmes. |
+
+---
+
+> **💡 Règle pratique** : les paramètres qui changent le plus visuellement sont `repulsionStrength` + `densityLimit` (formation des groupes), `trailEmitRadius` (épaisseur des traces), et `particleLifeScanRadius` (comportement d'essaim / fuite).

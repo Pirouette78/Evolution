@@ -17,5 +17,7 @@
   "startingEnergy": 100.0,
   "repulsionStrength": 5.0,
   "repulsionRadius": 5.0,
-  "densityLimit": 3.0
+  "densityLimit": 3.0,
+  "particleLifeScanRadius": 20.0,
+  "particleLifeStepSize": 4.0
 }

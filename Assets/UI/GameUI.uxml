@@ -145,6 +145,36 @@
                 <ui:Label name="DensityLimitLabel" text="0" style="font-size:13px; color:white; min-width:38px; -unity-text-align: middle-right; margin-left:6px;" />
             </ui:VisualElement>
 
+            <!-- ── Particle Life ─────────────────────── -->
+            <ui:Label text="🔬  Particle Life" style="font-size: 13px; color: rgb(180,255,200); -unity-font-style: bold; margin-top:6px; margin-bottom:5px;" />
+
+            <ui:Label text="Scan Radius (px terrain)" style="font-size: 12px; color: rgb(180,180,180); margin-bottom:2px;" />
+            <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 8px;">
+                <ui:Slider name="PLScanRadiusSlider" low-value="0" high-value="100" value="20" style="flex-grow:1;" />
+                <ui:Label name="PLScanRadiusLabel" text="20" style="font-size:13px; color:white; min-width:38px; -unity-text-align: middle-right; margin-left:6px;" />
+            </ui:VisualElement>
+
+            <ui:Label text="Step Size (px terrain)" style="font-size: 12px; color: rgb(180,180,180); margin-bottom:2px;" />
+            <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 8px;">
+                <ui:Slider name="PLStepSizeSlider" low-value="1" high-value="20" value="4" style="flex-grow:1;" />
+                <ui:Label name="PLStepSizeLabel" text="4" style="font-size:13px; color:white; min-width:38px; -unity-text-align: middle-right; margin-left:6px;" />
+            </ui:VisualElement>
+
+            <!-- ── Corps de l'agent ──────────────────── -->
+            <ui:Label text="🫧  Corps Agent" style="font-size: 13px; color: rgb(255,220,180); -unity-font-style: bold; margin-top:6px; margin-bottom:5px;" />
+
+            <ui:Label text="Agent Radius (px)" style="font-size: 12px; color: rgb(180,180,180); margin-bottom:2px;" />
+            <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 8px;">
+                <ui:SliderInt name="AgentRadiusSlider" low-value="0" high-value="10" value="0" style="flex-grow:1;" />
+                <ui:Label name="AgentRadiusLabel" text="0" style="font-size:13px; color:white; min-width:38px; -unity-text-align: middle-right; margin-left:6px;" />
+            </ui:VisualElement>
+
+            <ui:Label text="Trail Emit Radius (px)" style="font-size: 12px; color: rgb(180,180,180); margin-bottom:2px;" />
+            <ui:VisualElement style="flex-direction: row; align-items: center; margin-bottom: 12px;">
+                <ui:SliderInt name="TrailEmitRadiusSlider" low-value="0" high-value="30" value="2" style="flex-grow:1;" />
+                <ui:Label name="TrailEmitRadiusLabel" text="2" style="font-size:13px; color:white; min-width:38px; -unity-text-align: middle-right; margin-left:6px;" />
+            </ui:VisualElement>
+
             <!-- ── Map ────────────────────────────── -->
             <ui:Label text="🗺  Carte" style="font-size: 13px; color: rgb(140,200,255); -unity-font-style: bold; margin-bottom:5px;" />
             <ui:Button name="ToggleStrategyMapButton" text="Cacher Strategy Map" style="font-size: 14px; padding: 7px 10px; background-color: rgb(80,50,120); color: white; border-radius: 5px; margin-bottom: 6px;" />

@@ -90,6 +90,12 @@ public class SpeciesDefinition
     /// <summary>Seuil de densité locale avant affaiblissement de l'attraction. 0 = désactivé.</summary>
     public float densityLimit;
 
+    // ── Particle Life (interaction directe agent-à-agent) ─────────────
+    /// <summary>Rayon du disque de balayage Particle Life autour de l'agent (pixels terrain). Ex: 20.</summary>
+    public float particleLifeScanRadius = 20f;
+    /// <summary>Pas d'échantillonnage dans le disque Particle Life (pixels terrain). Plus grand = plus rapide mais moins précis. Ex: 4.</summary>
+    public float particleLifeStepSize = 4f;
+
     /// <summary>Rayon visuel de l'agent en pixels (disque dans AgentMap). 0 = pixel unique (défaut). 1 = croix 5px. 3 = disque ~29px.</summary>
     public int agentRadius = 0;
 
@@ -167,13 +173,16 @@ public class SpeciesDefinition
         arrivalRadius         = arrivalRadius,
         loadingTime           = loadingTime,
         unloadingTime         = unloadingTime,
-        waitForStock          = waitForStock ? 1f : 0f,
-        repulsionStrength     = repulsionStrength,
-        repulsionRadius       = repulsionRadius,
-        densityLimit          = densityLimit,
-        agentRadius           = Mathf.Max(0, agentRadius),
-        trailEmitRadius       = Mathf.Max(0, trailEmitRadius),
-        seedProbHigh          = seedProbHigh,
-        seedProbLow           = seedProbLow,
+        waitForStock              = waitForStock ? 1f : 0f,
+        repulsionStrength         = repulsionStrength,
+        repulsionRadius           = repulsionRadius,
+        densityLimit              = densityLimit,
+        agentRadius               = Mathf.Max(0, agentRadius),
+        trailEmitRadius           = Mathf.Max(0, trailEmitRadius),
+        seedProbHigh              = seedProbHigh,
+        seedProbLow               = seedProbLow,
+        particleLifeScanRadius    = Mathf.Max(1f, particleLifeScanRadius),
+        particleLifeStepSize      = Mathf.Max(1f, particleLifeStepSize),
+        navDensityLimit           = densityLimit, // same source, different scaling applied at runtime
     };
 }
