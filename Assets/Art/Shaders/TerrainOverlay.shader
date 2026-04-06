@@ -132,15 +132,19 @@ Shader "Evolution/TerrainOverlay"
 
             fixed4 frag(v2f i) : SV_Target
             {
-                int c  = getMapType(i.uv,  0,  0);
-                int nw = getMapType(i.uv, -1,  1);
-                int n  = getMapType(i.uv,  0,  1);
-                int ne = getMapType(i.uv,  1,  1);
-                int w  = getMapType(i.uv, -1,  0);
-                int e  = getMapType(i.uv,  1,  0);
-                int sw = getMapType(i.uv, -1, -1);
-                int s  = getMapType(i.uv,  0, -1);
-                int se = getMapType(i.uv,  1, -1);
+                // Ancrage au centre du pixel : évite les désaccords UV à la frontière exacte de deux pixels
+                float2 mapPixel   = floor(i.uv * _MapSize.xy);
+                float2 snappedUV  = (mapPixel + 0.5) * _MainTex_TexelSize.xy;
+
+                int c  = getMapType(snappedUV,  0,  0);
+                int nw = getMapType(snappedUV, -1,  1);
+                int n  = getMapType(snappedUV,  0,  1);
+                int ne = getMapType(snappedUV,  1,  1);
+                int w  = getMapType(snappedUV, -1,  0);
+                int e  = getMapType(snappedUV,  1,  0);
+                int sw = getMapType(snappedUV, -1, -1);
+                int s  = getMapType(snappedUV,  0, -1);
+                int se = getMapType(snappedUV,  1, -1);
 
                 int maxLayer = max(max(max(c, nw), max(n, ne)), max(max(w, e), max(sw, max(s, se))));
 
@@ -154,14 +158,16 @@ Shader "Evolution/TerrainOverlay"
 
                 float atlasCols = round(_TilesetTex_TexelSize.z / _TileSize);
                 float atlasRows = round(_TilesetTex_TexelSize.w / _TileSize);
-                float2 subUV = frac(i.uv * _MapSize.xy);
+                // Position fractionnelle dans le pixel courant + inset demi-texel contre le bleeding
+                float halfTexel = 0.5 / _TileSize;
+                float2 subUV = clamp(i.uv * _MapSize.xy - mapPixel, halfTexel, 1.0 - halfTexel);
 
                 // Layer 0 (Base layer) is drawn as a full solid tile.
                 // In Godot 47-blob, solid block is at (1, 4)
                 float2 solidCoord = float2(1, 4);
                 float invRowBase = atlasRows - 1.0 - (offsets[0].y + solidCoord.y);
                 float2 baseUV = float2((offsets[0].x + solidCoord.x + subUV.x) / atlasCols, (invRowBase + subUV.y) / atlasRows);
-                fixed4 result = tex2D(_TilesetTex, baseUV) * _Tint;
+                fixed4 result = tex2Dlod(_TilesetTex, float4(baseUV, 0, 0)) * _Tint;
 
                 // Stack subsequent layers (Maximum 5 layers on top of base)
                 [unroll(5)]

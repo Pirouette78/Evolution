@@ -27,6 +27,29 @@ public class CameraController : MonoBehaviour
     /// <summary>Caméra gérée par ce controller (accès pour ZoomLevelController et autres systèmes).</summary>
     public Camera Cam => cam;
 
+    /// <summary>Niveau de zoom discret actuel (0 = max zoom, 4 = dézoom max). Mis à jour à chaque changement de zoom.</summary>
+    public static int CurrentZoomLevel    { get; private set; } = 0;
+    /// <summary>Multiplicateur total de vitesse de simulation lié au zoom.</summary>
+    public static int ZoomTimeMultiplier   { get; private set; } = 1;
+    /// <summary>Portion du multiplicateur appliquée via GameTime.TimeScale (accélère tout : agents, spawns, timers).</summary>
+    public static int ZoomTimeScaleFactor  { get; private set; } = 1;
+    /// <summary>Portion appliquée via StepsPerFrame (précision GPU).</summary>
+    public static int ZoomStepsPerFrame    { get; private set; } = 1;
+
+    [Header("Zoom → Vitesse de simulation")]
+    [Tooltip("Activer l'accélération automatique de la simulation quand on dézoomme.")]
+    public bool  zoomDrivesSimSpeed  = true;
+    [Tooltip("Nombre de niveaux : 4 → ×1, ×2, ×4, ×8, ×16.")]
+    public int   zoomSpeedLevels     = 4;
+    [Tooltip("OrthoSize à partir duquel la sim tourne à ×1 (zoom max).")]
+    public float minSpeedOrthoSize   = 20f;
+    [Tooltip("OrthoSize à partir duquel la sim tourne à ×(2^zoomSpeedLevels) (dézoom max).")]
+    public float maxSpeedOrthoSize   = 300f;
+    [Tooltip("Portion maximale du multiplicateur gérée par GameTime.TimeScale (accélère tout : agents + spawns + timers CPU).")]
+    public int   maxTimeScaleFromZoom = 4;
+    [Tooltip("Portion maximale gérée par StepsPerFrame (précision GPU uniquement). Total = TimeScale * Steps.")]
+    public int   maxStepsFromZoom     = 4;
+
     private Camera cam;
     private Vector3 dragOrigin;
     private bool isDragging;
@@ -61,10 +84,37 @@ public class CameraController : MonoBehaviour
         if (Mathf.Abs(scroll) < 0.01f) return;
 
         // Zoom logarithmique : chaque cran multiplie l'orthoSize par ZoomFactor.
-        // Step proportionnel au zoom courant → perception uniforme à toutes les distances.
         float notches = scroll * 50f / 120f;
         float newSize = cam.orthographicSize * Mathf.Pow(ZoomFactor, -notches);
         cam.orthographicSize = Mathf.Clamp(newSize, MinOrthoSize, MaxOrthoSize);
+
+        UpdateZoomSimSpeed();
+    }
+
+    private void UpdateZoomSimSpeed()
+    {
+        if (!zoomDrivesSimSpeed) return;
+
+        // zoomRatio = 0 → orthoSize <= minSpeedOrthoSize → ×1
+        // zoomRatio = 1 → orthoSize >= maxSpeedOrthoSize → ×(2^zoomSpeedLevels)
+        float lo  = Mathf.Log(Mathf.Max(1f, minSpeedOrthoSize));
+        float hi  = Mathf.Log(Mathf.Max(lo + 0.001f, maxSpeedOrthoSize));
+        float cur = Mathf.Log(Mathf.Max(1f, cam.orthographicSize));
+        float zoomRatio = Mathf.Clamp01((cur - lo) / (hi - lo));
+
+        int level = Mathf.Clamp(Mathf.RoundToInt(zoomRatio * zoomSpeedLevels), 0, zoomSpeedLevels);
+        int mult  = 1 << level; // total multiplier : 1, 2, 4, 8, 16...
+
+        if (level == CurrentZoomLevel) return;
+        CurrentZoomLevel = level;
+        ZoomTimeMultiplier = mult;
+
+        // Hybride : Time portion jusqu'à maxTimeScaleFromZoom, steps pour le reste (précision)
+        int tsComponent    = Mathf.Clamp(mult, 1, Mathf.Max(1, maxTimeScaleFromZoom));
+        int stepsComponent = Mathf.Clamp(mult / tsComponent, 1, Mathf.Max(1, maxStepsFromZoom));
+        ZoomTimeScaleFactor = tsComponent;
+        ZoomStepsPerFrame   = stepsComponent;
+        // UIController.ApplyZoomSpeed() lit ces valeurs chaque frame dans Update() et les applique.
     }
 
     private void HandleDrag()

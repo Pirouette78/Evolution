@@ -11,6 +11,7 @@ public class UIController : MonoBehaviour
     // ── Top bar ────────────────────────────────────────────────────
     private Label  energyLabel;
     private Label  entityCountLabel;
+    private Label  simSpeedLabel;
     private Button pauseButton;
 
     private Button[] playerSelectButtons  = new Button[6];
@@ -103,6 +104,9 @@ public class UIController : MonoBehaviour
     // ── State ──────────────────────────────────────────────────────
     private bool  isPaused          = false;
     private float previousTimeScale = 1f;
+    private float _baseTimeScale    = 1f;  // vitesse de base (slider Vitesse), sans zoom
+    private int   _baseStepsPerFrame = 1;  // valeur de base du slider StepsPerFrame, sans zoom
+    private int   _lastZoomLevel    = -1;  // pour détecter un changement de zoom dans Update()
     private bool  strategyMapVisible = true;
     private bool  overlayMode        = false;
     private bool  hasResearchedMembrane = false;
@@ -127,6 +131,7 @@ public class UIController : MonoBehaviour
         // Top bar
         energyLabel        = root.Q<Label> ("EnergyLabel");
         entityCountLabel   = root.Q<Label> ("EntityCountLabel");
+        simSpeedLabel      = root.Q<Label> ("SimSpeedLabel");
         pauseButton        = root.Q<Button>("PauseButton");
 
         // Game controls
@@ -188,8 +193,9 @@ public class UIController : MonoBehaviour
         });
 
         stepsPerFrameSlider?.RegisterValueChangedCallback(e => {
+            _baseStepsPerFrame = e.newValue;
             if (stepsPerFrameLabel != null) stepsPerFrameLabel.text = e.newValue.ToString();
-            if (SlimeMapRenderer.Instance != null) SlimeMapRenderer.Instance.StepsPerFrame = e.newValue;
+            ApplyZoomSpeed();
         });
 
         BindSlider(maxAgeSlider,       maxAgeLabel,       "F0", v => { var smr = SlimeMapRenderer.Instance; if (smr != null) { int sl = GetCurrentSpeciesSlot(); smr.speciesSettings[sl].maxAge = v; } });
@@ -1360,24 +1366,48 @@ public class UIController : MonoBehaviour
     // ── Game speed / pause ────────────────────────────────────────
     private void SetGameTimeScale(float scale)
     {
-        if (entityManager == default || World.DefaultGameObjectInjectionWorld == null) return;
-        var q = entityManager.CreateEntityQuery(typeof(GameTime));
-        if (q.IsEmpty) return;
-        var e  = q.GetSingletonEntity();
-        var gt = entityManager.GetComponentData<GameTime>(e);
-        gt.TimeScale = scale;
-        entityManager.SetComponentData(e, gt);
+        _baseTimeScale = Mathf.Max(0f, scale);
+        ApplyZoomSpeed();
         isPaused = scale <= 0.01f;
         if (pauseButton != null) pauseButton.text = isPaused ? "Play" : "Pause";
     }
 
+    /// <summary>
+    /// Applique la vitesse combinée = _baseTimeScale × ZoomTimeScaleFactor (via GameTime)
+    /// + ZoomStepsPerFrame (via SlimeMapRenderer). À appeler chaque fois que l'un des deux change.
+    /// </summary>
+    private void ApplyZoomSpeed()
+    {
+        float combinedScale = isPaused ? 0f : _baseTimeScale * CameraController.ZoomTimeScaleFactor;
+
+        if (entityManager != default && World.DefaultGameObjectInjectionWorld != null)
+        {
+            var q = entityManager.CreateEntityQuery(typeof(GameTime));
+            if (!q.IsEmpty)
+            {
+                var e  = q.GetSingletonEntity();
+                var gt = entityManager.GetComponentData<GameTime>(e);
+                gt.TimeScale = combinedScale;
+                entityManager.SetComponentData(e, gt);
+            }
+            q.Dispose();
+        }
+
+        if (SlimeMapRenderer.Instance != null)
+            SlimeMapRenderer.Instance.StepsPerFrame = isPaused ? 1 : _baseStepsPerFrame * CameraController.ZoomStepsPerFrame;
+    }
+
     private void TogglePause()
     {
-        isPaused = !isPaused;
-        float newScale = isPaused ? 0f : (previousTimeScale > 0f ? previousTimeScale : 1f);
         if (!isPaused && speedSlider != null) previousTimeScale = speedSlider.value;
-        SetGameTimeScale(newScale);
-        if (speedSlider != null && !isPaused) speedSlider.value = newScale;
+        isPaused = !isPaused;
+        if (!isPaused)
+        {
+            // Récupère la vitesse de base précédente
+            _baseTimeScale = previousTimeScale > 0f ? previousTimeScale : 1f;
+            if (speedSlider != null) speedSlider.value = _baseTimeScale;
+        }
+        ApplyZoomSpeed();
         if (pauseButton != null) pauseButton.text = isPaused ? "Play" : "Pause";
     }
 
@@ -1465,6 +1495,26 @@ public class UIController : MonoBehaviour
 
     private void Update()
     {
+        // Indicateur vitesse de simulation (zoom-driven)
+        if (simSpeedLabel != null)
+        {
+            int mult = CameraController.ZoomTimeMultiplier;
+            simSpeedLabel.text = $"×{mult}";
+            // Couleur : vert calme à x1, orange à x4+, rouge à x8+
+            simSpeedLabel.style.color = mult >= 8
+                ? new StyleColor(new Color(1f, 0.4f, 0.3f))
+                : mult >= 4
+                    ? new StyleColor(new Color(1f, 0.8f, 0.3f))
+                    : new StyleColor(new Color(0.7f, 1f, 0.7f));
+        }
+
+        // Appliquer la vitesse hybride si le niveau de zoom a changé
+        if (!isPaused && CameraController.CurrentZoomLevel != _lastZoomLevel)
+        {
+            _lastZoomLevel = CameraController.CurrentZoomLevel;
+            ApplyZoomSpeed();
+        }
+
         // Détection clic gauche sur la carte (hors mode placement)
         var mouse = Mouse.current;
         if (mouse != null && mouse.leftButton.wasPressedThisFrame)

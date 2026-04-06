@@ -379,7 +379,7 @@ public class UnitSpriteRenderer : MonoBehaviour
 
             useTex = new Texture2D(fw, fh, TextureFormat.RGBA32, false)
             {
-                filterMode = FilterMode.Bilinear,
+                filterMode = FilterMode.Point,
                 wrapMode   = TextureWrapMode.Clamp
             };
             useTex.SetPixels32(cropped);
