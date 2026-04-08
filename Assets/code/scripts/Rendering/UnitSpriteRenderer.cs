@@ -1,14 +1,11 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using UnityEngine;
 
 /// <summary>
 /// Rend les sprites des unités statiques (ex: arbres) dans l'espace monde.
-/// Les unités avec spriteTilesW > 0 s'enregistrent via Register() / Unregister()
-/// (appelés depuis SlimeMapRenderer à l'apparition/mort de l'unité).
-/// Rendu via Graphics.DrawMesh() en LateUpdate — zéro allocation par frame.
+/// Rendu via Graphics.DrawMeshInstanced() — un draw call par batch de 1023 instances.
 /// Auto-créé au démarrage, DontDestroyOnLoad.
 /// </summary>
 public class UnitSpriteRenderer : MonoBehaviour
@@ -26,27 +23,31 @@ public class UnitSpriteRenderer : MonoBehaviour
 
     private struct SpriteEntry
     {
-        public Vector2          pos;
+        public Vector2           pos;
         public SpeciesDefinition def;
     }
 
     private struct BuildingSpriteEntry
     {
-        public Vector2          pos;
+        public Vector2            pos;
         public BuildingDefinition def;
     }
 
     // Matériaux par spriteName (chargés lazily à la première registration)
-    private readonly Dictionary<string, Material>        materials = new Dictionary<string, Material>();
-    // Instances à rendre, groupées par spriteName (une DrawMesh par instance)
-    private readonly Dictionary<string, List<SpriteEntry>> entries = new Dictionary<string, List<SpriteEntry>>();
-    private readonly Dictionary<string, List<BuildingSpriteEntry>> buildingEntries = new Dictionary<string, List<BuildingSpriteEntry>>();
+    private readonly Dictionary<string, Material>                    materials      = new();
+    // Instances à rendre, groupées par spriteName
+    private readonly Dictionary<string, List<SpriteEntry>>           entries        = new();
+    private readonly Dictionary<string, List<BuildingSpriteEntry>>   buildingEntries = new();
 
-    private BuildingSpriteEntry? previewBuilding = null;
-    private bool previewIsWalkable = false;
+    private BuildingSpriteEntry? previewBuilding   = null;
+    private bool                 previewIsWalkable = false;
 
-    private Mesh quadMesh;
+    private Mesh                 quadMesh;
     private MaterialPropertyBlock _mpb;
+
+    // Cache de matrices pré-alloué pour DrawMeshInstanced (max 1023 par batch, zéro alloc par frame)
+    private const int BATCH_SIZE = 1023;
+    private readonly Matrix4x4[] _batchMatrices = new Matrix4x4[BATCH_SIZE];
 
     // ── Unity lifecycle ─────────────────────────────────────────────
 
@@ -55,31 +56,23 @@ public class UnitSpriteRenderer : MonoBehaviour
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
         quadMesh = CreateQuad();
-        _mpb = new MaterialPropertyBlock();
+        _mpb     = new MaterialPropertyBlock();
     }
 
     /// <summary>
-    /// Re-scanne les agents bloquants déjà présents dans le buffer GPU,
-    /// au cas où ils auraient été spawnés avant que Instance soit créé.
-    /// </summary>
-    /// <summary>
     /// Attend la fin du spawn initial de SlimeMapRenderer, puis re-scanne
     /// tous les agents bloquants avec sprite pour les enregistrer.
-    /// Nécessaire car le spawn se fait en coroutine et peut dépasser Start().
     /// </summary>
     private IEnumerator Start()
     {
-        // Attendre que SlimeMapRenderer ait fini son spawn initial
         while (SlimeMapRenderer.Instance == null || !SlimeMapRenderer.Instance.InitialSpawnDone)
             yield return null;
-        yield return null; // une frame supplémentaire pour que RegisterBlockingAgents finisse
+        yield return null;
 
         var smr = SlimeMapRenderer.Instance;
         var lib = SpeciesLibrary.Instance;
         if (smr == null || lib == null) yield break;
 
-        // Vider avant de re-scanner : RegisterBlockingAgents a déjà enregistré
-        // les arbres initiaux (Instance existait), donc sans ce clear ils seraient en double.
         entries.Clear();
 
         int total = 0;
@@ -114,7 +107,6 @@ public class UnitSpriteRenderer : MonoBehaviour
             float tw = terrain2 != null ? terrain2.Width  : smr.Width;
             float th = terrain2 != null ? terrain2.Height : smr.Height;
             Bounds b2 = smr.DisplayTarget.bounds;
-            // Log first entry
             foreach (var kv in entries)
             {
                 if (!materials.TryGetValue(kv.Key, out var m2) || m2 == null) break;
@@ -136,131 +128,147 @@ public class UnitSpriteRenderer : MonoBehaviour
         if (spriteAlpha <= 0f) return;
         _mpb.SetColor("_Color", new Color(1f, 1f, 1f, spriteAlpha));
 
-        Bounds b    = smr.DisplayTarget.bounds;
-        float  mapW = smr.Width;
-        float  mapH = smr.Height;
-        float  zBase = b.center.z; // Z de référence de la carte
+        Bounds b     = smr.DisplayTarget.bounds;
+        float  mapW  = smr.Width;
+        float  mapH  = smr.Height;
+        float  zBase = b.center.z;
 
-        // Résolution de la grille terrain (même snap entier que le système de blocage)
         var   terrain = TerrainMapRenderer.Instance;
         float terrW   = terrain != null ? terrain.Width  : mapW;
         float terrH   = terrain != null ? terrain.Height : mapH;
 
+        // Précalculs communs à toutes les entrées
+        float invTerrW   = 1f / terrW;
+        float invTerrH   = 1f / terrH;
+        float bSizeX     = b.size.x;
+        float bSizeY     = b.size.y;
+
+        float bMinX      = b.min.x;
+        float bMinY      = b.min.y;
+        float invBSizeY  = 1f / Mathf.Max(0.0001f, bSizeY);
+        float zBaseM1    = zBase - 1.0f;
+
+        // ── Unités (species) ──────────────────────────────────────────
         foreach (var kv in entries)
         {
             if (!materials.TryGetValue(kv.Key, out Material mat) || mat == null) continue;
+            var list = kv.Value;
+            int count = list.Count;
+            int batchStart = 0;
 
-            foreach (var e in kv.Value)
+            while (batchStart < count)
             {
-                SpeciesDefinition def = e.def;
+                int batchCount = Mathf.Min(BATCH_SIZE, count - batchStart);
+                for (int i = 0; i < batchCount; i++)
+                {
+                    var e   = list[batchStart + i];
+                    var def = e.def;
 
-                // Position d'ancre en pixels terrain (entiers, identique au blocage)
-                int   tcx   = (int)(e.pos.x * terrW / mapW);
-                int   tcy   = (int)(e.pos.y * terrH / mapH);
+                    int   tcx  = (int)(e.pos.x * terrW / mapW);
+                    int   tcy  = (int)(e.pos.y * terrH / mapH);
+                    float stW  = def.spriteTilesW;
+                    float stH  = def.spriteTilesH;
 
-                // spriteTilesW/H = dimensions en pixels terrain (échelle 1:1 avec la grille terrain)
-                float stW   = def.spriteTilesW;
-                float stH   = def.spriteTilesH;
+                    float anchorWorldY = bMinY + (tcy * invTerrH) * bSizeY;
+                    float csxT = tcx + (0.5f - def.spriteAnchorX) * stW;
+                    float csyT = tcy + (0.5f - def.spriteAnchorY) * stH;
 
-                // L'ancre Y bas (spriteAnchorY) représente le pied de l'objet → c'est ce Y qu'on utilise pour le sorting
-                float anchorWorldY = b.min.y + (tcy / terrH) * b.size.y;
+                    float wx = bMinX + (csxT * invTerrW) * bSizeX;
+                    float wy = bMinY + (csyT * invTerrH) * bSizeY;
 
-                // Centre du sprite en pixels terrain (ancre appliquée)
-                float csxT  = tcx + (0.5f - def.spriteAnchorX) * stW;
-                float csyT  = tcy + (0.5f - def.spriteAnchorY) * stH;
+                    float normY  = Mathf.Clamp01((anchorWorldY - bMinY) * invBSizeY);
+                    float sz     = zBaseM1 + normY * 0.9f;
+                    float scaleX = stW * bSizeX * invTerrW;
+                    float scaleY = stH * bSizeY * invTerrH;
 
-                // Conversion pixels terrain → coordonnées monde
-                float wx = b.min.x + (csxT / terrW) * b.size.x;
-                float wy = b.min.y + (csyT / terrH) * b.size.y;
-
-                // Y-Sorting : bas de l'écran (anchorWorldY petit) → Z petit → devant
-                float normY = Mathf.Clamp01((anchorWorldY - b.min.y) / Mathf.Max(0.0001f, b.size.y));
-                float sz    = (zBase - 1.0f) + normY * 0.9f;
-
-                // Taille monde
-                float scaleX = stW * b.size.x / terrW;
-                float scaleY = stH * b.size.y / terrH;
-
-                Matrix4x4 matrix = Matrix4x4.TRS(
-                    new Vector3(wx, wy, sz),
-                    Quaternion.identity,
-                    new Vector3(scaleX, scaleY, 1f));
-
-                Graphics.DrawMesh(quadMesh, matrix, mat, 0, null, 0, _mpb);
+                    _batchMatrices[i] = Matrix4x4.TRS(
+                        new Vector3(wx, wy, sz),
+                        Quaternion.identity,
+                        new Vector3(scaleX, scaleY, 1f));
+                }
+                Graphics.DrawMeshInstanced(quadMesh, 0, mat, _batchMatrices, batchCount, _mpb,
+                    UnityEngine.Rendering.ShadowCastingMode.Off, false, 0, null);
+                batchStart += batchCount;
             }
         }
 
+        // ── Bâtiments ─────────────────────────────────────────────────
         foreach (var kv in buildingEntries)
         {
             if (!materials.TryGetValue(kv.Key, out Material mat) || mat == null) continue;
+            var list  = kv.Value;
+            int count = list.Count;
+            int batchStart = 0;
 
-            foreach (var e in kv.Value)
+            while (batchStart < count)
             {
-                BuildingDefinition def = e.def;
+                int batchCount = Mathf.Min(BATCH_SIZE, count - batchStart);
+                for (int i = 0; i < batchCount; i++)
+                {
+                    var e   = list[batchStart + i];
+                    var def = e.def;
 
-                int   tcx   = (int)(e.pos.x * terrW / mapW);
-                int   tcy   = (int)(e.pos.y * terrH / mapH);
+                    int   tcx  = (int)(e.pos.x * terrW / mapW);
+                    int   tcy  = (int)(e.pos.y * terrH / mapH);
+                    float stW  = def.spriteTilesW;
+                    float stH  = def.spriteTilesH;
 
-                float stW   = def.spriteTilesW;
-                float stH   = def.spriteTilesH;
+                    float anchorWorldY = bMinY + (tcy * invTerrH) * bSizeY;
+                    float csxT = tcx + (0.5f - def.spriteAnchorX) * stW;
+                    float csyT = tcy + (0.5f - def.spriteAnchorY) * stH;
 
-                float anchorWorldY = b.min.y + (tcy / terrH) * b.size.y;
-                float csxT  = tcx + (0.5f - def.spriteAnchorX) * stW;
-                float csyT  = tcy + (0.5f - def.spriteAnchorY) * stH;
+                    float wx = bMinX + (csxT * invTerrW) * bSizeX;
+                    float wy = bMinY + (csyT * invTerrH) * bSizeY;
 
-                float wx = b.min.x + (csxT / terrW) * b.size.x;
-                float wy = b.min.y + (csyT / terrH) * b.size.y;
+                    float normY  = Mathf.Clamp01((anchorWorldY - bMinY) * invBSizeY);
+                    float sz     = zBaseM1 + normY * 0.9f;
+                    float scaleX = stW * bSizeX * invTerrW;
+                    float scaleY = stH * bSizeY * invTerrH;
 
-                float normY = Mathf.Clamp01((anchorWorldY - b.min.y) / Mathf.Max(0.0001f, b.size.y));
-                float sz    = (zBase - 1.0f) + normY * 0.9f;
-
-                float scaleX = stW * b.size.x / terrW;
-                float scaleY = stH * b.size.y / terrH;
-
-                Matrix4x4 matrix = Matrix4x4.TRS(
-                    new Vector3(wx, wy, sz),
-                    Quaternion.identity,
-                    new Vector3(scaleX, scaleY, 1f));
-
-                Graphics.DrawMesh(quadMesh, matrix, mat, 0, null, 0, _mpb);
+                    _batchMatrices[i] = Matrix4x4.TRS(
+                        new Vector3(wx, wy, sz),
+                        Quaternion.identity,
+                        new Vector3(scaleX, scaleY, 1f));
+                }
+                Graphics.DrawMeshInstanced(quadMesh, 0, mat, _batchMatrices, batchCount, _mpb,
+                    UnityEngine.Rendering.ShadowCastingMode.Off, false, 0, null);
+                batchStart += batchCount;
             }
         }
 
+        // ── Preview bâtiment (placement) — toujours DrawMesh car instance unique ──
         if (previewBuilding.HasValue)
         {
-            var e = previewBuilding.Value;
+            var e   = previewBuilding.Value;
             var def = e.def;
 
             if (materials.TryGetValue(def.spriteName, out Material mat) && mat != null)
             {
-                int   tcx   = (int)(e.pos.x * terrW / mapW);
-                int   tcy   = (int)(e.pos.y * terrH / mapH);
+                int   tcx  = (int)(e.pos.x * terrW / mapW);
+                int   tcy  = (int)(e.pos.y * terrH / mapH);
+                float stW  = def.spriteTilesW;
+                float stH  = def.spriteTilesH;
 
-                float stW   = def.spriteTilesW;
-                float stH   = def.spriteTilesH;
+                float anchorWorldY = bMinY + (tcy * invTerrH) * bSizeY;
+                float csxT = tcx + (0.5f - def.spriteAnchorX) * stW;
+                float csyT = tcy + (0.5f - def.spriteAnchorY) * stH;
 
-                float anchorWorldY = b.min.y + (tcy / terrH) * b.size.y;
-                float csxT  = tcx + (0.5f - def.spriteAnchorX) * stW;
-                float csyT  = tcy + (0.5f - def.spriteAnchorY) * stH;
+                float wx = bMinX + (csxT * invTerrW) * bSizeX;
+                float wy = bMinY + (csyT * invTerrH) * bSizeY;
 
-                float wx = b.min.x + (csxT / terrW) * b.size.x;
-                float wy = b.min.y + (csyT / terrH) * b.size.y;
+                float normY  = Mathf.Clamp01((anchorWorldY - bMinY) * invBSizeY);
+                float sz     = zBaseM1 + normY * 0.9f - 0.05f;
+                float scaleX = stW * bSizeX * invTerrW;
+                float scaleY = stH * bSizeY * invTerrH;
 
-                float normY = Mathf.Clamp01((anchorWorldY - b.min.y) / Mathf.Max(0.0001f, b.size.y));
-                float sz    = (zBase - 1.0f) + normY * 0.9f - 0.05f; // Slightly in front
-
-                float scaleX = stW * b.size.x / terrW;
-                float scaleY = stH * b.size.y / terrH;
-
-                Matrix4x4 matrix = Matrix4x4.TRS(
-                    new Vector3(wx, wy, sz),
-                    Quaternion.identity,
-                    new Vector3(scaleX, scaleY, 1f));
-
-                _mpb.SetColor("_Color", previewIsWalkable 
-                    ? new Color(0.7f, 1f, 0.7f, spriteAlpha * 0.8f) 
+                var previewMpb = new MaterialPropertyBlock();
+                previewMpb.SetColor("_Color", previewIsWalkable
+                    ? new Color(0.7f, 1f, 0.7f, spriteAlpha * 0.8f)
                     : new Color(1f, 0.3f, 0.3f, spriteAlpha * 0.8f));
-                Graphics.DrawMesh(quadMesh, matrix, mat, 0, null, 0, _mpb);
+
+                Graphics.DrawMesh(quadMesh,
+                    Matrix4x4.TRS(new Vector3(wx, wy, sz), Quaternion.identity, new Vector3(scaleX, scaleY, 1f)),
+                    mat, 0, null, 0, previewMpb);
             }
         }
     }
@@ -323,10 +331,13 @@ public class UnitSpriteRenderer : MonoBehaviour
             return;
         }
 
-        previewBuilding = new BuildingSpriteEntry { pos = pos, def = def };
+        previewBuilding   = new BuildingSpriteEntry { pos = pos, def = def };
         previewIsWalkable = isWalkable;
         EnsureMaterial(def.spriteName, def.spriteFramePixelW, def.spriteFramePixelH);
     }
+
+    /// <summary>Efface la prévisualisation.</summary>
+    public void ClearPreviewBuilding() => previewBuilding = null;
 
     // ── Chargement texture ───────────────────────────────────────────
 
@@ -350,23 +361,19 @@ public class UnitSpriteRenderer : MonoBehaviour
         };
         tex.LoadImage(bytes);
 
-        // Si spriteFramePixelW/H est défini, extraire la première frame en nouveaux pixels
         Texture2D useTex = tex;
         if (spriteFramePixelW > 0 && spriteFramePixelH > 0
             && spriteFramePixelW <= tex.width && spriteFramePixelH <= tex.height)
         {
-            int fw = spriteFramePixelW;
-            int fh = spriteFramePixelH;
-            // Unity Texture2D : y=0 en BAS → première frame PNG (haut) = srcY = tex.height - fh
+            int fw   = spriteFramePixelW;
+            int fh   = spriteFramePixelH;
             int srcY = tex.height - fh;
-            Color32[] all    = tex.GetPixels32();
+            Color32[] all     = tex.GetPixels32();
             Color32[] cropped = new Color32[fw * fh];
             for (int row = 0; row < fh; row++)
             for (int col = 0; col < fw; col++)
                 cropped[row * fw + col] = all[(srcY + row) * tex.width + col];
 
-            // Color-key blanc : pixels presque-blancs et (presque-)opaques → transparent
-            // Nécessaire quand le fond du PNG est blanc opaque (même si le sprite a un alpha partiel)
             int keyed = 0;
             for (int i = 0; i < cropped.Length; i++)
             {
@@ -392,11 +399,10 @@ public class UnitSpriteRenderer : MonoBehaviour
             Debug.Log($"[SPRITES] Chargé : {spriteName} ({tex.width}×{tex.height}px) texture complète");
         }
 
-        // Evolution/UnitSprite : ZTest Always, alpha correct, Y-sorting gèré par le Z calculé
-        var mat = new Material(Shader.Find("Evolution/UnitSprite") ?? Shader.Find("Sprites/Default"))
-        {
-            mainTexture = useTex
-        };
+        // Le shader doit supporter GPU instancing (INSTANCING_ON) pour DrawMeshInstanced
+        var shader = Shader.Find("Evolution/UnitSprite") ?? Shader.Find("Sprites/Default");
+        var mat    = new Material(shader) { mainTexture = useTex };
+        mat.enableInstancing = true;
 
         materials[spriteName] = mat;
     }
@@ -408,10 +414,10 @@ public class UnitSpriteRenderer : MonoBehaviour
         var mesh = new Mesh { name = "UnitSpriteQuad" };
         mesh.vertices  = new Vector3[]
         {
-            new Vector3(-0.5f, -0.5f, 0f),
-            new Vector3( 0.5f, -0.5f, 0f),
-            new Vector3( 0.5f,  0.5f, 0f),
-            new Vector3(-0.5f,  0.5f, 0f),
+            new(-0.5f, -0.5f, 0f),
+            new( 0.5f, -0.5f, 0f),
+            new( 0.5f,  0.5f, 0f),
+            new(-0.5f,  0.5f, 0f),
         };
         mesh.uv        = new Vector2[] { new(0,0), new(1,0), new(1,1), new(0,1) };
         mesh.triangles = new int[]     { 0, 1, 2, 0, 2, 3 };

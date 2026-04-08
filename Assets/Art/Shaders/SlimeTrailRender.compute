@@ -12,6 +12,7 @@
 #pragma kernel RebuildVegetalDisks
 #pragma kernel ApplyVegetalEmission
 #pragma kernel CullAgents
+#pragma kernel ClearSeedBuffers
 
 #define MAX_SLOTS 32
 
@@ -140,78 +141,49 @@ bool isWalkable(float2 pos) {
     return col.r > 0.5;
 }
 
-float sense(Agent agent, float sensorAngleOffset, SpeciesSettings settings) {
-    float sensorAngle = agent.angle + sensorAngleOffset;
-    float2 sensorDir = float2(cos(sensorAngle), sin(sensorAngle));
-    float2 sensorPos = agent.position + sensorDir * settings.sensorOffsetDst;
-    int sensorCentreX = (int)sensorPos.x;
-    int sensorCentreY = (int)sensorPos.y;
-
-    // Avoid walking into water/walls
-    if (!isWalkable(sensorPos)) return -100.0; // strong penalty for walls
-
+// Variante avec position pré-calculée (évite de recalculer cos/sin par direction)
+float senseAtPos(float2 sensorPos, int sensorSize, int targetSlice, bool checkWalkable, bool useAgentMap) {
+    if (checkWalkable && !isWalkable(sensorPos)) return -100.0;
+    int cx = (int)sensorPos.x;
+    int cy = (int)sensorPos.y;
     float sum = 0;
-
-    for (int offsetX = -settings.sensorSize; offsetX <= settings.sensorSize; offsetX++) {
-        for (int offsetY = -settings.sensorSize; offsetY <= settings.sensorSize; offsetY++) {
-            int sampleX = min(width - 1, max(0, sensorCentreX + offsetX));
-            int sampleY = min(height - 1, max(0, sensorCentreY + offsetY));
-            sum += TrailMap[int3(sampleX, sampleY, agent.speciesIndex)];
+    for (int offsetX = -sensorSize; offsetX <= sensorSize; offsetX++) {
+        for (int offsetY = -sensorSize; offsetY <= sensorSize; offsetY++) {
+            int sampleX = min(width - 1, max(0, cx + offsetX));
+            int sampleY = min(height - 1, max(0, cy + offsetY));
+            sum += useAgentMap
+                ? AgentMap[int3(sampleX, sampleY, targetSlice)]
+                : TrailMap[int3(sampleX, sampleY, targetSlice)];
         }
     }
     return sum;
+}
+
+float sense(Agent agent, float sensorAngleOffset, SpeciesSettings settings) {
+    float sensorAngle = agent.angle + sensorAngleOffset;
+    float2 sensorPos = agent.position + float2(cos(sensorAngle), sin(sensorAngle)) * settings.sensorOffsetDst;
+    return senseAtPos(sensorPos, settings.sensorSize, agent.speciesIndex, true, false);
 }
 
 // Like sense() but reads from a specific species slice of TrailMap
 float senseSpecies(Agent agent, float sensorAngleOffset, SpeciesSettings settings, int targetSlice) {
     float sensorAngle = agent.angle + sensorAngleOffset;
-    float2 sensorDir = float2(cos(sensorAngle), sin(sensorAngle));
-    float2 sensorPos = agent.position + sensorDir * settings.sensorOffsetDst;
-    int sensorCentreX = (int)sensorPos.x;
-    int sensorCentreY = (int)sensorPos.y;
-    float sum = 0;
-    for (int offsetX = -settings.sensorSize; offsetX <= settings.sensorSize; offsetX++) {
-        for (int offsetY = -settings.sensorSize; offsetY <= settings.sensorSize; offsetY++) {
-            int sampleX = min(width - 1, max(0, sensorCentreX + offsetX));
-            int sampleY = min(height - 1, max(0, sensorCentreY + offsetY));
-            sum += TrailMap[int3(sampleX, sampleY, targetSlice)];
-        }
-    }
-    return sum;
+    float2 sensorPos = agent.position + float2(cos(sensorAngle), sin(sensorAngle)) * settings.sensorOffsetDst;
+    return senseAtPos(sensorPos, settings.sensorSize, targetSlice, false, false);
 }
 
 // Lit AgentMap au lieu de TrailMap : détecte la présence réelle d'agents (non-diffuse)
 float senseAgents(Agent agent, float sensorAngleOffset, SpeciesSettings settings, int targetSlice) {
     float sensorAngle = agent.angle + sensorAngleOffset;
-    float2 sensorDir  = float2(cos(sensorAngle), sin(sensorAngle));
-    float2 sensorPos  = agent.position + sensorDir * settings.sensorOffsetDst;
-    int sensorCentreX = (int)sensorPos.x;
-    int sensorCentreY = (int)sensorPos.y;
-    float sum = 0;
-    for (int offsetX = -settings.sensorSize; offsetX <= settings.sensorSize; offsetX++)
-        for (int offsetY = -settings.sensorSize; offsetY <= settings.sensorSize; offsetY++) {
-            int sampleX = min(width-1, max(0, sensorCentreX + offsetX));
-            int sampleY = min(height-1, max(0, sensorCentreY + offsetY));
-            sum += AgentMap[int3(sampleX, sampleY, targetSlice)];
-        }
-    return sum;
+    float2 sensorPos = agent.position + float2(cos(sensorAngle), sin(sensorAngle)) * settings.sensorOffsetDst;
+    return senseAtPos(sensorPos, settings.sensorSize, targetSlice, false, true);
 }
 
 // Like senseAgents() but avec rayon et taille de kernel explicites — utilisé pour la répulsion courte portée.
 float senseAgentsAt(Agent agent, float sensorAngleOffset, float dist, int kernelSize, int targetSlice) {
     float sensorAngle = agent.angle + sensorAngleOffset;
-    float2 sensorDir  = float2(cos(sensorAngle), sin(sensorAngle));
-    float2 sensorPos  = agent.position + sensorDir * dist;
-    int sensorCentreX = (int)sensorPos.x;
-    int sensorCentreY = (int)sensorPos.y;
-    float sum = 0;
-    for (int offsetX = -kernelSize; offsetX <= kernelSize; offsetX++)
-        for (int offsetY = -kernelSize; offsetY <= kernelSize; offsetY++) {
-            int sampleX = min(width-1, max(0, sensorCentreX + offsetX));
-            int sampleY = min(height-1, max(0, sensorCentreY + offsetY));
-            sum += AgentMap[int3(sampleX, sampleY, targetSlice)];
-        }
-    return sum;
+    float2 sensorPos = agent.position + float2(cos(sensorAngle), sin(sensorAngle)) * dist;
+    return senseAtPos(sensorPos, kernelSize, targetSlice, false, true);
 }
 
 // Navigate toward a waypoint using its flow field slice.
@@ -239,14 +211,25 @@ bool navigateViaFlowField(inout Agent agent, SpeciesSettings settings, int waypo
 }
 
 
+// Cache les SpeciesSettings dans la LDS pour éviter numActiveSlots lectures VRAM par thread
+groupshared SpeciesSettings gs_speciesSettings[MAX_SLOTS];
+
 [numthreads(16,1,1)]
 void UpdateAgents (uint3 id : SV_DispatchThreadID)
 {
+    // Chargement coopératif : les 16 premiers threads chargent les MAX_SLOTS settings
+    // (MAX_SLOTS=32 → 2 slots par thread)
+    uint lid = id.x & 15u; // lane index dans le group (0–15)
+    [unroll]
+    for (uint si = lid; si < (uint)numActiveSlots; si += 16)
+        gs_speciesSettings[si] = speciesSettings[si];
+    GroupMemoryBarrierWithGroupSync();
+
     if (id.x >= numAgents) return;
 
     Agent agent = agents[id.x];
     if (agent.age < 0) return; // permanently dead
-    SpeciesSettings settings = speciesSettings[agent.speciesIndex];
+    SpeciesSettings settings = gs_speciesSettings[agent.speciesIndex];
     if (agent.age > settings.maxAge) {
         agent.age = -1;
         agents[id.x] = agent;
@@ -390,22 +373,28 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
     else
     {
         // Sensing générique via matrice d'interaction (Particle Life sur traînées)
-        // sense() pour la propre traînée (préserve l'évitement des murs)
-        // senseSpecies() pour les traînées étrangères (attraction/répulsion diplomatique)
+        // Les 3 positions de capteur sont pré-calculées une seule fois (évite 6 cos/sin dupliqués)
+        float2 fwdDir   = float2(cos(agent.angle),                              sin(agent.angle));
+        float2 leftDir  = float2(cos(agent.angle + settings.sensorAngleRad),    sin(agent.angle + settings.sensorAngleRad));
+        float2 rightDir = float2(cos(agent.angle - settings.sensorAngleRad),    sin(agent.angle - settings.sensorAngleRad));
+        float2 posFwd   = agent.position + fwdDir   * settings.sensorOffsetDst;
+        float2 posLeft  = agent.position + leftDir  * settings.sensorOffsetDst;
+        float2 posRight = agent.position + rightDir * settings.sensorOffsetDst;
+
         float weightForward = 0, weightLeft = 0, weightRight = 0;
         float selfW = interactionMatrix[agent.speciesIndex * MAX_SLOTS + agent.speciesIndex];
         if (abs(selfW) > 0.001) {
-            weightForward += sense(agent, 0,                        settings) * selfW;
-            weightLeft    += sense(agent,  settings.sensorAngleRad, settings) * selfW;
-            weightRight   += sense(agent, -settings.sensorAngleRad, settings) * selfW;
+            weightForward += senseAtPos(posFwd,   settings.sensorSize, agent.speciesIndex, true,  false) * selfW;
+            weightLeft    += senseAtPos(posLeft,  settings.sensorSize, agent.speciesIndex, false, false) * selfW;
+            weightRight   += senseAtPos(posRight, settings.sensorSize, agent.speciesIndex, false, false) * selfW;
         }
         for (int s = 0; s < numActiveSlots; s++) {
             if (s == agent.speciesIndex) continue;
             float w = interactionMatrix[agent.speciesIndex * MAX_SLOTS + s];
             if (abs(w) < 0.001) continue;
-            weightForward += senseSpecies(agent, 0,                        settings, s) * w;
-            weightLeft    += senseSpecies(agent,  settings.sensorAngleRad, settings, s) * w;
-            weightRight   += senseSpecies(agent, -settings.sensorAngleRad, settings, s) * w;
+            weightForward += senseAtPos(posFwd,   settings.sensorSize, s, false, false) * w;
+            weightLeft    += senseAtPos(posLeft,  settings.sensorSize, s, false, false) * w;
+            weightRight   += senseAtPos(posRight, settings.sensorSize, s, false, false) * w;
         }
 
         // ── Particle Life : balayage circulaire de présence directe (AgentMap) ──
@@ -479,9 +468,13 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
         // Le rayon effectif est au moins agentRadius+2 pour éviter de lire son propre disque.
         if (settings.repulsionStrength > 0.0) {
             float effRepR = max(settings.repulsionRadius, (float)settings.agentRadius + settings.particleLifeStepSize);
-            float repF = senseAgentsAt(agent, 0,                        effRepR, 1, agent.speciesIndex);
-            float repL = senseAgentsAt(agent,  settings.sensorAngleRad, effRepR, 1, agent.speciesIndex);
-            float repR = senseAgentsAt(agent, -settings.sensorAngleRad, effRepR, 1, agent.speciesIndex);
+            // Réutilise les directions pré-calculées (fwdDir, leftDir, rightDir)
+            float2 repPosFwd   = agent.position + fwdDir   * effRepR;
+            float2 repPosLeft  = agent.position + leftDir  * effRepR;
+            float2 repPosRight = agent.position + rightDir * effRepR;
+            float repF = senseAtPos(repPosFwd,   1, agent.speciesIndex, false, true);
+            float repL = senseAtPos(repPosLeft,  1, agent.speciesIndex, false, true);
+            float repR = senseAtPos(repPosRight, 1, agent.speciesIndex, false, true);
             weightForward -= repF * settings.repulsionStrength;
             weightLeft    -= repL * settings.repulsionStrength;
             weightRight   -= repR * settings.repulsionStrength;
@@ -631,7 +624,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
     if (settings.behaviorType == 1) {
         agent.hunger -= settings.energyConsumptionRate * deltaTime;
         for (int ts = 0; ts < numActiveSlots; ts++) {
-            SpeciesSettings other = speciesSettings[ts];
+            SpeciesSettings other = gs_speciesSettings[ts];
             if (other.behaviorType != 2) continue;
             float rbc = TrailMap[int3((int)agent.position.x, (int)agent.position.y, ts)];
             if (rbc > 0.05) agent.hunger = min(agent.hunger + other.energyReward * rbc * deltaTime, settings.startingEnergy);
@@ -717,30 +710,34 @@ void DrawMap (uint3 id : SV_DispatchThreadID)
     }
 }
 
+// Diffuse dispatché avec numActiveSlots en dimension Z :
+// chaque thread (x,y,z) traite un seul pixel d'une seule slice.
+// Avantage : lectures TrailMap cohérentes (pas de saut inter-slice), plus de loop interne.
 [numthreads(8,8,1)]
 void Diffuse (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)width || id.y >= (uint)height) return;
+    int slice = (int)id.z;
 
-    for (int slice = 0; slice < numActiveSlots; slice++) {
-        SpeciesSettings settings = speciesSettings[slice];
-        float sum = 0;
-        float originalCol = TrailMap[int3(id.xy, slice)];
-        
-        for (int offsetX = -1; offsetX <= 1; offsetX ++) {
-            for (int offsetY = -1; offsetY <= 1; offsetY ++) {
-                int sampleX = min(width-1, max(0, (int)id.x + offsetX));
-                int sampleY = min(height-1, max(0, (int)id.y + offsetY));
-                sum += TrailMap[int3(sampleX, sampleY, slice)];
-            }
+    SpeciesSettings settings = speciesSettings[slice];
+    float originalCol = TrailMap[int3(id.xy, slice)];
+
+    float sum = 0;
+    [unroll]
+    for (int offsetX = -1; offsetX <= 1; offsetX++) {
+        [unroll]
+        for (int offsetY = -1; offsetY <= 1; offsetY++) {
+            int sampleX = min(width-1, max(0, (int)id.x + offsetX));
+            int sampleY = min(height-1, max(0, (int)id.y + offsetY));
+            sum += TrailMap[int3(sampleX, sampleY, slice)];
         }
-
-        float blurredCol = sum / 9.0;
-        float diffuseWeight = saturate(settings.diffuseRate * deltaTime);
-        blurredCol = originalCol * (1 - diffuseWeight) + blurredCol * diffuseWeight;
-        
-        DiffusedTrailMap[int3(id.xy, slice)] = blurredCol * saturate(1 - settings.decayRate * deltaTime);
     }
+
+    float blurredCol = sum / 9.0;
+    float diffuseWeight = saturate(settings.diffuseRate * deltaTime);
+    blurredCol = originalCol * (1 - diffuseWeight) + blurredCol * diffuseWeight;
+
+    DiffusedTrailMap[int3(id.xy, slice)] = blurredCol * saturate(1 - settings.decayRate * deltaTime);
 }
 
 [numthreads(16, 1, 1)]
@@ -766,7 +763,7 @@ void CountAlive(uint3 id : SV_DispatchThreadID)
 void ClearAgentMap (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)width || id.y >= (uint)height) return;
-    for (int slice = 0; slice < MAX_SLOTS; slice++)
+    for (int slice = 0; slice < numActiveSlots; slice++)
         AgentMap[int3(id.xy, slice)] = 0.0;
 }
 
@@ -812,11 +809,9 @@ void ComposeDisplay (uint3 id : SV_DispatchThreadID)
         }
     }
 
-    if (totalDensity > 0.01) {
-        DisplayMap[id.xy] = float4(finalColor.rgb * slimeDisplayAlpha, 1.0);
-    } else {
-        DisplayMap[id.xy] = float4(0, 0, 0, 1);
-    }
+    // Écriture directe, toujours. Le decay de Diffuse garantit que les couleurs s'effacent
+    // progressivement — pas de flash noir car les valeurs decroissent via le kernel Diffuse.
+    DisplayMap[id.xy] = float4(finalColor.rgb * slimeDisplayAlpha, 1.0);
 }
 
 [numthreads(16,1,1)]
@@ -921,6 +916,15 @@ void ApplyVegetalEmission(uint3 id : SV_DispatchThreadID)
         if (VegetalEmissionMap[int3(id.xy, s)] <= 0) continue;
         TrailMap[int3(id.xy, s)] = saturate(TrailMap[int3(id.xy, s)] + settings.trailWeight * deltaTime);
     }
+}
+
+// ── Clear seed buffers (GPU-side, remplace les SetData CPU bloquants) ────────
+[numthreads(64,1,1)]
+void ClearSeedBuffers(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)MAX_SEEDS) return;
+    seedCandidates[id.x] = float4(0, 0, 0, 0);
+    seedPriorities[id.x] = 0u;
 }
 
 // ── Culling tactique ──────────────────────────────────────────────────────────

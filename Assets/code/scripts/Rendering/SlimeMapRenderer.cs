@@ -78,6 +78,7 @@ public class SlimeMapRenderer : MonoBehaviour
 
     private int updateKernel, drawKernel, diffuseKernel, clearKernel, composeKernel, clearCountsKernel, countAliveKernel, clearDeliveryKernel, clearAgentMapKernel, seedKernel;
     private int clearVegEmitKernel, rebuildVegDisksKernel, applyVegEmitKernel;
+    private int clearSeedBuffersKernel;
     private int cullKernel = -1;
 
     // ── Culling tactique (utilisé par ZoomLevelController + futures couches) ────
@@ -101,6 +102,16 @@ public class SlimeMapRenderer : MonoBehaviour
     private readonly Vector4[] emptySeedBuffer    = new Vector4[MAX_SEEDS]; // all zeros (w=0 = slot vide)
     private readonly uint[]    zeroPriorities     = new uint[MAX_SEEDS];    // all zeros
     private readonly float[]   seedTimers         = new float[MaxSlots];
+
+    // ── Cache per-frame (évite allocations GC) ────────────────────────
+    private SpeciesSettings[] scaledSettingsCache     = new SpeciesSettings[MaxSlots];
+    private bool  slotColorsDirty             = true;
+    private bool  interactionMatrixDirty      = true;
+    private bool  agentInteractionMatrixDirty = true;
+
+    // ── Cache EntityQuery ECS (évite CreateEntityQuery chaque frame) ──
+    private EntityQuery gameTimeQuery;
+    private bool gameTimeQueryCreated = false;
 
     // Cached terrain data for CPU-side spawn validation
     private float[,] heightMapCache;
@@ -339,6 +350,7 @@ public class SlimeMapRenderer : MonoBehaviour
         clearVegEmitKernel   = SlimeShader.FindKernel("ClearVegetalEmission");
         rebuildVegDisksKernel= SlimeShader.FindKernel("RebuildVegetalDisks");
         applyVegEmitKernel   = SlimeShader.FindKernel("ApplyVegetalEmission");
+        clearSeedBuffersKernel = SlimeShader.FindKernel("ClearSeedBuffers");
         cullKernel           = SlimeShader.FindKernel("CullAgents");
 
         // Initialiser slimeDisplayAlpha à 1 (pleine opacité) — ZoomLevelController le modifiera ensuite
@@ -499,7 +511,7 @@ public class SlimeMapRenderer : MonoBehaviour
     {
         if (slot < 0 || slot >= MaxSlots) return;
         slotColors[slot] = color;
-        slotColorsBuffer?.SetData(slotColors);
+        slotColorsDirty = true;
     }
 
     public static SpeciesSettings GetPreset(SpeciesType type)
@@ -566,6 +578,7 @@ public class SlimeMapRenderer : MonoBehaviour
     {
         if (slotA < 0 || slotA >= MaxSlots || slotB < 0 || slotB >= MaxSlots) return;
         interactionMatrixData[slotA * MaxSlots + slotB] = weight;
+        interactionMatrixDirty = true;
     }
 
     /// <summary>Configure l'état diplomatique entre deux slots GPU et met à jour la matrice d'interaction.</summary>
@@ -620,7 +633,10 @@ public class SlimeMapRenderer : MonoBehaviour
         SetInteraction(fromSlot, toSlot, level.value);
         // Agent sensing matrix
         if (fromSlot != toSlot)
+        {
             agentInteractionMatrixData[fromSlot * MaxSlots + toSlot] = level.agentSenseWeight;
+            agentInteractionMatrixDirty = true;
+        }
         if (fromSlot == toSlot) return;
         var s = speciesSettings[toSlot];                    // la CIBLE reçoit le warMask
         if (level.isWar) s.warMask |=  (1 << fromSlot);    // cible vulnérable à l'attaquant
@@ -636,6 +652,7 @@ public class SlimeMapRenderer : MonoBehaviour
         SetInteraction(slotB, slotA, level.value);
         agentInteractionMatrixData[slotA * MaxSlots + slotB] = level.agentSenseWeight;
         agentInteractionMatrixData[slotB * MaxSlots + slotA] = level.agentSenseWeight;
+        agentInteractionMatrixDirty = true;
         var sa = speciesSettings[slotA];
         var sb = speciesSettings[slotB];
         if (level.isWar) { sa.warMask |= (1 << slotB); sb.warMask |= (1 << slotA); }
@@ -665,7 +682,12 @@ public class SlimeMapRenderer : MonoBehaviour
     {
         if (fromSlot < 0 || fromSlot >= MaxSlots || toSlot < 0 || toSlot >= MaxSlots) return;
         agentInteractionMatrixData[fromSlot * MaxSlots + toSlot] = weight;
+        agentInteractionMatrixDirty = true;
     }
+
+    /// <summary>Signale que slotColors a été modifié directement (ex: depuis UIController) → upload au prochain frame.</summary>
+    public void MarkSlotColorsDirty() => slotColorsDirty = true;
+
 
     /// <summary>Vide toutes les traînées (TrailMap, DiffusedMap, AgentMap, VegetalEmissionMap) sans toucher aux agents.</summary>
     public void ClearTrails()
@@ -870,11 +892,57 @@ public class SlimeMapRenderer : MonoBehaviour
         var world = World.DefaultGameObjectInjectionWorld;
         if (world == null) return Time.deltaTime;
         var em = world.EntityManager;
-        var q  = em.CreateEntityQuery(typeof(GameTime));
-        if (q.IsEmpty) { q.Dispose(); return Time.deltaTime; }
-        float sdt = em.GetComponentData<GameTime>(q.GetSingletonEntity()).ScaledDeltaTime;
-        q.Dispose();
-        return sdt;
+        if (!gameTimeQueryCreated)
+        {
+            gameTimeQuery = em.CreateEntityQuery(typeof(GameTime));
+            gameTimeQueryCreated = true;
+        }
+        if (gameTimeQuery.IsEmpty) return Time.deltaTime;
+        return em.GetComponentData<GameTime>(gameTimeQuery.GetSingletonEntity()).ScaledDeltaTime;
+    }
+
+    /// <summary>
+    /// Remplit scaledSettingsCache avec les settings convertis de l'espace terrain vers l'espace simulation.
+    /// Appelé depuis Update() chaque frame et depuis RebuildVegetalEmissionMap() au besoin.
+    /// </summary>
+    private SpeciesSettings[] BuildScaledSettings()
+    {
+        float scaleS = TerrainMapRenderer.Instance != null && Width > 0
+            ? (float)Width / TerrainMapRenderer.Instance.Width
+            : 1f;
+
+        for (int i = 0; i < MaxSlots; i++)
+        {
+            var original = speciesSettings[i];
+            var s = original;
+            if (scaleS != 1f)
+            {
+                s.moveSpeed              *= scaleS;
+                s.sensorOffsetDst        *= scaleS;
+                s.sensorSize              = Mathf.Max(1, Mathf.RoundToInt(s.sensorSize * scaleS));
+                s.arrivalRadius          *= scaleS;
+                s.repulsionRadius        *= scaleS;
+                s.agentRadius             = Mathf.Max(0, Mathf.RoundToInt(s.agentRadius * scaleS));
+                s.trailEmitRadius         = Mathf.Max(0, Mathf.RoundToInt(s.trailEmitRadius * scaleS));
+                s.particleLifeScanRadius *= scaleS;
+                s.particleLifeStepSize   *= scaleS;
+
+                float innerR_terrain = original.agentRadius;
+                float outerR_terrain = original.agentRadius + Mathf.Max(1f, original.particleLifeStepSize);
+                float area_terrain   = Mathf.Max(1f, Mathf.PI * (outerR_terrain * outerR_terrain - innerR_terrain * innerR_terrain));
+                float innerR_sim     = s.agentRadius;
+                float outerR_sim     = s.agentRadius + Mathf.Max(1f, s.particleLifeStepSize);
+                float area_sim       = Mathf.Max(1f, Mathf.PI * (outerR_sim * outerR_sim - innerR_sim * innerR_sim));
+                s.densityLimit       = original.densityLimit * (area_sim / area_terrain);
+
+                float navDisc_terrain = Mathf.Max(1f, Mathf.PI * original.repulsionRadius * original.repulsionRadius);
+                float repR_sim        = Mathf.Max(1f, original.repulsionRadius * scaleS);
+                float navDisc_sim     = Mathf.PI * repR_sim * repR_sim;
+                s.navDensityLimit     = original.densityLimit * (navDisc_sim / navDisc_terrain);
+            }
+            scaledSettingsCache[i] = s;
+        }
+        return scaledSettingsCache;
     }
 
     private int countFrameAccum = 0;
@@ -895,46 +963,13 @@ public class SlimeMapRenderer : MonoBehaviour
             float dt = GetScaledDeltaTime();
 
             // We scale distances/sizes so that Simulation Space matches Terrain Space physically
-            float scaleS = TerrainMapRenderer.Instance != null && Width > 0 
-                ? (float)Width / TerrainMapRenderer.Instance.Width 
+            float scaleS = TerrainMapRenderer.Instance != null && Width > 0
+                ? (float)Width / TerrainMapRenderer.Instance.Width
                 : 1f;
 
-            SpeciesSettings[] scaledSettings = new SpeciesSettings[MaxSlots];
-            for (int i = 0; i < MaxSlots; i++)
-            {
-                var original = speciesSettings[i];
-                var s = original;
-                if (scaleS != 1f)
-                {
-                    s.moveSpeed              *= scaleS;
-                    s.sensorOffsetDst        *= scaleS;
-                    s.sensorSize              = Mathf.Max(1, Mathf.RoundToInt(s.sensorSize * scaleS));
-                    s.arrivalRadius          *= scaleS;
-                    s.repulsionRadius        *= scaleS;
-                    s.agentRadius             = Mathf.Max(0, Mathf.RoundToInt(s.agentRadius * scaleS));
-                    s.trailEmitRadius         = Mathf.Max(0, Mathf.RoundToInt(s.trailEmitRadius * scaleS));
-                    s.particleLifeScanRadius *= scaleS;
-                    s.particleLifeStepSize   *= scaleS;
-
-                    // densityLimit — anneau de détection globale (agentRadius → agentRadius + step)
-                    float innerR_terrain = original.agentRadius;
-                    float outerR_terrain = original.agentRadius + Mathf.Max(1f, original.particleLifeStepSize);
-                    float area_terrain   = Mathf.Max(1f, Mathf.PI * (outerR_terrain * outerR_terrain - innerR_terrain * innerR_terrain));
-
-                    float innerR_sim = s.agentRadius; // already scaled above
-                    float outerR_sim = s.agentRadius + Mathf.Max(1f, s.particleLifeStepSize); // already scaled
-                    float area_sim   = Mathf.Max(1f, Mathf.PI * (outerR_sim * outerR_sim - innerR_sim * innerR_sim));
-
-                    s.densityLimit = original.densityLimit * (area_sim / area_terrain);
-
-                    // navDensityLimit — disque frontal de navigation (rayon = repulsionRadius)
-                    float navDisc_terrain  = Mathf.Max(1f, Mathf.PI * original.repulsionRadius * original.repulsionRadius);
-                    float repR_sim         = Mathf.Max(1f, original.repulsionRadius * scaleS);
-                    float navDisc_sim      = Mathf.PI * repR_sim * repR_sim;
-                    s.navDensityLimit = original.densityLimit * (navDisc_sim / navDisc_terrain);
-                }
-                scaledSettings[i] = s;
-            }
+            // Recalcul scaledSettings dans le cache pré-alloué (évite new[] + GC chaque frame)
+            BuildScaledSettings();
+            speciesSettingsBuffer.SetData(scaledSettingsCache);
 
             // Per-frame global uniforms
             SlimeShader.SetFloat("time",             Time.time);
@@ -942,11 +977,27 @@ public class SlimeMapRenderer : MonoBehaviour
             SlimeShader.SetFloat("mapScale",         scaleS);
             SlimeShader.SetInt  ("numAgents",        currentAgentCount);
 
-            speciesSettingsBuffer.SetData(scaledSettings);
-            slotColorsBuffer.SetData(slotColors);
-
             SlimeShader.SetInt("numActiveSlots",     numActiveSlots);
             SlimeShader.SetInt("playerVisibilityMask", playerVisibilityMask);
+
+            // Upload couleurs seulement si elles ont changé
+            if (slotColorsDirty)
+            {
+                slotColorsBuffer.SetData(slotColors);
+                slotColorsDirty = false;
+            }
+
+            // Upload matrices d'interaction seulement si elles ont changé
+            if (interactionMatrixDirty)
+            {
+                interactionMatrixBuffer.SetData(interactionMatrixData);
+                interactionMatrixDirty = false;
+            }
+            if (agentInteractionMatrixDirty)
+            {
+                agentInteractionMatrixBuffer.SetData(agentInteractionMatrixData);
+                agentInteractionMatrixDirty = false;
+            }
 
             int agentGroups  = Mathf.CeilToInt(currentAgentCount / 16f);
             int texGroupsX   = Mathf.CeilToInt(Width  / 8f);
@@ -960,34 +1011,34 @@ public class SlimeMapRenderer : MonoBehaviour
             SlimeShader.SetBuffer(composeKernel, "slotColors", slotColorsBuffer);
             SlimeShader.SetBuffer(updateKernel, "waypoints", waypointBuffer);
             SlimeShader.SetTexture(updateKernel, "FlowFieldMap", flowFieldMap);
-            interactionMatrixBuffer.SetData(interactionMatrixData);
             SlimeShader.SetBuffer(updateKernel, "interactionMatrix", interactionMatrixBuffer);
-            agentInteractionMatrixBuffer.SetData(agentInteractionMatrixData);
             SlimeShader.SetBuffer(updateKernel, "agentInteractionMatrix", agentInteractionMatrixBuffer);
+
+            // Bindings internes au loop — faits une seule fois avant la boucle (ne changent pas entre steps)
+            SlimeShader.SetBuffer(updateKernel, "agents", agentBuffer);
+            SlimeShader.SetBuffer(drawKernel,   "agents", agentBuffer);
+            SlimeShader.SetTexture(applyVegEmitKernel, "VegetalEmissionMap", VegetalEmissionMap);
+            SlimeShader.SetTexture(applyVegEmitKernel, "TrailMap",           TrailMap);
+            SlimeShader.SetBuffer (applyVegEmitKernel, "speciesSettings",    speciesSettingsBuffer);
 
             for (int step = 0; step < StepsPerFrame; step++)
             {
                 // 1. Move agents (lit AgentMap du step précédent — avant de l'effacer)
-                SlimeShader.SetBuffer(updateKernel, "agents", agentBuffer);
                 SlimeShader.Dispatch(updateKernel, agentGroups, 1, 1);
 
                 // 2. Clear AgentMap maintenant que UpdateAgents l'a lue
                 SlimeShader.Dispatch(clearAgentMapKernel, texGroupsX, texGroupsY, 1);
 
                 // 3. Draw agent positions into trail map + AgentMap (Végétaux exclus — voir ApplyVegetalEmission)
-                SlimeShader.SetBuffer(drawKernel, "agents", agentBuffer);
                 SlimeShader.Dispatch(drawKernel, agentGroups, 1, 1);
 
                 // 3b. Ajouter l'émission végétale statique (O(W×H) au lieu de O(agents×radius²))
-                SlimeShader.SetTexture(applyVegEmitKernel, "VegetalEmissionMap", VegetalEmissionMap);
-                SlimeShader.SetTexture(applyVegEmitKernel, "TrailMap",           TrailMap);
-                SlimeShader.SetBuffer (applyVegEmitKernel, "speciesSettings",    speciesSettingsBuffer);
                 SlimeShader.Dispatch(applyVegEmitKernel, texGroupsX, texGroupsY, 1);
 
-                // 4. Diffuse + decay
-                SlimeShader.Dispatch(diffuseKernel, texGroupsX, texGroupsY, 1);
+                // 4. Diffuse + decay (dim Z = numActiveSlots : une slice par thread group Z)
+                SlimeShader.Dispatch(diffuseKernel, texGroupsX, texGroupsY, numActiveSlots);
 
-                // 4. Copy diffused result back as the new trail source
+                // Copy diffused result back as the new trail source
                 Graphics.CopyTexture(DiffusedMap, TrailMap);
             }
 
@@ -1116,20 +1167,18 @@ public class SlimeMapRenderer : MonoBehaviour
             return;
         }
 
-        // On lance UN SEUL readback pour tout le buffer au lieu de milliers de requêtes individuelles
-        // (La mémoire de GetData est un NativeArray zéro-allocation, le transfert PCIe asynchrone est rapide)
-        UnityEngine.Rendering.AsyncGPUReadback.Request(agentBuffer, req => 
+        // Readback du buffer complet — les arbres sont peu nombreux, ce chemin est rarement déclenché
+        UnityEngine.Rendering.AsyncGPUReadback.Request(agentBuffer, req =>
         {
             isCheckingDeaths[slot] = false;
             if (req.hasError || !isInitialized || !Application.isPlaying || registry == null) return;
-            
+
             var agentArray = req.GetData<Agent>();
             if (agentArray.Length == 0) return;
 
             for (int i = registry.Count - 1; i >= 0; i--)
             {
                 BlockEntry entry = registry[i];
-
                 if (entry.bufferIdx >= currentAgentCount || entry.bufferIdx >= agentArray.Length)
                 {
                     RemoveBlockingEntry(slot, entry);
@@ -1158,8 +1207,8 @@ public class SlimeMapRenderer : MonoBehaviour
     public void RebuildVegetalEmissionMap()
     {
         if (!isInitialized) return;
-        // Ensure GPU buffer is up-to-date (may be called before first Update frame)
-        speciesSettingsBuffer.SetData(speciesSettings);
+        // Utilise les settings scalés (espace simulation) — même chose que Update()
+        speciesSettingsBuffer.SetData(BuildScaledSettings());
         int gx = Mathf.CeilToInt(Width  / 8f);
         int gy = Mathf.CeilToInt(Height / 8f);
         // 1. Clear
@@ -1180,9 +1229,11 @@ public class SlimeMapRenderer : MonoBehaviour
 
     private void DispatchGatherSeeds(int slotMask, int gx, int gy)
     {
-        // Réinitialiser les deux buffers avant le dispatch
-        seedCandidateBuffer.SetData(emptySeedBuffer);  // w=0 = slot vide
-        seedPriorityBuffer .SetData(zeroPriorities);   // priorité 0 = aucun gagnant
+        // Clear GPU-side (évite deux SetData CPU bloquants de 80KB total)
+        int seedGroups = Mathf.CeilToInt(MAX_SEEDS / 64f);
+        SlimeShader.SetBuffer(clearSeedBuffersKernel, "seedCandidates", seedCandidateBuffer);
+        SlimeShader.SetBuffer(clearSeedBuffersKernel, "seedPriorities", seedPriorityBuffer);
+        SlimeShader.Dispatch (clearSeedBuffersKernel, seedGroups, 1, 1);
 
         SlimeShader.SetInt    ("seedSlotMask",    slotMask);
         SlimeShader.SetInt    ("numActiveSlots",  numActiveSlots);
