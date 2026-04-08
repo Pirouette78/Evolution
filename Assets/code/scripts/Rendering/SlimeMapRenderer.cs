@@ -60,8 +60,10 @@ public class SlimeMapRenderer : MonoBehaviour
     public bool[] speciesBlocksMovement = new bool[MaxSlots];
     /// <summary>ID d'espèce pour chaque slot GPU. Géré par PlayerLibrary.</summary>
     public string[] speciesIds         = new string[MaxSlots];
-    /// <summary>Nombre de slots GPU actifs (configuré par PlayerLibrary).</summary>
+    /// <summary>Nombre de slots GPU actifs (configuré par PlayerLibrary). Un slot par catégorie.</summary>
     public int numActiveSlots = 16;
+    /// <summary>Nombre de tranches TrailMap actives (≤ numActiveSlots). Configuré par PlayerLibrary.</summary>
+    public int numActiveTrailSlices = 16;
     /// <summary>Couleur de rendu par slot GPU (envoyée au shader via slotColorsBuffer).</summary>
     public Vector4[] slotColors = new Vector4[MaxSlots];
 
@@ -102,6 +104,10 @@ public class SlimeMapRenderer : MonoBehaviour
     private readonly Vector4[] emptySeedBuffer    = new Vector4[MAX_SEEDS]; // all zeros (w=0 = slot vide)
     private readonly uint[]    zeroPriorities     = new uint[MAX_SEEDS];    // all zeros
     private readonly float[]   seedTimers         = new float[MaxSlots];
+
+    // ── TrailSlice → Slot lookup (pour Diffuse kernel) ───────────────────
+    public ComputeBuffer trailSliceToSlotBuffer;
+    public readonly int[] trailSliceToSlotData = new int[MaxSlots];
 
     // ── Cache per-frame (évite allocations GC) ────────────────────────
     private SpeciesSettings[] scaledSettingsCache     = new SpeciesSettings[MaxSlots];
@@ -151,7 +157,9 @@ public class SlimeMapRenderer : MonoBehaviour
         public float seedProbLow;           // probabilité germination à trail=0.25
         public float particleLifeScanRadius;// rayon du disque Particle Life (pixels sim)
         public float particleLifeStepSize;  // pas d'échantillonnage Particle Life
-        public float navDensityLimit;       // seuil de densité frontale pour freinage navigation → 128 bytes total
+        public float navDensityLimit;       // seuil de densité frontale pour freinage navigation
+        public int   trailSliceIndex;       // index tranche TrailMap partagée par les catégories d'une espèce
+        public int   speciesId;             // index unique dans le tableau global des espèces GPU → 136 bytes total
     }
 
     public enum DiplomaticState { Neutral, Ally, Peace, War }
@@ -239,8 +247,12 @@ public class SlimeMapRenderer : MonoBehaviour
         waypointStockBuffer.SetData(new float[MaxSlots]);
         deliveryCounterBuffer.SetData(new int[MaxSlots]);
 
-        seedCandidateBuffer = new ComputeBuffer(MAX_SEEDS, sizeof(float) * 4);
-        seedPriorityBuffer  = new ComputeBuffer(MAX_SEEDS, sizeof(uint));
+        seedCandidateBuffer    = new ComputeBuffer(MAX_SEEDS, sizeof(float) * 4);
+        seedPriorityBuffer     = new ComputeBuffer(MAX_SEEDS, sizeof(uint));
+        trailSliceToSlotBuffer = new ComputeBuffer(MaxSlots, sizeof(int));
+        // Défaut : tranche i → slot i (espèce simple, 1:1)
+        for (int i = 0; i < MaxSlots; i++) trailSliceToSlotData[i] = i;
+        trailSliceToSlotBuffer.SetData(trailSliceToSlotData);
 
         // Default colors: spread across hue for all slots
         for (int i = 0; i < MaxSlots; i++) {
@@ -260,7 +272,9 @@ public class SlimeMapRenderer : MonoBehaviour
                 trailWeight = 5f,
                 decayRate = 1f,
                 diffuseRate = 2f,
-                warDamageRate = 1f
+                warDamageRate = 1f,
+                trailSliceIndex = i, // défaut : slot == tranche (espèce simple)
+                speciesId       = i,
             };
             speciesIds[i] = speciesTypes[i].ToString().ToLowerInvariant();
             interactionMatrixData[i * MaxSlots + i] = 1f; // chaque espèce suit sa propre traînée par défaut
@@ -392,6 +406,7 @@ public class SlimeMapRenderer : MonoBehaviour
         SlimeShader.SetBuffer(countAliveKernel, "speciesCounts", speciesCountsBuffer);
         slotColorsBuffer.SetData(slotColors);
         SlimeShader.SetBuffer(composeKernel, "slotColors", slotColorsBuffer);
+        SlimeShader.SetBuffer(composeKernel, "speciesSettings", speciesSettingsBuffer);
         SlimeShader.SetBuffer(updateKernel, "waypointStockIn",  waypointStockBuffer);
         SlimeShader.SetBuffer(updateKernel, "deliveryCounters", deliveryCounterBuffer);
         SlimeShader.SetBuffer(clearDeliveryKernel, "deliveryCounters", deliveryCounterBuffer);
@@ -405,6 +420,9 @@ public class SlimeMapRenderer : MonoBehaviour
         agentInteractionMatrixBuffer = new ComputeBuffer(MaxSlots * MaxSlots, sizeof(float));
         agentInteractionMatrixBuffer.SetData(agentInteractionMatrixData);
         SlimeShader.SetBuffer(updateKernel, "agentInteractionMatrix", agentInteractionMatrixBuffer);
+
+        // TrailSlice→Slot lookup pour le kernel Diffuse
+        SlimeShader.SetBuffer(diffuseKernel, "trailSliceToSlot", trailSliceToSlotBuffer);
 
         // Waypoints buffer (max MaxSlots × 16 bytes)
         waypointBuffer = new ComputeBuffer(MaxSlots, 16);
@@ -977,7 +995,8 @@ public class SlimeMapRenderer : MonoBehaviour
             SlimeShader.SetFloat("mapScale",         scaleS);
             SlimeShader.SetInt  ("numAgents",        currentAgentCount);
 
-            SlimeShader.SetInt("numActiveSlots",     numActiveSlots);
+            SlimeShader.SetInt("numActiveSlots",       numActiveSlots);
+            SlimeShader.SetInt("numActiveTrailSlices", numActiveTrailSlices);
             SlimeShader.SetInt("playerVisibilityMask", playerVisibilityMask);
 
             // Upload couleurs seulement si elles ont changé
@@ -1035,8 +1054,8 @@ public class SlimeMapRenderer : MonoBehaviour
                 // 3b. Ajouter l'émission végétale statique (O(W×H) au lieu de O(agents×radius²))
                 SlimeShader.Dispatch(applyVegEmitKernel, texGroupsX, texGroupsY, 1);
 
-                // 4. Diffuse + decay (dim Z = numActiveSlots : une slice par thread group Z)
-                SlimeShader.Dispatch(diffuseKernel, texGroupsX, texGroupsY, numActiveSlots);
+                // 4. Diffuse + decay (dim Z = numActiveTrailSlices : une slice TrailMap par thread group Z)
+                SlimeShader.Dispatch(diffuseKernel, texGroupsX, texGroupsY, Mathf.Max(1, numActiveTrailSlices));
 
                 // Copy diffused result back as the new trail source
                 Graphics.CopyTexture(DiffusedMap, TrailMap);
@@ -1303,6 +1322,7 @@ public class SlimeMapRenderer : MonoBehaviour
         deliveryCounterBuffer?.Release();
         seedCandidateBuffer?.Release();
         seedPriorityBuffer ?.Release();
+        trailSliceToSlotBuffer?.Release();
         if (flowFieldMapIsOwned && flowFieldMap != null) Destroy(flowFieldMap);
         TrailMap?.Release();
         DiffusedMap?.Release();

@@ -5,8 +5,11 @@ using UnityEngine;
 
 /// <summary>
 /// Charge les définitions de joueurs depuis StreamingAssets/Players/*.json.
-/// Assigne un slot GPU à chaque paire (joueur × espèce) et configure
+/// Assigne un slot GPU à chaque paire (joueur × espèce × catégorie) et configure
 /// SlimeMapRenderer (couleurs, paramètres, guerre) dès qu'il est prêt.
+///
+/// Multi-catégorie : une SpeciesDefinition avec N categories[] génère N slots GPU
+/// qui partagent tous la même tranche TrailMap (trailSliceIndex).
 ///
 /// Ajouter un joueur = créer un fichier JSON dans StreamingAssets/Players/, sans toucher au code.
 /// </summary>
@@ -29,13 +32,26 @@ public class PlayerLibrary : MonoBehaviour
     {
         public PlayerDefinition   player;
         public PlayerSpeciesEntry speciesEntry;
+        /// <summary>Catégorie dans la SpeciesDefinition (0 pour espèce simple).</summary>
+        public int                categoryIndex;
+        /// <summary>SpeciesDefinition aplatie pour cette catégorie.</summary>
+        public SpeciesDefinition  categoryDef;
     }
 
-    private readonly List<PlayerDefinition> players = new List<PlayerDefinition>();
-    private readonly List<SlotInfo>         slots   = new List<SlotInfo>();
+    private readonly List<PlayerDefinition>  players   = new List<PlayerDefinition>();
+    private readonly List<SlotInfo>          slots     = new List<SlotInfo>();
+
+    // Clé : "playerId:speciesId" → premier slot de cette espèce (catégorie 0)
     private readonly Dictionary<string, int> slotIndex = new Dictionary<string, int>();
 
-    public int NumActiveSlots => slots.Count;
+    // Clé : "playerId:speciesId:catIndex" → slot précis
+    private readonly Dictionary<string, int> slotIndexCat = new Dictionary<string, int>();
+
+    // trailSliceIndex attribués : clé "playerId:speciesId" → trailSliceIndex
+    private readonly Dictionary<string, int> trailSlices = new Dictionary<string, int>();
+
+    public int NumActiveSlots   => slots.Count;
+    public int NumActiveTrailSlices => trailSlices.Count;
 
     // ── Lifecycle ────────────────────────────────────────────────────
 
@@ -47,13 +63,17 @@ public class PlayerLibrary : MonoBehaviour
         LoadFromStreamingAssets();
         if (players.Count == 0)
             Debug.LogError("[PlayerLibrary] Aucun fichier JSON trouvé dans StreamingAssets/Players/. Créez au moins un fichier .json de joueur.");
-
-        AssignSlots();
-        Debug.Log($"[PlayerLibrary] {players.Count} joueur(s), {slots.Count} slots GPU assignés.");
     }
 
     private IEnumerator Start()
     {
+        // Attendre que SpeciesLibrary soit prêt (son Awake charge les JSON)
+        while (SpeciesLibrary.Instance == null)
+            yield return null;
+
+        AssignSlots();
+        Debug.Log($"[PlayerLibrary] {players.Count} joueur(s), {slots.Count} slots GPU, {trailSlices.Count} tranches TrailMap.");
+
         while (SlimeMapRenderer.Instance == null || !SlimeMapRenderer.Instance.IsReady)
             yield return null;
 
@@ -66,6 +86,10 @@ public class PlayerLibrary : MonoBehaviour
     {
         slots.Clear();
         slotIndex.Clear();
+        slotIndexCat.Clear();
+        trailSlices.Clear();
+
+        int nextTrailSlice = 0;
 
         foreach (var player in players)
         {
@@ -73,15 +97,64 @@ public class PlayerLibrary : MonoBehaviour
             foreach (var entry in player.species)
             {
                 if (entry == null || string.IsNullOrEmpty(entry.speciesId)) continue;
-                string key = MakeKey(player.id, entry.speciesId.ToLowerInvariant());
-                if (slotIndex.ContainsKey(key)) continue;
-                if (slots.Count >= SlimeMapRenderer.MaxSlots)
+
+                string specId  = entry.speciesId.ToLowerInvariant();
+                string baseKey = MakeKey(player.id, specId);
+
+                if (slotIndex.ContainsKey(baseKey)) continue; // déjà enregistré
+
+                // Résoudre la SpeciesDefinition pour connaître CategoryCount
+                var def = SpeciesLibrary.Instance?.Get(specId);
+                int catCount = def != null ? def.CategoryCount : 1;
+
+                // Vérifier qu'on a assez de slots GPU restants
+                if (slots.Count + catCount > SlimeMapRenderer.MaxSlots)
                 {
-                    Debug.LogWarning($"[PlayerLibrary] Limite de {SlimeMapRenderer.MaxSlots} slots GPU atteinte — espèces supplémentaires ignorées.");
-                    break;
+                    Debug.LogWarning($"[PlayerLibrary] Limite {SlimeMapRenderer.MaxSlots} slots GPU atteinte — {specId} ignoré.");
+                    continue;
                 }
-                slotIndex[key] = slots.Count;
-                slots.Add(new SlotInfo { player = player, speciesEntry = entry });
+
+                int speciesIdBase = slots.Count;
+                if (def != null) def.speciesIdBase = speciesIdBase;
+
+                // Enregistrer le premier slot (catégorie 0)
+                slotIndex[baseKey] = slots.Count;
+
+                // Chaque catégorie reçoit sa propre tranche TrailMap (pas de partage)
+                // → comportements et couleurs indépendants, diplomatie par slot
+                for (int c = 0; c < catCount; c++)
+                {
+                    string catKey = MakeKeyCat(player.id, specId, c);
+                    slotIndexCat[catKey] = slots.Count;
+
+                    // Une tranche par slot/catégorie
+                    int tsi = nextTrailSlice++;
+                    string trailKey = MakeKeyCat(player.id, specId, c);
+                    trailSlices[trailKey] = tsi; // clé unique par catégorie
+
+                    var catDef = def?.GetCategoryDefinition(c) ?? new SpeciesDefinition
+                    {
+                        id              = specId,
+                        trailSliceIndex = tsi,
+                        speciesIdBase   = speciesIdBase,
+                    };
+
+                    catDef.slotIndex       = slots.Count;
+                    catDef.trailSliceIndex = tsi;
+                    catDef.speciesIdBase   = speciesIdBase;
+
+                    slots.Add(new SlotInfo
+                    {
+                        player        = player,
+                        speciesEntry  = entry,
+                        categoryIndex = c,
+                        categoryDef   = catDef,
+                    });
+                }
+
+                // trailSlices[baseKey] = premier tsi de l'espèce (pour GetTrailSliceIndex rétro-compat)
+                if (!trailSlices.ContainsKey(baseKey))
+                    trailSlices[baseKey] = nextTrailSlice - catCount;
             }
         }
     }
@@ -91,28 +164,39 @@ public class PlayerLibrary : MonoBehaviour
     private void ApplyToRenderer()
     {
         var smr = SlimeMapRenderer.Instance;
-        smr.numActiveSlots = slots.Count;
+        smr.numActiveSlots        = slots.Count;
+        smr.numActiveTrailSlices  = slots.Count; // 1 tranche par slot/catégorie
+
+        // Remplir le tableau trailSliceToSlot : trailSliceIndex → premier slot de cette tranche
+        // On itère à rebours pour que la catégorie 0 (première) écrase les suivantes
+        for (int s = slots.Count - 1; s >= 0; s--)
+        {
+            int tsi = slots[s].categoryDef?.trailSliceIndex ?? s;
+            if (tsi >= 0 && tsi < SlimeMapRenderer.MaxSlots)
+                smr.trailSliceToSlotData[tsi] = s;
+        }
+        smr.trailSliceToSlotBuffer.SetData(smr.trailSliceToSlotData);
 
         for (int s = 0; s < slots.Count; s++)
         {
-            var info      = slots[s];
+            var info   = slots[s];
+            var catDef = info.categoryDef;
             string specId = info.speciesEntry.speciesId.ToLowerInvariant();
 
-            smr.speciesIds[s] = specId;
+            smr.speciesIds[s] = catDef.id; // ex: "humain_0", "humain_1"…
 
-            // Paramètres comportement (depuis SpeciesLibrary JSON)
-            var def = SpeciesLibrary.Instance?.Get(specId);
-            if (def != null)
+            // Paramètres comportement (depuis catDef aplati)
+            if (catDef != null)
             {
-                def.slotIndex = s; // calculé à l'exécution — inutile de le mettre dans le JSON
-                smr.speciesSettings[s] = def.ToSpeciesSettings();
-                smr.speciesBlocksMovement[s] = def.blocksMovement;
+                var gpuSettings = catDef.ToSpeciesSettings();
+                smr.speciesSettings[s]       = gpuSettings;
+                smr.speciesBlocksMovement[s] = catDef.blocksMovement;
             }
 
-            // Couleur : species JSON en priorité, player JSON en fallback
+            // Couleur : catégorie JSON en priorité, player JSON en fallback
             Vector4 slotColor;
-            if (def?.color != null && def.color.Length >= 3)
-                slotColor = new Vector4(def.color[0], def.color[1], def.color[2], 1f);
+            if (catDef?.color != null && catDef.color.Length >= 3)
+                slotColor = new Vector4(catDef.color[0], catDef.color[1], catDef.color[2], 1f);
             else
                 slotColor = info.speciesEntry.ToVector4();
             smr.SetSlotColor(s, slotColor);
@@ -141,7 +225,8 @@ public class PlayerLibrary : MonoBehaviour
             }
         }
 
-        // Intra-joueur : espèces différentes du même joueur → Allié par défaut
+        // Intra-joueur : catégories différentes du même joueur → Allié par défaut
+        // (inclut les catégories de la même espèce entre elles)
         var allyLevel = diploLib?.DefaultAllyLevel;
         for (int a = 0; a < slots.Count; a++)
             for (int b = 0; b < slots.Count; b++)
@@ -154,7 +239,7 @@ public class PlayerLibrary : MonoBehaviour
                     smr.SetInteraction(a, b, 0.5f);
             }
 
-        Debug.Log($"[PlayerLibrary] {slots.Count} slots configurés dans SlimeMapRenderer.");
+        Debug.Log($"[PlayerLibrary] {slots.Count} slots configurés ({trailSlices.Count} tranches TrailMap).");
     }
 
     private static bool IsWarDeclared(PlayerDefinition player, string otherId)
@@ -175,11 +260,27 @@ public class PlayerLibrary : MonoBehaviour
 
     // ── API publique ─────────────────────────────────────────────────
 
-    /// <summary>Slot GPU pour (joueur, espèce). -1 si non trouvé.</summary>
-    public int GetSlotIndex(string playerId, string speciesId)
+    /// <summary>
+    /// Slot GPU pour (joueur, espèce, catégorie). -1 si non trouvé.
+    /// catIndex=0 pour espèce simple ou première catégorie.
+    /// </summary>
+    public int GetSlotIndex(string playerId, string speciesId, int catIndex = 0)
     {
         if (string.IsNullOrEmpty(playerId) || string.IsNullOrEmpty(speciesId)) return -1;
-        return slotIndex.TryGetValue(MakeKey(playerId.ToLowerInvariant(), speciesId.ToLowerInvariant()), out int s) ? s : -1;
+        string pid = playerId.ToLowerInvariant();
+        string sid = speciesId.ToLowerInvariant();
+        if (catIndex == 0 && slotIndex.TryGetValue(MakeKey(pid, sid), out int s0)) return s0;
+        return slotIndexCat.TryGetValue(MakeKeyCat(pid, sid, catIndex), out int s) ? s : -1;
+    }
+
+    /// <summary>
+    /// trailSliceIndex pour (joueur, espèce). -1 si non trouvé.
+    /// Partagé par toutes les catégories de cette espèce.
+    /// </summary>
+    public int GetTrailSliceIndex(string playerId, string speciesId)
+    {
+        if (string.IsNullOrEmpty(playerId) || string.IsNullOrEmpty(speciesId)) return -1;
+        return trailSlices.TryGetValue(MakeKey(playerId.ToLowerInvariant(), speciesId.ToLowerInvariant()), out int tsi) ? tsi : -1;
     }
 
     public SlotInfo? GetSlotInfo(int slot)
@@ -196,19 +297,56 @@ public class PlayerLibrary : MonoBehaviour
         return null;
     }
 
-    public IReadOnlyList<PlayerDefinition>   GetAll()     => players;
-    public IReadOnlyList<SlotInfo>           GetAllSlots() => slots;
+    public IReadOnlyList<PlayerDefinition> GetAll()      => players;
+    public IReadOnlyList<SlotInfo>         GetAllSlots() => slots;
 
-    /// <summary>Retourne les speciesIds contrôlés par un joueur (dans l'ordre des slots).</summary>
+    /// <summary>
+    /// Retourne les speciesIds de BASE d'un joueur — un entry par espèce, sans doublons de catégorie.
+    /// Ex: pour human (3 catégories), retourne ["human"] et non ["human_0","human_1","human_2"].
+    /// </summary>
     public List<string> GetSpeciesForPlayer(string playerId)
     {
         var result = new List<string>();
+        var seen   = new HashSet<string>();
         string pid = playerId?.ToLowerInvariant();
         foreach (var sl in slots)
-            if (sl.player.id == pid)
-                result.Add(sl.speciesEntry.speciesId.ToLowerInvariant());
+        {
+            if (sl.player.id != pid) continue;
+            string baseId = sl.speciesEntry.speciesId.ToLowerInvariant();
+            if (seen.Add(baseId)) result.Add(baseId);
+        }
         return result;
     }
+
+    /// <summary>
+    /// Retourne les noms de catégories d'une espèce pour un joueur donné.
+    /// Pour une espèce simple (pas de catégories), retourne une liste avec le displayName de l'espèce.
+    /// </summary>
+    public List<string> GetCategoriesForSpecies(string playerId, string baseSpeciesId)
+    {
+        var result = new List<string>();
+        string pid = playerId?.ToLowerInvariant();
+        string sid = baseSpeciesId?.ToLowerInvariant();
+        var def = SpeciesLibrary.Instance?.Get(sid);
+        if (def != null && def.CategoryCount > 1 && def.categories != null)
+        {
+            foreach (var cat in def.categories)
+                result.Add(cat);
+        }
+        else
+        {
+            // Espèce simple — une seule "catégorie" avec le displayName
+            result.Add(def?.displayName ?? baseSpeciesId);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Slot GPU pour (joueur, espèce de base, index de catégorie).
+    /// Pour une espèce simple, catIndex = 0.
+    /// </summary>
+    public int GetSlotIndexByCat(string playerId, string baseSpeciesId, int catIndex)
+        => GetSlotIndex(playerId, baseSpeciesId, catIndex);
 
     // ── Chargement ───────────────────────────────────────────────────
 
@@ -239,5 +377,9 @@ public class PlayerLibrary : MonoBehaviour
         }
     }
 
-    private static string MakeKey(string playerId, string speciesId) => $"{playerId}:{speciesId}";
+    private static string MakeKey(string playerId, string speciesId)
+        => $"{playerId}:{speciesId}";
+
+    private static string MakeKeyCat(string playerId, string speciesId, int catIndex)
+        => $"{playerId}:{speciesId}:{catIndex}";
 }

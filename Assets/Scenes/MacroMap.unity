@@ -199,8 +199,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SlimeMapRenderer
   SlimeShader: {fileID: 7200000, guid: 1e2bbf2f985345f4da6320ea9dcb187c, type: 3}
-  Width: 1280
-  Height: 720
+  Width: 512
+  Height: 512
   StepsPerFrame: 1
   InitialAgentCount: 5000
   DisplayTarget: {fileID: 104352733}
@@ -236,6 +236,8 @@ MonoBehaviour:
     particleLifeScanRadius: 0
     particleLifeStepSize: 0
     navDensityLimit: 0
+    trailSliceIndex: 0
+    speciesId: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -267,6 +269,8 @@ MonoBehaviour:
     particleLifeScanRadius: 0
     particleLifeStepSize: 0
     navDensityLimit: 0
+    trailSliceIndex: 0
+    speciesId: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -298,6 +302,8 @@ MonoBehaviour:
     particleLifeScanRadius: 0
     particleLifeStepSize: 0
     navDensityLimit: 0
+    trailSliceIndex: 0
+    speciesId: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -329,6 +335,8 @@ MonoBehaviour:
     particleLifeScanRadius: 0
     particleLifeStepSize: 0
     navDensityLimit: 0
+    trailSliceIndex: 0
+    speciesId: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -360,6 +368,8 @@ MonoBehaviour:
     particleLifeScanRadius: 0
     particleLifeStepSize: 0
     navDensityLimit: 0
+    trailSliceIndex: 0
+    speciesId: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -391,6 +401,8 @@ MonoBehaviour:
     particleLifeScanRadius: 0
     particleLifeStepSize: 0
     navDensityLimit: 0
+    trailSliceIndex: 0
+    speciesId: 0
   AliveSpeciesCounts: 000000000000000000000000000000000000000000000000
   speciesTypes: 000000000000000000000000000000000000000000000000
   speciesBlocksMovement: 0000000000000000000000000000000000000000000000000000000000000000
@@ -402,6 +414,7 @@ MonoBehaviour:
   - 
   - 
   numActiveSlots: 16
+  numActiveTrailSlices: 16
   slotColors:
   - {x: 0, y: 0, z: 0, w: 0}
   - {x: 0, y: 0, z: 0, w: 0}
@@ -1061,8 +1074,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c71fde7df3398844d8bc98c419004b68, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TerrainMapRenderer
-  Width: 2560
-  Height: 1440
+  Width: 512
+  Height: 512
   Noise:
     Scale: 50
     Octaves: 6
@@ -1645,6 +1658,12 @@ MonoBehaviour:
   MapMaxX: 2560
   MapMinY: 0
   MapMaxY: 1440
+  zoomDrivesSimSpeed: 1
+  zoomSpeedLevels: 4
+  minSpeedOrthoSize: 20
+  maxSpeedOrthoSize: 300
+  maxTimeScaleFromZoom: 4
+  maxStepsFromZoom: 4
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

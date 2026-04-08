@@ -17,8 +17,10 @@ public class UIController : MonoBehaviour
     private Button[] playerSelectButtons  = new Button[6];
 
     private VisualElement speciesButtonContainer;
+    private VisualElement categoryButtonContainer;
     private readonly Dictionary<string, Button> speciesButtonMap      = new Dictionary<string, Button>();
     private readonly Dictionary<string, string> speciesButtonBaseText = new Dictionary<string, string>();
+    private readonly Dictionary<int, Button>    categoryButtonMap     = new Dictionary<int, Button>();
     private Button        btnDiplomatie;
     private VisualElement diploMatrixPanel;
     private bool          diploMatrixOpen = false;
@@ -39,7 +41,8 @@ public class UIController : MonoBehaviour
     private Toggle toggleSpeciesOverlay;
     private int    selectedPlayerIndex = 0; // index dans PlayerLibrary.GetAll()
     private string selectedPlayerId    = "";
-    private string selectedSpeciesId   = ""; // espèce sélectionnée au sein du joueur
+    private string selectedSpeciesId   = ""; // ID de base de l'espèce (ex: "human")
+    private int    selectedCategoryIndex = 0; // catégorie sélectionnée au sein de l'espèce
 
 
     // ── Game controls ──────────────────────────────────────────────
@@ -241,8 +244,16 @@ public class UIController : MonoBehaviour
         toggleVisibility = root.Q<Toggle>("ToggleVisibility");
         if (toggleVisibility != null) {
             toggleVisibility.RegisterValueChangedCallback(e => {
-                if (SlimeMapRenderer.Instance != null) {
-                    SlimeMapRenderer.Instance.SetPlayerVisibility(GetCurrentSpeciesSlot(), e.newValue);
+                var smr = SlimeMapRenderer.Instance;
+                var lib = PlayerLibrary.Instance;
+                if (smr == null || lib == null) return;
+                // Appliquer à tous les slots de l'espèce (toutes catégories)
+                var def = SpeciesLibrary.Instance?.Get(selectedSpeciesId);
+                int catCount = def != null ? def.CategoryCount : 1;
+                for (int ci = 0; ci < catCount; ci++)
+                {
+                    int sl = lib.GetSlotIndex(selectedPlayerId, selectedSpeciesId, ci);
+                    if (sl >= 0) smr.SetPlayerVisibility(sl, e.newValue);
                 }
             });
         }
@@ -263,7 +274,19 @@ public class UIController : MonoBehaviour
         }
 
         // Species buttons — conteneur dynamique (rempli par RebuildSpeciesButtons)
-        speciesButtonContainer = root.Q<VisualElement>("SpeciesButtonContainer");
+        speciesButtonContainer  = root.Q<VisualElement>("SpeciesButtonContainer");
+        // Catégories — créé dynamiquement sous les boutons d'espèces
+        categoryButtonContainer = root.Q<VisualElement>("CategoryButtonContainer");
+        if (categoryButtonContainer == null)
+        {
+            // Pas de conteneur dédié en UXML → on en crée un et on l'insère après SpeciesButtonContainer
+            categoryButtonContainer = new VisualElement();
+            categoryButtonContainer.name = "CategoryButtonContainer";
+            categoryButtonContainer.style.marginTop = 2;
+            speciesButtonContainer?.parent?.Insert(
+                speciesButtonContainer.parent.IndexOf(speciesButtonContainer) + 1,
+                categoryButtonContainer);
+        }
 
         // Diplomatic matrix panel
         btnDiplomatie = root.Q<Button>("BtnDiplomatie");
@@ -309,7 +332,7 @@ public class UIController : MonoBehaviour
         {
             selectedPlayerId = lib.GetAll()[0].id;
             var species = lib.GetSpeciesForPlayer(selectedPlayerId);
-            if (species.Count > 0) selectedSpeciesId = species[0];
+            if (species.Count > 0) { selectedSpeciesId = species[0]; selectedCategoryIndex = 0; }
 
             // Couleurs des boutons de sélection joueur depuis le JSON
             var players = lib.GetAll();
@@ -324,13 +347,13 @@ public class UIController : MonoBehaviour
         SelectPlayer(0);
     }
 
-    // Slot GPU pour l'espèce sélectionnée dans le joueur actif
+    // Slot GPU pour l'espèce+catégorie sélectionnées dans le joueur actif
     private int GetCurrentSpeciesSlot()
     {
         var lib = PlayerLibrary.Instance;
         if (lib != null && !string.IsNullOrEmpty(selectedSpeciesId))
         {
-            int s = lib.GetSlotIndex(selectedPlayerId, selectedSpeciesId);
+            int s = lib.GetSlotIndex(selectedPlayerId, selectedSpeciesId, selectedCategoryIndex);
             if (s >= 0) return s;
         }
         return GetFirstSlotForPlayer(selectedPlayerId);
@@ -356,9 +379,9 @@ public class UIController : MonoBehaviour
         if (players != null && index >= 0 && index < players.Count)
         {
             selectedPlayerId = players[index].id;
-            // Sélectionne la première espèce du joueur par défaut
+            // Sélectionne la première espèce + première catégorie par défaut
             var species = lib.GetSpeciesForPlayer(selectedPlayerId);
-            if (species.Count > 0) selectedSpeciesId = species[0];
+            if (species.Count > 0) { selectedSpeciesId = species[0]; selectedCategoryIndex = 0; }
         }
 
         // Close construction panel when switching player (it's species-specific)
@@ -369,61 +392,7 @@ public class UIController : MonoBehaviour
             constructionPanelOpen = false;
         }
 
-        int firstSlot = GetCurrentSpeciesSlot();
-
-        if (SlimeMapRenderer.Instance != null) {
-            var settings = SlimeMapRenderer.Instance.speciesSettings[firstSlot];
-            maxAgeSlider?.SetValueWithoutNotify(settings.maxAge);
-            if (maxAgeLabel != null) maxAgeLabel.text = settings.maxAge.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
-
-            trailWeightSlider?.SetValueWithoutNotify(settings.trailWeight);
-            if (trailWeightLabel != null) trailWeightLabel.text = settings.trailWeight.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
-
-            decayRateSlider?.SetValueWithoutNotify(settings.decayRate);
-            if (decayRateLabel != null) decayRateLabel.text = settings.decayRate.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
-
-            diffuseRateSlider?.SetValueWithoutNotify(settings.diffuseRate);
-            if (diffuseRateLabel != null) diffuseRateLabel.text = settings.diffuseRate.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
-
-            moveSpeedSlider?.SetValueWithoutNotify(settings.moveSpeed);
-            if (moveSpeedLabel != null) moveSpeedLabel.text = settings.moveSpeed.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
-
-            turnSpeedSlider?.SetValueWithoutNotify(settings.turnSpeed);
-            if (turnSpeedLabel != null) turnSpeedLabel.text = settings.turnSpeed.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
-
-            sensorAngleSlider?.SetValueWithoutNotify(settings.sensorAngleRad * Mathf.Rad2Deg);
-            if (sensorAngleLabel != null) sensorAngleLabel.text = (settings.sensorAngleRad * Mathf.Rad2Deg).ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "°";
-
-            sensorOffsetSlider?.SetValueWithoutNotify(settings.sensorOffsetDst);
-            if (sensorOffsetLabel != null) sensorOffsetLabel.text = settings.sensorOffsetDst.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
-
-            sensorSizeSlider?.SetValueWithoutNotify(settings.sensorSize);
-            if (sensorSizeLabel != null) sensorSizeLabel.text = settings.sensorSize.ToString();
-
-            repulsionStrengthSlider?.SetValueWithoutNotify(settings.repulsionStrength);
-            if (repulsionStrengthLabel != null) repulsionStrengthLabel.text = settings.repulsionStrength.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
-            repulsionRadiusSlider?.SetValueWithoutNotify(settings.repulsionRadius);
-            if (repulsionRadiusLabel != null) repulsionRadiusLabel.text = settings.repulsionRadius.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
-            densityLimitSlider?.SetValueWithoutNotify(settings.densityLimit);
-            if (densityLimitLabel != null) densityLimitLabel.text = settings.densityLimit.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
-
-            plScanRadiusSlider?.SetValueWithoutNotify(settings.particleLifeScanRadius);
-            if (plScanRadiusLabel != null) plScanRadiusLabel.text = settings.particleLifeScanRadius.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
-            plStepSizeSlider?.SetValueWithoutNotify(settings.particleLifeStepSize);
-            if (plStepSizeLabel != null) plStepSizeLabel.text = settings.particleLifeStepSize.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
-            agentRadiusSlider?.SetValueWithoutNotify(settings.agentRadius);
-            if (agentRadiusLabel != null) agentRadiusLabel.text = settings.agentRadius.ToString();
-            trailEmitRadiusSlider?.SetValueWithoutNotify(settings.trailEmitRadius);
-            if (trailEmitRadiusLabel != null) trailEmitRadiusLabel.text = settings.trailEmitRadius.ToString();
-
-            if (toggleVisibility != null) {
-                toggleVisibility.SetValueWithoutNotify(SlimeMapRenderer.Instance.GetPlayerVisibility(firstSlot));
-            }
-
-            if (toggleSpeciesOverlay != null && WaypointOverlayRenderer.Instance != null) {
-                toggleSpeciesOverlay.SetValueWithoutNotify(WaypointOverlayRenderer.Instance.ShowPOI);
-            }
-        }
+        RefreshSlidersFromCurrentSlot();
 
         // Highlight selected button
         for (int i = 0; i < 6; i++) {
@@ -443,60 +412,71 @@ public class UIController : MonoBehaviour
         if (diploMatrixOpen) RefreshDiploMatrixCells();
         if (plMatrixOpen)    RefreshPLMatrixCells();
         RebuildSpeciesButtons();
+        RebuildCategoryButtons();
     }
 
-    private void OnSelectSpecies(string speciesId)
+    private void OnSelectSpecies(string baseSpeciesId)
     {
         var lib = PlayerLibrary.Instance;
         if (lib == null) return;
-        var playerSpecies = lib.GetSpeciesForPlayer(selectedPlayerId);
-        if (!playerSpecies.Contains(speciesId)) return;
-        selectedSpeciesId = speciesId;
+        if (!lib.GetSpeciesForPlayer(selectedPlayerId).Contains(baseSpeciesId)) return;
 
+        selectedSpeciesId    = baseSpeciesId;
+        selectedCategoryIndex = 0;
+
+        RefreshSlidersFromCurrentSlot();
+        RebuildSpeciesButtons();
+        RebuildCategoryButtons();
+    }
+
+    private void OnSelectCategory(int catIndex)
+    {
+        selectedCategoryIndex = catIndex;
+        RefreshSlidersFromCurrentSlot();
+        RebuildCategoryButtons(); // met à jour le highlight
+    }
+
+    private void RefreshSlidersFromCurrentSlot()
+    {
         int slot = GetCurrentSpeciesSlot();
-        var smr = SlimeMapRenderer.Instance;
-        if (smr != null)
-        {
-            var s = smr.speciesSettings[slot];
-            maxAgeSlider?.SetValueWithoutNotify(s.maxAge);
-            if (maxAgeLabel != null) maxAgeLabel.text = s.maxAge.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
-            trailWeightSlider?.SetValueWithoutNotify(s.trailWeight);
-            if (trailWeightLabel != null) trailWeightLabel.text = s.trailWeight.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
-            decayRateSlider?.SetValueWithoutNotify(s.decayRate);
-            if (decayRateLabel != null) decayRateLabel.text = s.decayRate.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
-            diffuseRateSlider?.SetValueWithoutNotify(s.diffuseRate);
-            if (diffuseRateLabel != null) diffuseRateLabel.text = s.diffuseRate.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
-            moveSpeedSlider?.SetValueWithoutNotify(s.moveSpeed);
-            if (moveSpeedLabel != null) moveSpeedLabel.text = s.moveSpeed.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
-            turnSpeedSlider?.SetValueWithoutNotify(s.turnSpeed);
-            if (turnSpeedLabel != null) turnSpeedLabel.text = s.turnSpeed.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
-            sensorAngleSlider?.SetValueWithoutNotify(s.sensorAngleRad * Mathf.Rad2Deg);
-            if (sensorAngleLabel != null) sensorAngleLabel.text = (s.sensorAngleRad * Mathf.Rad2Deg).ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "°";
-            sensorOffsetSlider?.SetValueWithoutNotify(s.sensorOffsetDst);
-            if (sensorOffsetLabel != null) sensorOffsetLabel.text = s.sensorOffsetDst.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
-            sensorSizeSlider?.SetValueWithoutNotify(s.sensorSize);
-            if (sensorSizeLabel != null) sensorSizeLabel.text = s.sensorSize.ToString();
-            repulsionStrengthSlider?.SetValueWithoutNotify(s.repulsionStrength);
-            if (repulsionStrengthLabel != null) repulsionStrengthLabel.text = s.repulsionStrength.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
-            repulsionRadiusSlider?.SetValueWithoutNotify(s.repulsionRadius);
-            if (repulsionRadiusLabel != null) repulsionRadiusLabel.text = s.repulsionRadius.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
-            densityLimitSlider?.SetValueWithoutNotify(s.densityLimit);
-            if (densityLimitLabel != null) densityLimitLabel.text = s.densityLimit.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
-
-            plScanRadiusSlider?.SetValueWithoutNotify(s.particleLifeScanRadius);
-            if (plScanRadiusLabel != null) plScanRadiusLabel.text = s.particleLifeScanRadius.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
-            plStepSizeSlider?.SetValueWithoutNotify(s.particleLifeStepSize);
-            if (plStepSizeLabel != null) plStepSizeLabel.text = s.particleLifeStepSize.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
-            agentRadiusSlider?.SetValueWithoutNotify(s.agentRadius);
-            if (agentRadiusLabel != null) agentRadiusLabel.text = s.agentRadius.ToString();
-            trailEmitRadiusSlider?.SetValueWithoutNotify(s.trailEmitRadius);
-            if (trailEmitRadiusLabel != null) trailEmitRadiusLabel.text = s.trailEmitRadius.ToString();
-            toggleVisibility?.SetValueWithoutNotify(smr.GetPlayerVisibility(slot));
-        }
+        var smr  = SlimeMapRenderer.Instance;
+        if (smr == null) return;
+        var s = smr.speciesSettings[slot];
+        maxAgeSlider?.SetValueWithoutNotify(s.maxAge);
+        if (maxAgeLabel != null) maxAgeLabel.text = s.maxAge.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+        trailWeightSlider?.SetValueWithoutNotify(s.trailWeight);
+        if (trailWeightLabel != null) trailWeightLabel.text = s.trailWeight.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+        decayRateSlider?.SetValueWithoutNotify(s.decayRate);
+        if (decayRateLabel != null) decayRateLabel.text = s.decayRate.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+        diffuseRateSlider?.SetValueWithoutNotify(s.diffuseRate);
+        if (diffuseRateLabel != null) diffuseRateLabel.text = s.diffuseRate.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+        moveSpeedSlider?.SetValueWithoutNotify(s.moveSpeed);
+        if (moveSpeedLabel != null) moveSpeedLabel.text = s.moveSpeed.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+        turnSpeedSlider?.SetValueWithoutNotify(s.turnSpeed);
+        if (turnSpeedLabel != null) turnSpeedLabel.text = s.turnSpeed.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+        sensorAngleSlider?.SetValueWithoutNotify(s.sensorAngleRad * Mathf.Rad2Deg);
+        if (sensorAngleLabel != null) sensorAngleLabel.text = (s.sensorAngleRad * Mathf.Rad2Deg).ToString("F0", System.Globalization.CultureInfo.InvariantCulture) + "°";
+        sensorOffsetSlider?.SetValueWithoutNotify(s.sensorOffsetDst);
+        if (sensorOffsetLabel != null) sensorOffsetLabel.text = s.sensorOffsetDst.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+        sensorSizeSlider?.SetValueWithoutNotify(s.sensorSize);
+        if (sensorSizeLabel != null) sensorSizeLabel.text = s.sensorSize.ToString();
+        repulsionStrengthSlider?.SetValueWithoutNotify(s.repulsionStrength);
+        if (repulsionStrengthLabel != null) repulsionStrengthLabel.text = s.repulsionStrength.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+        repulsionRadiusSlider?.SetValueWithoutNotify(s.repulsionRadius);
+        if (repulsionRadiusLabel != null) repulsionRadiusLabel.text = s.repulsionRadius.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+        densityLimitSlider?.SetValueWithoutNotify(s.densityLimit);
+        if (densityLimitLabel != null) densityLimitLabel.text = s.densityLimit.ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+        plScanRadiusSlider?.SetValueWithoutNotify(s.particleLifeScanRadius);
+        if (plScanRadiusLabel != null) plScanRadiusLabel.text = s.particleLifeScanRadius.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+        plStepSizeSlider?.SetValueWithoutNotify(s.particleLifeStepSize);
+        if (plStepSizeLabel != null) plStepSizeLabel.text = s.particleLifeStepSize.ToString("F0", System.Globalization.CultureInfo.InvariantCulture);
+        agentRadiusSlider?.SetValueWithoutNotify(s.agentRadius);
+        if (agentRadiusLabel != null) agentRadiusLabel.text = s.agentRadius.ToString();
+        trailEmitRadiusSlider?.SetValueWithoutNotify(s.trailEmitRadius);
+        if (trailEmitRadiusLabel != null) trailEmitRadiusLabel.text = s.trailEmitRadius.ToString();
+        toggleVisibility?.SetValueWithoutNotify(smr.GetPlayerVisibility(slot));
         if (toggleSpeciesOverlay != null && WaypointOverlayRenderer.Instance != null)
             toggleSpeciesOverlay.SetValueWithoutNotify(WaypointOverlayRenderer.Instance.ShowPOI);
-
-        RebuildSpeciesButtons();
     }
 
     private void RebuildSpeciesButtons()
@@ -516,7 +496,6 @@ public class UIController : MonoBehaviour
 
         foreach (var speciesId in playerSpecies)
         {
-            // Nouvelle rangée tous les BUTTONS_PER_ROW boutons
             if (col % BUTTONS_PER_ROW == 0)
             {
                 currentRow = new VisualElement();
@@ -525,43 +504,91 @@ public class UIController : MonoBehaviour
                 speciesButtonContainer.Add(currentRow);
             }
 
-            var specDef  = SpeciesLibrary.Instance?.Get(speciesId);
+            var specDef = SpeciesLibrary.Instance?.Get(speciesId);
             string label = SpeciesShortName(specDef?.displayName ?? speciesId);
 
+            // Couleur : couleur scalaire de base de l'espèce (pas par catégorie)
             Color bg = new Color(0.25f, 0.25f, 0.3f);
             if (specDef?.color != null && specDef.color.Length >= 3)
                 bg = new Color(specDef.color[0], specDef.color[1], specDef.color[2]);
-
             float brightness = bg.r * 0.299f + bg.g * 0.587f + bg.b * 0.114f;
             Color textColor  = brightness > 0.55f ? Color.black : Color.white;
 
+            bool isSelected = (speciesId == selectedSpeciesId);
             string capturedId = speciesId;
             var btn = new Button(() => OnSelectSpecies(capturedId)) { text = label };
-            btn.style.fontSize           = 11;
-            btn.style.paddingTop         = 3;
-            btn.style.paddingBottom      = 3;
-            btn.style.paddingLeft        = 5;
-            btn.style.paddingRight       = 5;
-            btn.style.minWidth           = 46;
-            btn.style.marginTop          = 1;
-            btn.style.marginBottom       = 1;
-            btn.style.marginLeft         = 1;
-            btn.style.marginRight        = 1;
-            btn.style.backgroundColor    = new StyleColor(bg);
-            btn.style.color              = new StyleColor(textColor);
-            btn.style.borderTopLeftRadius     = new StyleLength(4);
-            btn.style.borderTopRightRadius    = new StyleLength(4);
-            btn.style.borderBottomLeftRadius  = new StyleLength(4);
-            btn.style.borderBottomRightRadius = new StyleLength(4);
-            btn.style.opacity            = (speciesId == selectedSpeciesId) ? 1.0f : 0.6f;
-            btn.style.borderBottomWidth  = (speciesId == selectedSpeciesId) ? 3 : 0;
-            btn.style.borderBottomColor  = new StyleColor(Color.white);
+            StyleButton(btn, bg, textColor, isSelected, 46);
 
             currentRow.Add(btn);
             speciesButtonMap[speciesId]      = btn;
             speciesButtonBaseText[speciesId] = label;
             col++;
         }
+    }
+
+    private void RebuildCategoryButtons()
+    {
+        if (categoryButtonContainer == null) return;
+        categoryButtonContainer.Clear();
+        categoryButtonMap.Clear();
+
+        var lib = PlayerLibrary.Instance;
+        if (lib == null || string.IsNullOrEmpty(selectedSpeciesId)) return;
+
+        var categories = lib.GetCategoriesForSpecies(selectedPlayerId, selectedSpeciesId);
+        // Espèce simple (1 catégorie = displayName) → pas de sous-boutons à afficher
+        if (categories.Count <= 1) return;
+
+        var specDef = SpeciesLibrary.Instance?.Get(selectedSpeciesId);
+
+        var row = new VisualElement();
+        row.style.flexDirection = FlexDirection.Row;
+        row.style.flexWrap = Wrap.Wrap;
+        row.style.marginTop = 2;
+        categoryButtonContainer.Add(row);
+
+        for (int i = 0; i < categories.Count; i++)
+        {
+            int capturedI = i;
+            string catName = categories[i];
+
+            // Couleur par catégorie depuis color_arr
+            Color bg = new Color(0.2f, 0.2f, 0.25f);
+            if (specDef?.color_arr != null && i * 3 + 2 < specDef.color_arr.Length)
+                bg = new Color(specDef.color_arr[i * 3], specDef.color_arr[i * 3 + 1], specDef.color_arr[i * 3 + 2]);
+            float brightness = bg.r * 0.299f + bg.g * 0.587f + bg.b * 0.114f;
+            Color textColor  = brightness > 0.55f ? Color.black : Color.white;
+
+            bool isSelected = (i == selectedCategoryIndex);
+            var btn = new Button(() => OnSelectCategory(capturedI)) { text = catName };
+            StyleButton(btn, bg, textColor, isSelected, 52);
+
+            row.Add(btn);
+            categoryButtonMap[i] = btn;
+        }
+    }
+
+    private static void StyleButton(Button btn, Color bg, Color textColor, bool isSelected, float minWidth)
+    {
+        btn.style.fontSize        = 11;
+        btn.style.paddingTop      = 3;
+        btn.style.paddingBottom   = 3;
+        btn.style.paddingLeft     = 5;
+        btn.style.paddingRight    = 5;
+        btn.style.minWidth        = minWidth;
+        btn.style.marginTop       = 1;
+        btn.style.marginBottom    = 1;
+        btn.style.marginLeft      = 1;
+        btn.style.marginRight     = 1;
+        btn.style.backgroundColor = new StyleColor(bg);
+        btn.style.color           = new StyleColor(textColor);
+        btn.style.borderTopLeftRadius     = new StyleLength(4);
+        btn.style.borderTopRightRadius    = new StyleLength(4);
+        btn.style.borderBottomLeftRadius  = new StyleLength(4);
+        btn.style.borderBottomRightRadius = new StyleLength(4);
+        btn.style.opacity           = isSelected ? 1.0f : 0.6f;
+        btn.style.borderBottomWidth = isSelected ? 3 : 0;
+        btn.style.borderBottomColor = new StyleColor(Color.white);
     }
 
     private static string SpeciesShortName(string displayName)
@@ -1553,12 +1580,12 @@ public class UIController : MonoBehaviour
                 }
                 playerSelectButtons[i].style.display = UnityEngine.UIElements.DisplayStyle.Flex;
 
-                // Somme des slots de ce joueur
+                // Somme de TOUS les slots (toutes catégories) de ce joueur
                 uint alive = 0;
-                var species = lib.GetSpeciesForPlayer(players[i].id);
-                foreach (string s in species)
+                foreach (var slotInfo in lib.GetAllSlots())
                 {
-                    int slot = lib.GetSlotIndex(players[i].id, s);
+                    if (slotInfo.player.id != players[i].id) continue;
+                    int slot = slotInfo.categoryDef?.slotIndex ?? -1;
                     if (slot >= 0 && slot < SlimeMapRenderer.MaxSlots)
                         alive += SlimeMapRenderer.Instance.AliveSpeciesCounts[slot];
                 }
@@ -1568,23 +1595,25 @@ public class UIController : MonoBehaviour
             if (entityCountLabel != null)
                 entityCountLabel.text = $"Agents (Vivants) : {totalAlive:N0}";
 
-            // Compteur par espèce dans les boutons de type
+            // Compteur par espèce (somme de toutes les catégories) dans les boutons
             foreach (var kvp in speciesButtonMap)
             {
-                string speciesId = kvp.Key;
-                var    btn       = kvp.Value;
-                if (btn == null) continue;
-                int slot = lib != null ? lib.GetSlotIndex(selectedPlayerId, speciesId) : -1;
-                string baseLabel = speciesButtonBaseText.TryGetValue(speciesId, out var bl) ? bl : speciesId;
-                if (slot >= 0 && slot < SlimeMapRenderer.MaxSlots)
+                string baseSpeciesId = kvp.Key; // ID de base ("human")
+                var    btn           = kvp.Value;
+                if (btn == null || lib == null) continue;
+                string baseLabel = speciesButtonBaseText.TryGetValue(baseSpeciesId, out var bl) ? bl : baseSpeciesId;
+
+                // Sommer tous les slots de toutes les catégories de cette espèce
+                var def      = SpeciesLibrary.Instance?.Get(baseSpeciesId);
+                int catCount = def != null ? def.CategoryCount : 1;
+                uint total   = 0;
+                for (int ci = 0; ci < catCount; ci++)
                 {
-                    uint count = SlimeMapRenderer.Instance.AliveSpeciesCounts[slot];
-                    btn.text = $"{baseLabel}\n<size=9>{count:N0}</size>";
+                    int slot = lib.GetSlotIndex(selectedPlayerId, baseSpeciesId, ci);
+                    if (slot >= 0 && slot < SlimeMapRenderer.MaxSlots)
+                        total += SlimeMapRenderer.Instance.AliveSpeciesCounts[slot];
                 }
-                else
-                {
-                    btn.text = baseLabel;
-                }
+                btn.text = $"{baseLabel}\n<size=9>{total:N0}</size>";
             }
         }
 

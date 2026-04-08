@@ -19,6 +19,14 @@ public enum AgentBehavior
 /// <summary>
 /// Paramètres complets d'une espèce d'agent.
 /// Chargé depuis StreamingAssets/Species/*.json au démarrage via SpeciesLibrary.
+///
+/// Multi-catégorie : une même espèce peut définir plusieurs sous-types (catégories)
+/// via le tableau "categories". Chaque catégorie partage la même tranche TrailMap GPU
+/// (trailSliceIndex) mais obtient son propre slot GPU (speciesIdIndex).
+/// Les champs scalaires (moveSpeed, behaviorType…) sont des valeurs par défaut pour
+/// les espèces sans catégories. Pour les espèces multi-catégories, utiliser les
+/// variantes _arr : moveSpeed_arr[i] donne la valeur pour categories[i].
+///
 /// Ajouter une espèce = créer un fichier JSON, sans modifier le code.
 /// </summary>
 [Serializable]
@@ -35,10 +43,41 @@ public class SpeciesDefinition
     public float[] color = new float[3];
 
     /// <summary>
-    /// Slot GPU assigné à cette espèce. NE PAS mettre dans le JSON —
-    /// calculé automatiquement à l'exécution par PlayerLibrary.ApplyToRenderer().
+    /// Noms des sous-catégories. Null/vide = espèce simple (pas de multi-catégorie).
+    /// Ex: ["Soldier", "Defender", "Bucheron"]
+    /// </summary>
+    public string[] categories;
+
+    // ── Variantes par catégorie (parallèles à categories[]) ───────────
+    // Si categories est défini, ces tableaux remplacent les scalaires correspondants.
+    // color_arr est aplati : 3 floats par catégorie [R0,G0,B0, R1,G1,B1, …]
+    public float[]  color_arr;          // 3 × CategoryCount floats
+    public float[]  moveSpeed_arr;
+    public float[]  turnSpeed_arr;
+    public string[] behaviorType_arr;
+    public float[]  sensorAngleDeg_arr;
+    public float[]  sensorOffsetDst_arr;
+    public float[]  trailWeight_arr;
+    public float[]  trailEmitRadius_arr; // int values stored as float for JsonUtility
+
+    /// <summary>
+    /// Slot GPU assigné à cette espèce (espèce simple) ou à la catégorie 0.
+    /// NE PAS mettre dans le JSON — calculé à l'exécution par PlayerLibrary.ApplyToRenderer().
     /// </summary>
     [System.NonSerialized] public int slotIndex = -1;
+
+    /// <summary>
+    /// Index de la tranche TrailMap GPU partagée par toutes les catégories de cette espèce.
+    /// Assigné par PlayerLibrary. -1 = pas encore assigné.
+    /// </summary>
+    [System.NonSerialized] public int trailSliceIndex = -1;
+
+    /// <summary>
+    /// Index de base dans le tableau global des speciesId GPU.
+    /// La catégorie k de cette espèce a speciesIdIndex = speciesIdBase + k.
+    /// Assigné par PlayerLibrary. -1 = pas encore assigné.
+    /// </summary>
+    [System.NonSerialized] public int speciesIdBase = -1;
 
     // ── Mouvement ─────────────────────────────────────────────────────
     public float moveSpeed;
@@ -147,7 +186,95 @@ public class SpeciesDefinition
     /// </summary>
     public bool blocksMovement = false;
 
-    // ── Conversion ───────────────────────────────────────────────────
+    // ── Multi-catégorie : helpers ──────────────────────────────────────
+
+    /// <summary>Nombre de catégories. 1 pour une espèce simple.</summary>
+    public int CategoryCount => (categories != null && categories.Length > 0) ? categories.Length : 1;
+
+    /// <summary>
+    /// Retourne une SpeciesDefinition aplatie pour la catégorie catIndex.
+    /// Pour une espèce simple (CategoryCount==1), retourne this directement.
+    /// Pour une espèce multi-catégorie, copie les champs partagés et surcharge
+    /// avec les valeurs spécifiques à la catégorie.
+    /// </summary>
+    public SpeciesDefinition GetCategoryDefinition(int catIndex)
+    {
+        if (CategoryCount == 1) return this;
+
+        var cat = new SpeciesDefinition
+        {
+            // Identité dérivée
+            id          = id + "_" + catIndex,
+            displayName = (categories != null && catIndex < categories.Length)
+                              ? categories[catIndex]
+                              : displayName + "_" + catIndex,
+
+            // Champs partagés (valeurs scalaires de base)
+            sensorSize            = sensorSize,
+            maxAge                = maxAge,
+            maxHealth             = maxHealth,
+            decayRate             = decayRate,
+            diffuseRate           = diffuseRate,
+            warDamageRate         = warDamageRate,
+            trailErasePower       = trailErasePower,
+            energyConsumptionRate = energyConsumptionRate,
+            energyReward          = energyReward,
+            startingEnergy        = startingEnergy,
+            arrivalRadius         = arrivalRadius,
+            loadingTime           = loadingTime,
+            unloadingTime         = unloadingTime,
+            payloadCapacity       = payloadCapacity,
+            waitForStock          = waitForStock,
+            repulsionStrength     = repulsionStrength,
+            repulsionRadius       = repulsionRadius,
+            densityLimit          = densityLimit,
+            particleLifeScanRadius = particleLifeScanRadius,
+            particleLifeStepSize  = particleLifeStepSize,
+            agentRadius           = agentRadius,
+            seedProbHigh          = seedProbHigh,
+            seedProbLow           = seedProbLow,
+            seedInterval          = seedInterval,
+            spriteName            = spriteName,
+            spriteTilesW          = spriteTilesW,
+            spriteTilesH          = spriteTilesH,
+            spriteFramesW         = spriteFramesW,
+            spriteFramesH         = spriteFramesH,
+            spriteAnchorX         = spriteAnchorX,
+            spriteAnchorY         = spriteAnchorY,
+            spriteFramePixelW     = spriteFramePixelW,
+            spriteFramePixelH     = spriteFramePixelH,
+            blockOffsetX          = blockOffsetX,
+            blockOffsetY          = blockOffsetY,
+            blockTilesW           = blockTilesW,
+            blockTilesH           = blockTilesH,
+            blocksMovement        = blocksMovement,
+
+            // Indices GPU — copiés depuis le parent après assignation
+            trailSliceIndex = trailSliceIndex,
+            speciesIdBase   = speciesIdBase,
+        };
+
+        // Couleur par catégorie (color_arr aplati : 3 floats par catégorie)
+        int ci = catIndex * 3;
+        if (color_arr != null && ci + 2 < color_arr.Length)
+            cat.color = new float[] { color_arr[ci], color_arr[ci + 1], color_arr[ci + 2] };
+        else
+            cat.color = color;
+
+        // Champs surchargés par catégorie
+        cat.moveSpeed      = GetFloat(moveSpeed_arr,      catIndex, moveSpeed);
+        cat.turnSpeed      = GetFloat(turnSpeed_arr,      catIndex, turnSpeed);
+        cat.sensorAngleDeg = GetFloat(sensorAngleDeg_arr, catIndex, sensorAngleDeg);
+        cat.sensorOffsetDst= GetFloat(sensorOffsetDst_arr,catIndex, sensorOffsetDst);
+        cat.trailWeight    = GetFloat(trailWeight_arr,    catIndex, trailWeight);
+        cat.trailEmitRadius= (int)GetFloat(trailEmitRadius_arr, catIndex, trailEmitRadius);
+
+        cat.behaviorType   = GetString(behaviorType_arr, catIndex, behaviorType);
+
+        return cat;
+    }
+
+    // ── Conversion ────────────────────────────────────────────────────
 
     public int BehaviorTypeInt => System.Enum.TryParse<AgentBehavior>(behaviorType, true, out var b) ? (int)b : 0;
 
@@ -183,6 +310,16 @@ public class SpeciesDefinition
         seedProbLow               = seedProbLow,
         particleLifeScanRadius    = Mathf.Max(1f, particleLifeScanRadius),
         particleLifeStepSize      = Mathf.Max(1f, particleLifeStepSize),
-        navDensityLimit           = densityLimit, // same source, different scaling applied at runtime
+        navDensityLimit           = densityLimit,
+        trailSliceIndex           = trailSliceIndex,
+        speciesId                 = speciesIdBase >= 0 ? speciesIdBase : slotIndex,
     };
+
+    // ── Helpers privés ────────────────────────────────────────────────
+
+    private static float GetFloat(float[] arr, int idx, float fallback)
+        => (arr != null && idx < arr.Length) ? arr[idx] : fallback;
+
+    private static string GetString(string[] arr, int idx, string fallback)
+        => (arr != null && idx < arr.Length && !string.IsNullOrEmpty(arr[idx])) ? arr[idx] : fallback;
 }
