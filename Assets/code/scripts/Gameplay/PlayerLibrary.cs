@@ -50,8 +50,11 @@ public class PlayerLibrary : MonoBehaviour
     // trailSliceIndex attribués : clé "playerId:speciesId" → trailSliceIndex
     private readonly Dictionary<string, int> trailSlices = new Dictionary<string, int>();
 
-    public int NumActiveSlots   => slots.Count;
-    public int NumActiveTrailSlices => trailSlices.Count;
+    // Nombre réel de tranches TrailMap actives (avec RGBA packing : < numActiveSlots)
+    private int activeTrailSliceCount = 0;
+
+    public int NumActiveSlots        => slots.Count;
+    public int NumActiveTrailSlices  => activeTrailSliceCount;
 
     // ── Lifecycle ────────────────────────────────────────────────────
 
@@ -72,7 +75,7 @@ public class PlayerLibrary : MonoBehaviour
             yield return null;
 
         AssignSlots();
-        Debug.Log($"[PlayerLibrary] {players.Count} joueur(s), {slots.Count} slots GPU, {trailSlices.Count} tranches TrailMap.");
+        Debug.Log($"[PlayerLibrary] {players.Count} joueur(s), {slots.Count} slots GPU, {activeTrailSliceCount} tranches TrailMap (RGBA packing).");
 
         while (SlimeMapRenderer.Instance == null || !SlimeMapRenderer.Instance.IsReady)
             yield return null;
@@ -120,15 +123,17 @@ public class PlayerLibrary : MonoBehaviour
                 // Enregistrer le premier slot (catégorie 0)
                 slotIndex[baseKey] = slots.Count;
 
-                // Chaque catégorie reçoit sa propre tranche TrailMap (pas de partage)
-                // → comportements et couleurs indépendants, diplomatie par slot
+                // RGBA packing : 4 catégories par tranche TrailMap
+                // catégorie c → tranche = baseSlice + c/4, canal = c % 4
+                int baseSlice = nextTrailSlice;
+
                 for (int c = 0; c < catCount; c++)
                 {
                     string catKey = MakeKeyCat(player.id, specId, c);
                     slotIndexCat[catKey] = slots.Count;
 
-                    // Une tranche par slot/catégorie
-                    int tsi = nextTrailSlice++;
+                    int tsi = baseSlice + c / 4;
+                    int tch = c % 4;
                     string trailKey = MakeKeyCat(player.id, specId, c);
                     trailSlices[trailKey] = tsi; // clé unique par catégorie
 
@@ -141,6 +146,7 @@ public class PlayerLibrary : MonoBehaviour
 
                     catDef.slotIndex       = slots.Count;
                     catDef.trailSliceIndex = tsi;
+                    catDef.trailChannel    = tch;
                     catDef.speciesIdBase   = speciesIdBase;
 
                     slots.Add(new SlotInfo
@@ -152,11 +158,16 @@ public class PlayerLibrary : MonoBehaviour
                     });
                 }
 
+                // Avancer nextTrailSlice : ceiling division de catCount par 4
+                nextTrailSlice = baseSlice + (catCount + 3) / 4;
+
                 // trailSlices[baseKey] = premier tsi de l'espèce (pour GetTrailSliceIndex rétro-compat)
                 if (!trailSlices.ContainsKey(baseKey))
-                    trailSlices[baseKey] = nextTrailSlice - catCount;
+                    trailSlices[baseKey] = baseSlice;
             }
         }
+
+        activeTrailSliceCount = nextTrailSlice;
     }
 
     // ── Application dans SlimeMapRenderer ───────────────────────────
@@ -165,7 +176,7 @@ public class PlayerLibrary : MonoBehaviour
     {
         var smr = SlimeMapRenderer.Instance;
         smr.numActiveSlots        = slots.Count;
-        smr.numActiveTrailSlices  = slots.Count; // 1 tranche par slot/catégorie
+        smr.numActiveTrailSlices  = activeTrailSliceCount; // RGBA packing : jusqu'à 4 catégories par tranche
 
         // Remplir le tableau trailSliceToSlot : trailSliceIndex → premier slot de cette tranche
         // On itère à rebours pour que la catégorie 0 (première) écrase les suivantes

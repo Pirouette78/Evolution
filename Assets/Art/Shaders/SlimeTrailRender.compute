@@ -32,10 +32,10 @@ struct Agent {
 RWStructuredBuffer<Agent> agents;
 uint numAgents;
 
-RWTexture2DArray<float> TrailMap;
-RWTexture2DArray<float> DiffusedTrailMap;
-RWTexture2DArray<float> AgentMap;           // présence d'agents temps-réel (reset chaque step)
-RWTexture2DArray<float> VegetalEmissionMap; // masque statique des disques végétaux (reconstruit à chaque germination)
+RWTexture2DArray<float4> TrailMap;
+RWTexture2DArray<float4> DiffusedTrailMap;
+RWTexture2DArray<float>  AgentMap;           // présence d'agents temps-réel (reset chaque step)
+RWTexture2DArray<float4> VegetalEmissionMap; // masque statique des disques végétaux (reconstruit à chaque germination)
 RWTexture2D<float4> DisplayMap;
 Texture2D<float4> TerrainWalkabilityMap; // Used to block movement
 SamplerState sampler_TerrainWalkabilityMap;
@@ -86,8 +86,10 @@ struct SpeciesSettings {
     float particleLifeScanRadius; // rayon du disque Particle Life (pixels sim)
     float particleLifeStepSize;   // pas d'échantillonnage Particle Life (pixels sim)
     float navDensityLimit;        // seuil de densité frontale pour freinage navigation
-    int   trailSliceIndex;        // index tranche TrailMap partagée par les catégories d'une espèce
+    int   trailSliceIndex;        // index tranche TrailMap (4 catégories par tranche RGBA)
     int   speciesId;              // index unique dans le tableau global des espèces GPU
+    int   trailChannel;           // canal RGBA dans la tranche (0=R, 1=G, 2=B, 3=A)
+    int   _pad0;                  // padding alignement 16 bytes
 };
 
 struct Waypoint {
@@ -119,6 +121,15 @@ int numActiveSlots;
 int numActiveTrailSlices;
 StructuredBuffer<int> trailSliceToSlot; // numActiveTrailSlices entries: trailSliceToSlot[sliceIdx] = slotIdx
 
+// Indexation dynamique en écriture d'un canal float4 (D3D11 interdit cur[dyn] = v comme l-value)
+float4 setChannel(float4 v, int ch, float val) {
+    if (ch == 0) v.x = val;
+    else if (ch == 1) v.y = val;
+    else if (ch == 2) v.z = val;
+    else              v.w = val;
+    return v;
+}
+
 // Hash function www.cs.ubc.ca/~rbridson/docs/schechter-sca08-turbulence.pdf
 uint hash(uint state) {
     state ^= 2747636419u;
@@ -146,7 +157,7 @@ bool isWalkable(float2 pos) {
 }
 
 // Variante avec position pré-calculée (évite de recalculer cos/sin par direction)
-float senseAtPos(float2 sensorPos, int sensorSize, int targetSlice, bool checkWalkable, bool useAgentMap) {
+float senseAtPos(float2 sensorPos, int sensorSize, int targetSlice, bool checkWalkable, bool useAgentMap, int channel = 0) {
     if (checkWalkable && !isWalkable(sensorPos)) return -100.0;
     int cx = (int)sensorPos.x;
     int cy = (int)sensorPos.y;
@@ -157,7 +168,7 @@ float senseAtPos(float2 sensorPos, int sensorSize, int targetSlice, bool checkWa
             int sampleY = min(height - 1, max(0, cy + offsetY));
             sum += useAgentMap
                 ? AgentMap[int3(sampleX, sampleY, targetSlice)]
-                : TrailMap[int3(sampleX, sampleY, targetSlice)];
+                : TrailMap[int3(sampleX, sampleY, targetSlice)][channel];
         }
     }
     return sum;
@@ -166,14 +177,14 @@ float senseAtPos(float2 sensorPos, int sensorSize, int targetSlice, bool checkWa
 float sense(Agent agent, float sensorAngleOffset, SpeciesSettings settings) {
     float sensorAngle = agent.angle + sensorAngleOffset;
     float2 sensorPos = agent.position + float2(cos(sensorAngle), sin(sensorAngle)) * settings.sensorOffsetDst;
-    return senseAtPos(sensorPos, settings.sensorSize, settings.trailSliceIndex, true, false);
+    return senseAtPos(sensorPos, settings.sensorSize, settings.trailSliceIndex, true, false, settings.trailChannel);
 }
 
 // Like sense() but reads from a specific species slice of TrailMap
-float senseSpecies(Agent agent, float sensorAngleOffset, SpeciesSettings settings, int targetSlice) {
+float senseSpecies(Agent agent, float sensorAngleOffset, SpeciesSettings settings, int targetSlice, int targetChannel) {
     float sensorAngle = agent.angle + sensorAngleOffset;
     float2 sensorPos = agent.position + float2(cos(sensorAngle), sin(sensorAngle)) * settings.sensorOffsetDst;
-    return senseAtPos(sensorPos, settings.sensorSize, targetSlice, false, false);
+    return senseAtPos(sensorPos, settings.sensorSize, targetSlice, false, false, targetChannel);
 }
 
 // Lit AgentMap au lieu de TrailMap : détecte la présence réelle d'agents (non-diffuse)
@@ -388,18 +399,19 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
         float weightForward = 0, weightLeft = 0, weightRight = 0;
         float selfW = interactionMatrix[agent.speciesIndex * MAX_SLOTS + agent.speciesIndex];
         if (abs(selfW) > 0.001) {
-            weightForward += senseAtPos(posFwd,   settings.sensorSize, settings.trailSliceIndex, true,  false) * selfW;
-            weightLeft    += senseAtPos(posLeft,  settings.sensorSize, settings.trailSliceIndex, false, false) * selfW;
-            weightRight   += senseAtPos(posRight, settings.sensorSize, settings.trailSliceIndex, false, false) * selfW;
+            weightForward += senseAtPos(posFwd,   settings.sensorSize, settings.trailSliceIndex, true,  false, settings.trailChannel) * selfW;
+            weightLeft    += senseAtPos(posLeft,  settings.sensorSize, settings.trailSliceIndex, false, false, settings.trailChannel) * selfW;
+            weightRight   += senseAtPos(posRight, settings.sensorSize, settings.trailSliceIndex, false, false, settings.trailChannel) * selfW;
         }
         for (int s = 0; s < numActiveSlots; s++) {
             if (s == agent.speciesIndex) continue;
             float w = interactionMatrix[agent.speciesIndex * MAX_SLOTS + s];
             if (abs(w) < 0.001) continue;
-            int otherSlice = gs_speciesSettings[s].trailSliceIndex;
-            weightForward += senseAtPos(posFwd,   settings.sensorSize, otherSlice, false, false) * w;
-            weightLeft    += senseAtPos(posLeft,  settings.sensorSize, otherSlice, false, false) * w;
-            weightRight   += senseAtPos(posRight, settings.sensorSize, otherSlice, false, false) * w;
+            int otherSlice   = gs_speciesSettings[s].trailSliceIndex;
+            int otherChannel = gs_speciesSettings[s].trailChannel;
+            weightForward += senseAtPos(posFwd,   settings.sensorSize, otherSlice, false, false, otherChannel) * w;
+            weightLeft    += senseAtPos(posLeft,  settings.sensorSize, otherSlice, false, false, otherChannel) * w;
+            weightRight   += senseAtPos(posRight, settings.sensorSize, otherSlice, false, false, otherChannel) * w;
         }
 
         // ── Particle Life : balayage circulaire de présence directe (AgentMap) ──
@@ -631,7 +643,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
         for (int ts = 0; ts < numActiveSlots; ts++) {
             SpeciesSettings other = gs_speciesSettings[ts];
             if (other.behaviorType != 2) continue;
-            float rbc = TrailMap[int3((int)agent.position.x, (int)agent.position.y, other.trailSliceIndex)];
+            float rbc = TrailMap[int3((int)agent.position.x, (int)agent.position.y, other.trailSliceIndex)][other.trailChannel];
             if (rbc > 0.05) agent.hunger = min(agent.hunger + other.energyReward * rbc * deltaTime, settings.startingEnergy);
         }
         if (agent.hunger <= 0) {
@@ -645,7 +657,7 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
     if (settings.warMask != 0 && settings.warDamageRate > 0) {
         for (int e = 0; e < numActiveSlots; e++) {
             if ((settings.warMask & (1 << e)) != 0) {
-                float enemyTrail = TrailMap[int3((int)agent.position.x, (int)agent.position.y, gs_speciesSettings[e].trailSliceIndex)];
+                float enemyTrail = TrailMap[int3((int)agent.position.x, (int)agent.position.y, gs_speciesSettings[e].trailSliceIndex)][gs_speciesSettings[e].trailChannel];
                 agent.health -= enemyTrail * settings.warDamageRate * deltaTime;
             }
         }
@@ -674,21 +686,24 @@ void DrawMap (uint3 id : SV_DispatchThreadID)
     // Dépôt de traînée : les Végétaux passent par VegetalEmissionMap (ApplyVegetalEmission)
     // Les autres agents émettent directement dans TrailMap
     if (settings.behaviorType != 6) {
-        int te = settings.trailEmitRadius;
+        int te  = settings.trailEmitRadius;
         int tsi = settings.trailSliceIndex;
+        int tch = settings.trailChannel;
         if (te <= 0) {
-            if (px >= 0 && px < width && py >= 0 && py < height)
-                TrailMap[int3(px, py, tsi)] =
-                    saturate(TrailMap[int3(px, py, tsi)] + settings.trailWeight * deltaTime);
+            if (px >= 0 && px < width && py >= 0 && py < height) {
+                float4 cur = TrailMap[int3(px, py, tsi)];
+                TrailMap[int3(px, py, tsi)] = setChannel(cur, tch, saturate(cur[tch] + settings.trailWeight * deltaTime));
+            }
         } else {
             for (int tx = -te; tx <= te; tx++)
                 for (int ty = -te; ty <= te; ty++) {
                     if (tx*tx + ty*ty > te*te) continue;
                     int sx = px + tx;
                     int sy = py + ty;
-                    if (sx >= 0 && sx < width && sy >= 0 && sy < height)
-                        TrailMap[int3(sx, sy, tsi)] =
-                            saturate(TrailMap[int3(sx, sy, tsi)] + settings.trailWeight * deltaTime);
+                    if (sx >= 0 && sx < width && sy >= 0 && sy < height) {
+                        float4 cur = TrailMap[int3(sx, sy, tsi)];
+                        TrailMap[int3(sx, sy, tsi)] = setChannel(cur, tch, saturate(cur[tch] + settings.trailWeight * deltaTime));
+                    }
                 }
         }
     }
@@ -709,9 +724,12 @@ void DrawMap (uint3 id : SV_DispatchThreadID)
     if (settings.trailErasePower > 0 && settings.warMask != 0) {
         for (int e = 0; e < numActiveSlots; e++) {
             if ((settings.warMask & (1 << e)) == 0) continue;
-            int3 ec = int3((int)agent.position.x, (int)agent.position.y, speciesSettings[e].trailSliceIndex);
-            if (ec.x >= 0 && ec.x < width && ec.y >= 0 && ec.y < height)
-                TrailMap[ec] = max(0, TrailMap[ec] - settings.trailErasePower * deltaTime);
+            int3 ec  = int3((int)agent.position.x, (int)agent.position.y, speciesSettings[e].trailSliceIndex);
+            int  ech = speciesSettings[e].trailChannel;
+            if (ec.x >= 0 && ec.x < width && ec.y >= 0 && ec.y < height) {
+                float4 cur = TrailMap[ec];
+                TrailMap[ec] = setChannel(cur, ech, max(0, cur[ech] - settings.trailErasePower * deltaTime));
+            }
         }
     }
 }
@@ -728,9 +746,9 @@ void Diffuse (uint3 id : SV_DispatchThreadID)
 
     // Récupère les paramètres depuis le premier slot qui utilise cette tranche
     SpeciesSettings settings = speciesSettings[trailSliceToSlot[slice]];
-    float originalCol = TrailMap[int3(id.xy, slice)];
+    float4 originalCol = TrailMap[int3(id.xy, slice)];
 
-    float sum = 0;
+    float4 sum = float4(0,0,0,0);
     [unroll]
     for (int offsetX = -1; offsetX <= 1; offsetX++) {
         [unroll]
@@ -741,7 +759,7 @@ void Diffuse (uint3 id : SV_DispatchThreadID)
         }
     }
 
-    float blurredCol = sum / 9.0;
+    float4 blurredCol = sum / 9.0;
     float diffuseWeight = saturate(settings.diffuseRate * deltaTime);
     blurredCol = originalCol * (1 - diffuseWeight) + blurredCol * diffuseWeight;
 
@@ -780,10 +798,10 @@ void ResetMap (uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)width || id.y >= (uint)height) return;
     for (int slice = 0; slice < MAX_SLOTS; slice++) {
-        TrailMap[int3(id.xy, slice)]           = 0.0;
-        DiffusedTrailMap[int3(id.xy, slice)]   = 0.0;
+        TrailMap[int3(id.xy, slice)]           = float4(0,0,0,0);
+        DiffusedTrailMap[int3(id.xy, slice)]   = float4(0,0,0,0);
         AgentMap[int3(id.xy, slice)]           = 0.0;
-        VegetalEmissionMap[int3(id.xy, slice)] = 0.0;
+        VegetalEmissionMap[int3(id.xy, slice)] = float4(0,0,0,0);
     }
 }
 
@@ -802,8 +820,8 @@ void ComposeDisplay (uint3 id : SV_DispatchThreadID)
     for (int i = 0; i < numActiveSlots; i++) {
         if ((playerVisibilityMask & (1 << i)) == 0) continue;
 
-        // Lit dans la tranche TrailMap partagée par toutes les catégories de cette espèce
-        float blurredDensity = DiffusedTrailMap[int3((int)id.x, (int)id.y, speciesSettings[i].trailSliceIndex)];
+        // Lit le canal RGBA correspondant à cette catégorie dans la tranche partagée
+        float blurredDensity = DiffusedTrailMap[int3((int)id.x, (int)id.y, speciesSettings[i].trailSliceIndex)][speciesSettings[i].trailChannel];
 
         finalColor.rgb += slotColors[i].rgb * blurredDensity;
         totalDensity += blurredDensity;
@@ -848,8 +866,8 @@ void GatherSeeds(uint3 id : SV_DispatchThreadID)
         SpeciesSettings settings = speciesSettings[s];
         if (settings.seedProbHigh <= 0.0) continue;
 
-        // Intensité de traînée diffusée à ce pixel (lit depuis la tranche partagée)
-        float trail = DiffusedTrailMap[int3(id.xy, settings.trailSliceIndex)];
+        // Intensité de traînée diffusée à ce pixel (canal RGBA correspondant)
+        float trail = DiffusedTrailMap[int3(id.xy, settings.trailSliceIndex)][settings.trailChannel];
         if (trail < 0.25) continue;
 
         // Pas d'agent végétal déjà présent
@@ -888,7 +906,7 @@ void ClearVegetalEmission(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)width || id.y >= (uint)height) return;
     for (int s = 0; s < numActiveSlots; s++)
-        VegetalEmissionMap[int3(id.xy, s)] = 0.0;
+        VegetalEmissionMap[int3(id.xy, s)] = float4(0,0,0,0);
 }
 
 [numthreads(16,1,1)]
@@ -906,12 +924,14 @@ void RebuildVegetalDisks(uint3 id : SV_DispatchThreadID)
     int te = settings.trailEmitRadius;
 
     // Écriture idempotente (= 1.0, pas +=) : pas de race condition sur les pixels partagés
-    for (int tx = -te; tx <= te; tx++)
-        for (int ty = -te; ty <= te; ty++) {
+    [loop] for (int tx = -te; tx <= te; tx++)
+    [loop] for (int ty = -te; ty <= te; ty++) {
             if (tx*tx + ty*ty > te*te) continue;
             int sx = px + tx, sy = py + ty;
-            if (sx >= 0 && sx < width && sy >= 0 && sy < height)
-                VegetalEmissionMap[int3(sx, sy, settings.trailSliceIndex)] = 1.0;
+            if (sx >= 0 && sx < width && sy >= 0 && sy < height) {
+                float4 cur = VegetalEmissionMap[int3(sx, sy, settings.trailSliceIndex)];
+                VegetalEmissionMap[int3(sx, sy, settings.trailSliceIndex)] = setChannel(cur, settings.trailChannel, 1.0);
+            }
         }
 }
 
@@ -919,12 +939,14 @@ void RebuildVegetalDisks(uint3 id : SV_DispatchThreadID)
 void ApplyVegetalEmission(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= (uint)width || id.y >= (uint)height) return;
-    for (int s = 0; s < numActiveSlots; s++) {
+    [loop] for (int s = 0; s < numActiveSlots; s++) {
         SpeciesSettings settings = speciesSettings[s];
         if (settings.behaviorType != 6) continue;
         int tsi = settings.trailSliceIndex;
-        if (VegetalEmissionMap[int3(id.xy, tsi)] <= 0) continue;
-        TrailMap[int3(id.xy, tsi)] = saturate(TrailMap[int3(id.xy, tsi)] + settings.trailWeight * deltaTime);
+        int tch = settings.trailChannel;
+        if (VegetalEmissionMap[int3(id.xy, tsi)][tch] <= 0) continue;
+        float4 cur = TrailMap[int3(id.xy, tsi)];
+        TrailMap[int3(id.xy, tsi)] = setChannel(cur, tch, saturate(cur[tch] + settings.trailWeight * deltaTime));
     }
 }
 

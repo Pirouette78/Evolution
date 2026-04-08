@@ -158,8 +158,10 @@ public class SlimeMapRenderer : MonoBehaviour
         public float particleLifeScanRadius;// rayon du disque Particle Life (pixels sim)
         public float particleLifeStepSize;  // pas d'échantillonnage Particle Life
         public float navDensityLimit;       // seuil de densité frontale pour freinage navigation
-        public int   trailSliceIndex;       // index tranche TrailMap partagée par les catégories d'une espèce
-        public int   speciesId;             // index unique dans le tableau global des espèces GPU → 136 bytes total
+        public int   trailSliceIndex;       // index tranche TrailMap (4 catégories par tranche RGBA)
+        public int   speciesId;             // index unique dans le tableau global des espèces GPU
+        public int   trailChannel;          // canal RGBA dans la tranche (0=R, 1=G, 2=B, 3=A)
+        public int   _pad0;                 // padding alignement 16 bytes → 144 bytes total
     }
 
     public enum DiplomaticState { Neutral, Ally, Peace, War }
@@ -322,26 +324,26 @@ public class SlimeMapRenderer : MonoBehaviour
 
     private void InitTextures()
     {
-        TrailMap           = CreateRTArray("TrailMap");
-        DiffusedMap        = CreateRTArray("DiffusedMap");
-        AgentMap           = CreateRTArray("AgentMap");
-        VegetalEmissionMap = CreateRTArray("VegetalEmissionMap");
+        TrailMap           = CreateRTArray("TrailMap",           UnityEngine.Experimental.Rendering.GraphicsFormat.R16G16B16A16_SFloat);
+        DiffusedMap        = CreateRTArray("DiffusedMap",        UnityEngine.Experimental.Rendering.GraphicsFormat.R16G16B16A16_SFloat);
+        AgentMap           = CreateRTArray("AgentMap",           UnityEngine.Experimental.Rendering.GraphicsFormat.R16_SFloat);
+        VegetalEmissionMap = CreateRTArray("VegetalEmissionMap", UnityEngine.Experimental.Rendering.GraphicsFormat.R16G16B16A16_SFloat);
 
         DisplayMap = new RenderTexture(Width, Height, 0, RenderTextureFormat.ARGBFloat)
-        { 
-            enableRandomWrite = true, 
+        {
+            enableRandomWrite = true,
             name = "DisplayMap",
             filterMode = FilterMode.Bilinear // Apply bilinear filtering for smooth rendering
         };
         DisplayMap.Create();
 
-        RenderTexture CreateRTArray(string name)
+        RenderTexture CreateRTArray(string name, UnityEngine.Experimental.Rendering.GraphicsFormat format)
         {
-            var rt = new RenderTexture(Width, Height, 0, UnityEngine.Experimental.Rendering.GraphicsFormat.R16_SFloat)
-            { 
+            var rt = new RenderTexture(Width, Height, 0, format)
+            {
                 dimension = UnityEngine.Rendering.TextureDimension.Tex2DArray,
                 volumeDepth = MaxSlots,
-                enableRandomWrite = true, 
+                enableRandomWrite = true,
                 name = name
             };
             rt.Create();

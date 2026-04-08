@@ -79,6 +79,12 @@ public class SpeciesDefinition
     /// </summary>
     [System.NonSerialized] public int speciesIdBase = -1;
 
+    /// <summary>
+    /// Canal RGBA dans la tranche TrailMap partagée (0=R, 1=G, 2=B, 3=A).
+    /// Assigné par PlayerLibrary selon la position de la catégorie dans son groupe de 4.
+    /// </summary>
+    [System.NonSerialized] public int trailChannel = 0;
+
     // ── Mouvement ─────────────────────────────────────────────────────
     public float moveSpeed;
     public float turnSpeed;
@@ -252,6 +258,7 @@ public class SpeciesDefinition
             // Indices GPU — copiés depuis le parent après assignation
             trailSliceIndex = trailSliceIndex,
             speciesIdBase   = speciesIdBase,
+            trailChannel    = trailChannel,
         };
 
         // Couleur par catégorie (color_arr aplati : 3 floats par catégorie)
@@ -313,6 +320,7 @@ public class SpeciesDefinition
         navDensityLimit           = densityLimit,
         trailSliceIndex           = trailSliceIndex,
         speciesId                 = speciesIdBase >= 0 ? speciesIdBase : slotIndex,
+        trailChannel              = trailChannel,
     };
 
     // ── Helpers privés ────────────────────────────────────────────────

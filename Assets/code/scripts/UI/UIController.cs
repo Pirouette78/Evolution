@@ -631,10 +631,10 @@ public class UIController : MonoBehaviour
         int numPlayers = players.Count;
         if (numPlayers == 0) return;
 
-        var colSpecies = lib.GetSpeciesForPlayer(players[diploColPlayer].id);
-        var rowSpecies = lib.GetSpeciesForPlayer(players[diploRowPlayer].id);
-        int nCols      = colSpecies.Count;
-        int nRows      = rowSpecies.Count;
+        var colSlots = GetPlayerSlotLabels(lib, players[diploColPlayer].id);
+        var rowSlots = GetPlayerSlotLabels(lib, players[diploRowPlayer].id);
+        int nCols    = colSlots.Count;
+        int nRows    = rowSlots.Count;
 
         const int CELL = 34;
         const int PAD  = 10;
@@ -713,25 +713,20 @@ public class UIController : MonoBehaviour
         headerRow.style.flexDirection = FlexDirection.Row;
         headerRow.Add(MakeCornerCell(CELL)); // coin vide
         for (int c = 0; c < nCols; c++)
-        {
-            int colSlot = lib.GetSlotIndex(players[diploColPlayer].id, colSpecies[c]);
-            headerRow.Add(MakeSpeciesHeader(colSpecies[c], colSlot, smr, CELL));
-        }
+            headerRow.Add(MakeSlotHeader(colSlots[c].label, colSlots[c].slot, smr, CELL));
         grid.Add(headerRow);
 
         // Rangées données
         diploMatrixCells = new Button[nRows, nCols];
         for (int r = 0; r < nRows; r++)
         {
-            int rowSlot = lib.GetSlotIndex(players[diploRowPlayer].id, rowSpecies[r]);
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
-            row.Add(MakeSpeciesHeader(rowSpecies[r], rowSlot, smr, CELL));
+            row.Add(MakeSlotHeader(rowSlots[r].label, rowSlots[r].slot, smr, CELL));
             for (int c = 0; c < nCols; c++)
             {
-                int colSlot   = lib.GetSlotIndex(players[diploColPlayer].id, colSpecies[c]);
-                int capturedR = rowSlot;
-                int capturedC = colSlot;
+                int capturedR = rowSlots[r].slot;
+                int capturedC = colSlots[c].slot;
 
                 var cell = new Button();
                 cell.style.width  = CELL;
@@ -828,6 +823,63 @@ public class UIController : MonoBehaviour
         return row;
     }
 
+    // ── Helpers matrices ──────────────────────────────────────────────
+    private struct SlotLabel { public string label; public int slot; }
+
+    /// <summary>Retourne la liste ordonnée (label, slotIndex) pour toutes les catégories d'un joueur.</summary>
+    private static System.Collections.Generic.List<SlotLabel> GetPlayerSlotLabels(PlayerLibrary lib, string playerId)
+    {
+        var result = new System.Collections.Generic.List<SlotLabel>();
+        foreach (var sl in lib.GetAllSlots())
+        {
+            if (sl.player.id != playerId) continue;
+            var def = SpeciesLibrary.Instance?.Get(sl.speciesEntry.speciesId.ToLower());
+            string catName = (def != null && def.CategoryCount > 1 && def.categories != null
+                              && sl.categoryIndex < def.categories.Length)
+                ? def.categories[sl.categoryIndex]
+                : (def?.displayName ?? sl.speciesEntry.speciesId);
+            result.Add(new SlotLabel { label = catName, slot = sl.categoryDef?.slotIndex ?? -1 });
+        }
+        return result;
+    }
+
+    private static VisualElement MakeSlotHeader(string label, int slot, SlimeMapRenderer smr, int size)
+    {
+        var ve = new VisualElement();
+        ve.style.width  = size;
+        ve.style.height = size;
+        ve.style.marginTop    = 1;
+        ve.style.marginBottom = 1;
+        ve.style.marginLeft   = 1;
+        ve.style.marginRight  = 1;
+        ve.style.alignItems     = Align.Center;
+        ve.style.justifyContent = Justify.Center;
+        ve.style.borderTopLeftRadius     = new StyleLength(3);
+        ve.style.borderTopRightRadius    = new StyleLength(3);
+        ve.style.borderBottomLeftRadius  = new StyleLength(3);
+        ve.style.borderBottomRightRadius = new StyleLength(3);
+
+        Color bg = new Color(0.15f, 0.15f, 0.2f);
+        if (slot >= 0 && smr.slotColors != null && slot < smr.slotColors.Length)
+        {
+            var v = smr.slotColors[slot];
+            bg = new Color(v.x, v.y, v.z);
+        }
+        ve.style.backgroundColor = new StyleColor(bg);
+
+        string abbrev = label.Length >= 3 ? label.Substring(0, 3).ToUpper() : label.ToUpper();
+        var lbl = new Label(abbrev);
+        lbl.style.fontSize = 8;
+        lbl.style.color    = new StyleColor(Color.white);
+        lbl.style.unityFontStyleAndWeight = FontStyle.Bold;
+        lbl.style.unityTextAlign          = TextAnchor.MiddleCenter;
+        ve.Add(lbl);
+
+        // Tooltip : nom complet
+        ve.tooltip = label;
+        return ve;
+    }
+
     private static VisualElement MakeCornerCell(int size)
     {
         var ve = new VisualElement();
@@ -898,23 +950,24 @@ public class UIController : MonoBehaviour
 
     private void RefreshDiploMatrixCells()
     {
+        // version simplifiée : reconstruit les slots à partir des indices capturés dans les cellules
         var lib = PlayerLibrary.Instance;
         var smr = SlimeMapRenderer.Instance;
         if (lib == null || smr == null || diploMatrixCells == null) return;
 
-        var players    = lib.GetAll();
-        var colSpecies = lib.GetSpeciesForPlayer(players[diploColPlayer].id);
-        var rowSpecies = lib.GetSpeciesForPlayer(players[diploRowPlayer].id);
+        var players  = lib.GetAll();
+        var rowSlots = GetPlayerSlotLabels(lib, players[diploRowPlayer].id);
+        var colSlots = GetPlayerSlotLabels(lib, players[diploColPlayer].id);
 
         int nRows = diploMatrixCells.GetLength(0);
         int nCols = diploMatrixCells.GetLength(1);
 
-        for (int r = 0; r < nRows && r < rowSpecies.Count; r++)
+        for (int r = 0; r < nRows && r < rowSlots.Count; r++)
         {
-            int rowSlot = lib.GetSlotIndex(players[diploRowPlayer].id, rowSpecies[r]);
-            for (int c = 0; c < nCols && c < colSpecies.Count; c++)
+            int rowSlot = rowSlots[r].slot;
+            for (int c = 0; c < nCols && c < colSlots.Count; c++)
             {
-                int colSlot = lib.GetSlotIndex(players[diploColPlayer].id, colSpecies[c]);
+                int colSlot = colSlots[c].slot;
                 var cell    = diploMatrixCells[r, c];
                 if (cell == null || rowSlot < 0 || colSlot < 0) continue;
                 var level = smr.GetDiplomacyLevel(rowSlot, colSlot);
@@ -980,10 +1033,10 @@ public class UIController : MonoBehaviour
         int numPlayers = players.Count;
         if (numPlayers == 0) return;
 
-        var colSpecies = lib.GetSpeciesForPlayer(players[plColPlayer].id);
-        var rowSpecies = lib.GetSpeciesForPlayer(players[plRowPlayer].id);
-        int nCols = colSpecies.Count;
-        int nRows = rowSpecies.Count;
+        var colSlots = GetPlayerSlotLabels(lib, players[plColPlayer].id);
+        var rowSlots = GetPlayerSlotLabels(lib, players[plRowPlayer].id);
+        int nCols = colSlots.Count;
+        int nRows = rowSlots.Count;
 
         const int CELL = 42;
         const int PAD  = 10;
@@ -1054,26 +1107,21 @@ public class UIController : MonoBehaviour
         headerRow.style.flexDirection = FlexDirection.Row;
         headerRow.Add(MakeCornerCell(CELL));
         for (int c = 0; c < nCols; c++)
-        {
-            int colSlot = lib.GetSlotIndex(players[plColPlayer].id, colSpecies[c]);
-            headerRow.Add(MakeSpeciesHeader(colSpecies[c], colSlot, smr, CELL));
-        }
+            headerRow.Add(MakeSlotHeader(colSlots[c].label, colSlots[c].slot, smr, CELL));
         grid.Add(headerRow);
 
         // Lignes de données
         plMatrixCells = new Button[nRows, nCols];
         for (int r = 0; r < nRows; r++)
         {
-            int rowSlot = lib.GetSlotIndex(players[plRowPlayer].id, rowSpecies[r]);
             var row = new VisualElement();
             row.style.flexDirection = FlexDirection.Row;
-            row.Add(MakeSpeciesHeader(rowSpecies[r], rowSlot, smr, CELL));
+            row.Add(MakeSlotHeader(rowSlots[r].label, rowSlots[r].slot, smr, CELL));
 
             for (int c = 0; c < nCols; c++)
             {
-                int colSlot   = lib.GetSlotIndex(players[plColPlayer].id, colSpecies[c]);
-                int capR = rowSlot;
-                int capC = colSlot;
+                int capR = rowSlots[r].slot;
+                int capC = colSlots[c].slot;
 
                 var cell = new Button();
                 cell.style.width  = CELL;
@@ -1136,18 +1184,18 @@ public class UIController : MonoBehaviour
         var smr = SlimeMapRenderer.Instance;
         if (lib == null || smr == null || plMatrixCells == null) return;
 
-        var players    = lib.GetAll();
-        var colSpecies = lib.GetSpeciesForPlayer(players[plColPlayer].id);
-        var rowSpecies = lib.GetSpeciesForPlayer(players[plRowPlayer].id);
+        var players  = lib.GetAll();
+        var rowSlots = GetPlayerSlotLabels(lib, players[plRowPlayer].id);
+        var colSlots = GetPlayerSlotLabels(lib, players[plColPlayer].id);
         int nRows = plMatrixCells.GetLength(0);
         int nCols = plMatrixCells.GetLength(1);
 
-        for (int r = 0; r < nRows && r < rowSpecies.Count; r++)
+        for (int r = 0; r < nRows && r < rowSlots.Count; r++)
         {
-            int rowSlot = lib.GetSlotIndex(players[plRowPlayer].id, rowSpecies[r]);
-            for (int c = 0; c < nCols && c < colSpecies.Count; c++)
+            int rowSlot = rowSlots[r].slot;
+            for (int c = 0; c < nCols && c < colSlots.Count; c++)
             {
-                int colSlot = lib.GetSlotIndex(players[plColPlayer].id, colSpecies[c]);
+                int colSlot = colSlots[c].slot;
                 var cell = plMatrixCells[r, c];
                 if (cell == null || rowSlot < 0 || colSlot < 0) continue;
                 float v = smr.GetAgentInteraction(rowSlot, colSlot);
