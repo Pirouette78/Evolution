@@ -238,6 +238,8 @@ MonoBehaviour:
     navDensityLimit: 0
     trailSliceIndex: 0
     speciesId: 0
+    trailChannel: 0
+    _pad0: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -271,6 +273,8 @@ MonoBehaviour:
     navDensityLimit: 0
     trailSliceIndex: 0
     speciesId: 0
+    trailChannel: 0
+    _pad0: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -304,6 +308,8 @@ MonoBehaviour:
     navDensityLimit: 0
     trailSliceIndex: 0
     speciesId: 0
+    trailChannel: 0
+    _pad0: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -337,6 +343,8 @@ MonoBehaviour:
     navDensityLimit: 0
     trailSliceIndex: 0
     speciesId: 0
+    trailChannel: 0
+    _pad0: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -370,6 +378,8 @@ MonoBehaviour:
     navDensityLimit: 0
     trailSliceIndex: 0
     speciesId: 0
+    trailChannel: 0
+    _pad0: 0
   - moveSpeed: 0
     turnSpeed: 0
     sensorAngleRad: 0
@@ -403,6 +413,8 @@ MonoBehaviour:
     navDensityLimit: 0
     trailSliceIndex: 0
     speciesId: 0
+    trailChannel: 0
+    _pad0: 0
   AliveSpeciesCounts: 000000000000000000000000000000000000000000000000
   speciesTypes: 000000000000000000000000000000000000000000000000
   speciesBlocksMovement: 0000000000000000000000000000000000000000000000000000000000000000
@@ -1502,8 +1514,8 @@ Transform:
   m_GameObject: {fileID: 1730244605}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 1280, y: 720, z: -0.01}
-  m_LocalScale: {x: 2560, y: 1440, z: 1}
+  m_LocalPosition: {x: 256, y: 256, z: -0.01}
+  m_LocalScale: {x: 512, y: 512, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}

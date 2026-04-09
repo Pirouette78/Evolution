@@ -12,11 +12,14 @@ Shader "Evolution/TerrainOverlay"
 
         // Starting column/row for the 7x7 block of each terrain
         _WaterOffset ("Water Offset (Col, Row)", Vector) = (0, 0, 0, 0)
-        _SandOffset ("Sand Offset (Col, Row)", Vector) = (0, 7, 0, 0)
-        _GrassOffset ("Grass Offset (Col, Row)", Vector) = (0, 14, 0, 0)
-        _ForestOffset ("Forest Offset", Vector) = (0, 21, 0, 0)
-        _RockOffset ("Rock Offset", Vector) = (0, 28, 0, 0)
-        _SnowOffset ("Snow Offset", Vector) = (0, 35, 0, 0)
+        _SandOffset ("Sand Offset (Col, Row)", Vector) = (7, 0, 0, 0)
+        _GrassOffset ("Grass Offset (Col, Row)", Vector) = (14, 0, 0, 0)
+        _ForestOffset ("Forest Offset", Vector) = (21, 0, 0, 0)
+        _RockOffset ("Rock Offset", Vector) = (28, 0, 0, 0)
+        _SnowOffset ("Snow Offset", Vector) = (35, 0, 0, 0)
+
+        // Cliff overlays (drawn on top of water tiles bordering land)
+        _CliffOffset ("Cliff Offset (Col, Row)", Vector) = (0, 7, 0, 0)
     }
 
     SubShader
@@ -51,6 +54,7 @@ Shader "Evolution/TerrainOverlay"
             float4 _ForestOffset;
             float4 _RockOffset;
             float4 _SnowOffset;
+            float4 _CliffOffset;
 
             struct appdata
             {
@@ -204,6 +208,48 @@ Shader "Evolution/TerrainOverlay"
                         
                         // Alpha blend
                         result.rgb = lerp(result.rgb, layerCol.rgb, layerCol.a);
+                    }
+                }
+
+                // Cliff pass: drawn on water tiles that border land (type >= 1)
+                if (c == 0) {
+                    bool cn = (n >= 1);
+                    bool ce = (e >= 1);
+                    bool cs = (s >= 1);
+                    bool cw = (w >= 1);
+                    bool cne = cn && ce && (ne >= 1);
+                    bool cse = cs && ce && (se >= 1);
+                    bool csw = cs && cw && (sw >= 1);
+                    bool cnw = cn && cw && (nw >= 1);
+
+                    // Cliff mask: "which neighbors are water?" = inverse of land neighbors
+                    // Cardinals inverted, diagonals recalculated from inverted cardinals
+                    bool in_ = !cn;  // water to north
+                    bool ie  = !ce;  // water to east
+                    bool is_ = !cs;  // water to south
+                    bool iw  = !cw;  // water to west
+                    // Corner is water only if both cardinals AND the diagonal are water
+                    bool ine = in_ && ie && (ne < 1);
+                    bool ise = is_ && ie && (se < 1);
+                    bool isw = is_ && iw && (sw < 1);
+                    bool inw = in_ && iw && (nw < 1);
+
+                    int cliffMask = 0;
+                    if (in_) cliffMask |= 1;
+                    if (ine) cliffMask |= 2;
+                    if (ie)  cliffMask |= 4;
+                    if (ise) cliffMask |= 8;
+                    if (is_) cliffMask |= 16;
+                    if (isw) cliffMask |= 32;
+                    if (iw)  cliffMask |= 64;
+                    if (inw) cliffMask |= 128;
+
+                    if (cn || ce || cs || cw || (ne >= 1) || (se >= 1) || (sw >= 1) || (nw >= 1)) {
+                        float2 cliffCoord = GetGodotImagePosition(cliffMask);
+                        float invRowCliff = atlasRows - 1.0 - (_CliffOffset.y + cliffCoord.y);
+                        float2 cliffUV = float2((_CliffOffset.x + cliffCoord.x + subUV.x) / atlasCols, (invRowCliff + subUV.y) / atlasRows);
+                        fixed4 cliffCol = tex2Dlod(_TilesetTex, float4(cliffUV, 0, 0));
+                        result.rgb = lerp(result.rgb, cliffCol.rgb, cliffCol.a);
                     }
                 }
 
