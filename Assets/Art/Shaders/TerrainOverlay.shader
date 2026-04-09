@@ -173,45 +173,7 @@ Shader "Evolution/TerrainOverlay"
                 float2 baseUV = float2((offsets[0].x + solidCoord.x + subUV.x) / atlasCols, (invRowBase + subUV.y) / atlasRows);
                 fixed4 result = tex2Dlod(_TilesetTex, float4(baseUV, 0, 0)) * _Tint;
 
-                // Stack subsequent layers (Maximum 5 layers on top of base)
-                [unroll(5)]
-                for (int L = 1; L <= 5; L++) {
-                    if (L > maxLayer) break;
-                    
-                    bool bn = (n >= L);
-                    bool be = (e >= L);
-                    bool bs = (s >= L);
-                    bool bw = (w >= L);
-                    bool bne = bn && be && (ne >= L);
-                    bool bse = bs && be && (se >= L);
-                    bool bsw = bs && bw && (sw >= L);
-                    bool bnw = bn && bw && (nw >= L);
-                    
-                    int mask = 0;
-                    if (bn) mask |= 1;
-                    if (be) mask |= 4;
-                    if (bs) mask |= 16;
-                    if (bw) mask |= 64;
-                    if (bne) mask |= 2;
-                    if (bse) mask |= 8;
-                    if (bsw) mask |= 32;
-                    if (bnw) mask |= 128;
-
-                    // On ne dessine le calque QUE si cette case APPARTIENT à ce calque.
-                    // Les transitions vers le calque inférieur se font via la transparence directionnelle INCLUSE dans la tuile 7x7.
-                    if (c >= L) {
-                        float2 localCoord = GetGodotImagePosition(mask);
-                        float invRow = atlasRows - 1.0 - (offsets[L].y + localCoord.y);
-                        float2 layerUV = float2((offsets[L].x + localCoord.x + subUV.x) / atlasCols, (invRow + subUV.y) / atlasRows);
-                        // Utilise tex2Dlod pour ne pas trigger l'erreur de Gradient (Mipmaps) dans une boucle
-                        fixed4 layerCol = tex2Dlod(_TilesetTex, float4(layerUV, 0, 0));
-                        
-                        // Alpha blend
-                        result.rgb = lerp(result.rgb, layerCol.rgb, layerCol.a);
-                    }
-                }
-
-                // Cliff pass: drawn on water tiles that border land (type >= 1)
+                // Cliff pass (eau seulement, dessiné AVANT le débordement des terrains)
                 if (c == 0) {
                     bool cn = (n >= 1);
                     bool ce = (e >= 1);
@@ -222,13 +184,10 @@ Shader "Evolution/TerrainOverlay"
                     bool csw = cs && cw && (sw >= 1);
                     bool cnw = cn && cw && (nw >= 1);
 
-                    // Cliff mask: "which neighbors are water?" = inverse of land neighbors
-                    // Cardinals inverted, diagonals recalculated from inverted cardinals
-                    bool in_ = !cn;  // water to north
-                    bool ie  = !ce;  // water to east
-                    bool is_ = !cs;  // water to south
-                    bool iw  = !cw;  // water to west
-                    // Corner is water only if both cardinals AND the diagonal are water
+                    bool in_ = !cn;
+                    bool ie  = !ce;
+                    bool is_ = !cs;
+                    bool iw  = !cw;
                     bool ine = in_ && ie && (ne < 1);
                     bool ise = is_ && ie && (se < 1);
                     bool isw = is_ && iw && (sw < 1);
@@ -251,6 +210,45 @@ Shader "Evolution/TerrainOverlay"
                         fixed4 cliffCol = tex2Dlod(_TilesetTex, float4(cliffUV, 0, 0));
                         result.rgb = lerp(result.rgb, cliffCol.rgb, cliffCol.a);
                     }
+                }
+
+                // Terrain layers : tile pleine si c >= L, débordement sur toutes cases inférieures (y compris eau)
+                [unroll(5)]
+                for (int L = 1; L <= 5; L++) {
+                    if (L > maxLayer) break;
+
+                    bool bn = (n >= L);
+                    bool be = (e >= L);
+                    bool bs = (s >= L);
+                    bool bw = (w >= L);
+                    bool bne = bn && be && (ne >= L);
+                    bool bse = bs && be && (se >= L);
+                    bool bsw = bs && bw && (sw >= L);
+                    bool bnw = bn && bw && (nw >= L);
+
+                    float2 localCoord;
+                    if (c >= L) {
+                        localCoord = float2(1, 4); // tile pleine
+                    } else if (bn || be || bs || bw || (ne >= L) || (se >= L) || (sw >= L) || (nw >= L)) {
+                        // Débordement sur cette case (eau ou terrain inférieur)
+                        int mask = 0;
+                        if (bn) mask |= 1;
+                        if (bne) mask |= 2;
+                        if (be) mask |= 4;
+                        if (bse) mask |= 8;
+                        if (bs) mask |= 16;
+                        if (bsw) mask |= 32;
+                        if (bw) mask |= 64;
+                        if (bnw) mask |= 128;
+                        localCoord = GetGodotImagePosition(mask);
+                    } else {
+                        continue;
+                    }
+
+                    float invRow = atlasRows - 1.0 - (offsets[L].y + localCoord.y);
+                    float2 layerUV = float2((offsets[L].x + localCoord.x + subUV.x) / atlasCols, (invRow + subUV.y) / atlasRows);
+                    fixed4 layerCol = tex2Dlod(_TilesetTex, float4(layerUV, 0, 0));
+                    result.rgb = lerp(result.rgb, layerCol.rgb, layerCol.a);
                 }
 
                 result.a *= _Alpha;
