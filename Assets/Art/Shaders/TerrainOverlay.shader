@@ -226,24 +226,44 @@ Shader "Evolution/TerrainOverlay"
                     bool bsw = bs && bw && (sw >= L);
                     bool bnw = bn && bw && (nw >= L);
 
+                    // Voisins inférieurs (là où ce terrain déborde)
+                    bool in_ = (n < L);
+                    bool ie  = (e < L);
+                    bool is_ = (s < L);
+                    bool iw  = (w < L);
+                    bool ine = in_ && ie && (ne < L);
+                    bool ise = is_ && ie && (se < L);
+                    bool isw = is_ && iw && (sw < L);
+                    bool inw = in_ && iw && (nw < L);
+
                     float2 localCoord;
                     if (c >= L) {
-                        localCoord = float2(1, 4); // tile pleine
+                        // Case appartient au layer → tile pleine (atlas inversé : pleine = mask 0 → pos (4,5))
+                        localCoord = float2(5, 4);
                     } else if (bn || be || bs || bw || (ne >= L) || (se >= L) || (sw >= L) || (nw >= L)) {
-                        // Débordement sur cette case (eau ou terrain inférieur)
+                        // Case inférieure : masque inversé des voisins supérieurs
+                        bool dn  = !bn;
+                        bool de  = !be;
+                        bool ds  = !bs;
+                        bool dw  = !bw;
+                        bool dne = dn && de && (ne < L);
+                        bool dse = ds && de && (se < L);
+                        bool dsw = ds && dw && (sw < L);
+                        bool dnw = dn && dw && (nw < L);
                         int mask = 0;
-                        if (bn) mask |= 1;
-                        if (bne) mask |= 2;
-                        if (be) mask |= 4;
-                        if (bse) mask |= 8;
-                        if (bs) mask |= 16;
-                        if (bsw) mask |= 32;
-                        if (bw) mask |= 64;
-                        if (bnw) mask |= 128;
+                        if (dn)  mask |= 1;
+                        if (dne) mask |= 2;
+                        if (de)  mask |= 4;
+                        if (dse) mask |= 8;
+                        if (ds)  mask |= 16;
+                        if (dsw) mask |= 32;
+                        if (dw)  mask |= 64;
+                        if (dnw) mask |= 128;
                         localCoord = GetGodotImagePosition(mask);
                     } else {
                         continue;
                     }
+
 
                     float invRow = atlasRows - 1.0 - (offsets[L].y + localCoord.y);
                     float2 layerUV = float2((offsets[L].x + localCoord.x + subUV.x) / atlasCols, (invRow + subUV.y) / atlasRows);

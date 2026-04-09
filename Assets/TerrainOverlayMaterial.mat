@@ -33,11 +33,12 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _Alpha: 0
+    - _Alpha: 1
     - _AtlasCols: 7
     - _AtlasRows: 7
     - _TileSize: 32
     m_Colors:
+    - _CliffOffset: {r: 0, g: 7, b: 0, a: 0}
     - _ForestOffset: {r: 7, g: 0, b: 0, a: 0}
     - _GrassOffset: {r: 14, g: 0, b: 0, a: 0}
     - _MapSize: {r: 512, g: 512, b: 0, a: 0}
