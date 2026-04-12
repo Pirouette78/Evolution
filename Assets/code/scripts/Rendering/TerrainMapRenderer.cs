@@ -239,10 +239,9 @@ public class TerrainMapRenderer : MonoBehaviour
                 float h = HeightMap[x, y];
                 displayPixels[y * Width + x] = HeightToColour(h);
 
-                // Data (R = Terrain Type Brut, G = Local Biome Height)
+                // Data (R = Terrain Type Brut, G = Raw Global Height)
                 int type = types[x, y];
-                float localHeight = GetLocalBiomeHeight(HeightMap[x, y]);
-                byte heightVal = (byte)Mathf.Clamp(localHeight * 255f, 0f, 255f);
+                byte heightVal = (byte)Mathf.Clamp(HeightMap[x, y] * 255f, 0f, 255f);
                 dataPixels[y * Width + x] = new Color32((byte)type, heightVal, 0, 255);
             }
         }
@@ -301,6 +300,7 @@ public class TerrainMapRenderer : MonoBehaviour
         {
             var mat = ZoomLevelController.Instance.TerrainOverlayMaterial;
             mat.SetTexture("_MainTex", mapDataTexture);
+            mat.SetFloat("_WaterThreshold", WaterThreshold);
             mat.SetVector("_MapSize",      new Vector4(Width, Height, 0, 0));
             mat.SetVector("_WaterOffset",  new Vector4( 0, 0, 0, 0));
             mat.SetVector("_SandOffset",   new Vector4( 7, 0, 0, 0));

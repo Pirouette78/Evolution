@@ -72,6 +72,7 @@ Shader "Evolution/TerrainOverlay"
             float _ShadeDarkness;
             float _NoiseStrength;
             float _Waviness;
+            float _WaterThreshold;
             float _ShadeWater;
             float _ShadeSand;
             float _ShadeGrass;
@@ -166,6 +167,42 @@ Shader "Evolution/TerrainOverlay"
                 return lerp(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
             }
 
+            float InverseLerp(float a, float b, float value) {
+                if (b <= a) return 0.0;
+                return saturate((value - a) / (b - a));
+            }
+
+            float GetBiomeLocalHeight(float h, float waterThresh, int c) {
+                if (c == 0) return InverseLerp(0.0, waterThresh, h);
+                float land = InverseLerp(waterThresh, 1.0, h);
+                if (c == 1) return InverseLerp(0.0, 0.05, land);
+                if (c == 2) return InverseLerp(0.05, 0.40, land);
+                if (c == 3) return InverseLerp(0.40, 0.70, land);
+                if (c == 4) return InverseLerp(0.70, 0.95, land);
+                if (c == 5) return InverseLerp(0.95, 1.0, land);
+                return 0.0;
+            }
+
+            float GetGlobalHeightSmooth(float2 uv) {
+                float2 pixel = uv * _MapSize.xy - 0.5;
+                float2 f = frac(pixel);
+                float2 i = floor(pixel);
+                
+                float2 uv00 = (i + 0.5) * _MainTex_TexelSize.xy;
+                float2 uv10 = uv00 + float2(_MainTex_TexelSize.x, 0);
+                float2 uv01 = uv00 + float2(0, _MainTex_TexelSize.y);
+                float2 uv11 = uv00 + _MainTex_TexelSize.xy;
+                
+                float g00 = tex2D(_MainTex, uv00).g;
+                float g10 = tex2D(_MainTex, uv10).g;
+                float g01 = tex2D(_MainTex, uv01).g;
+                float g11 = tex2D(_MainTex, uv11).g;
+                
+                float g0 = lerp(g00, g10, f.x);
+                float g1 = lerp(g01, g11, f.x);
+                return lerp(g0, g1, f.y);
+            }
+
             v2f vert(appdata v)
             {
                 v2f o;
@@ -212,6 +249,8 @@ Shader "Evolution/TerrainOverlay"
                 float invRowBase = atlasRows - 1.0 - (offsets[0].y + solidCoord.y);
                 float2 baseUV = float2((offsets[0].x + solidCoord.x + subUV.x) / atlasCols, (invRowBase + subUV.y) / atlasRows);
                 fixed4 result = tex2Dlod(_TilesetTex, float4(baseUV, 0, 0)) * _Tint;
+                
+                int pixelBiome = c; // Track the actual visible biome at this pixel
 
                 // Cliff pass (eau seulement, dessiné AVANT le débordement des terrains)
                 if (c == 0) {
@@ -309,12 +348,18 @@ Shader "Evolution/TerrainOverlay"
                     float2 layerUV = float2((offsets[L].x + localCoord.x + subUV.x) / atlasCols, (invRow + subUV.y) / atlasRows);
                     fixed4 layerCol = tex2Dlod(_TilesetTex, float4(layerUV, 0, 0));
                     result.rgb = lerp(result.rgb, layerCol.rgb, layerCol.a);
+                    
+                    if (layerCol.a > 0.5) {
+                        pixelBiome = L;
+                    }
                 }
 
                 // --- Shading ---
-                float localBiomeHeight = saturate(tex2D(_MainTex, snappedUV).g);
+                // True global topographical contours!
+                float globalHeight = GetGlobalHeightSmooth(i.uv);
+                float localBiomeHeight = saturate(GetBiomeLocalHeight(globalHeight, _WaterThreshold, pixelBiome));
                 
-                // Wave distortion to break rigid tile grid
+                // Wave distortion for extra organic boundary (controlled by Waviness)
                 float wavy = smoothNoise(i.uv * _MapSize.xy * 1.5);
                 
                 // Crisp per-pixel dither to recreate pixel-art boundary
@@ -329,12 +374,12 @@ Shader "Evolution/TerrainOverlay"
                 float shade = lerp(1.0 - _ShadeDarkness, 1.0, stepped);
 
                 bool applyShade = false;
-                if (c == 0 && _ShadeWater > 0.5) applyShade = true;
-                if (c == 1 && _ShadeSand > 0.5) applyShade = true;
-                if (c == 2 && _ShadeGrass > 0.5) applyShade = true;
-                if (c == 3 && _ShadeForest > 0.5) applyShade = true;
-                if (c == 4 && _ShadeRock > 0.5) applyShade = true;
-                if (c == 5 && _ShadeSnow > 0.5) applyShade = true;
+                if (pixelBiome == 0 && _ShadeWater > 0.5) applyShade = true;
+                if (pixelBiome == 1 && _ShadeSand > 0.5) applyShade = true;
+                if (pixelBiome == 2 && _ShadeGrass > 0.5) applyShade = true;
+                if (pixelBiome == 3 && _ShadeForest > 0.5) applyShade = true;
+                if (pixelBiome == 4 && _ShadeRock > 0.5) applyShade = true;
+                if (pixelBiome == 5 && _ShadeSnow > 0.5) applyShade = true;
 
                 if (applyShade) {
                     result.rgb *= shade;
