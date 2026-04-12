@@ -25,6 +25,7 @@ Shader "Evolution/TerrainOverlay"
         _ShadeSteps ("Shade Steps", Float) = 4
         _ShadeDarkness ("Max Darkness", Range(0, 1)) = 0.4
         _NoiseStrength ("Noise Strength", Range(0, 1)) = 0.1
+        _Waviness ("Organic Waviness", Range(0, 1)) = 0.3
         [Toggle] _ShadeWater ("Shade Water", Float) = 0
         [Toggle] _ShadeSand ("Shade Sand", Float) = 1
         [Toggle] _ShadeGrass ("Shade Grass", Float) = 1
@@ -70,6 +71,7 @@ Shader "Evolution/TerrainOverlay"
             float _ShadeSteps;
             float _ShadeDarkness;
             float _NoiseStrength;
+            float _Waviness;
             float _ShadeWater;
             float _ShadeSand;
             float _ShadeGrass;
@@ -150,6 +152,18 @@ Shader "Evolution/TerrainOverlay"
             // Pseudo-random noise based on tile coordinate
             float random(float2 st) {
                 return frac(sin(dot(st.xy, float2(12.9898, 78.233))) * 43758.5453123);
+            }
+
+            // Smooth procedural noise for organic blob transitions inside the tile
+            float smoothNoise(float2 st) {
+                float2 i = floor(st);
+                float2 f = frac(st);
+                float a = random(i);
+                float b = random(i + float2(1.0, 0.0));
+                float c = random(i + float2(0.0, 1.0));
+                float d = random(i + float2(1.0, 1.0));
+                float2 u = f * f * (3.0 - 2.0 * f);
+                return lerp(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
             }
 
             v2f vert(appdata v)
@@ -299,8 +313,15 @@ Shader "Evolution/TerrainOverlay"
 
                 // --- Shading ---
                 float localBiomeHeight = saturate(tex2D(_MainTex, snappedUV).g);
-                float noise = (random(mapPixel) - 0.5) * _NoiseStrength;
-                float modifiedHeight = saturate(localBiomeHeight + noise);
+                
+                // Wave distortion to break rigid tile grid
+                float wavy = smoothNoise(i.uv * _MapSize.xy * 1.5);
+                
+                // Crisp per-pixel dither to recreate pixel-art boundary
+                float2 pixelCoord = floor(i.uv * _MapSize.xy * _TileSize);
+                float dither = random(pixelCoord);
+                
+                float modifiedHeight = saturate(localBiomeHeight + (wavy - 0.5) * _Waviness + (dither - 0.5) * _NoiseStrength);
 
                 // Safe step calculation ensure we don't exceed the top step index
                 float stepIndex = min(floor(modifiedHeight * _ShadeSteps), _ShadeSteps - 1.0);
