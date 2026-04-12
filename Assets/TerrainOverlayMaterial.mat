@@ -39,12 +39,12 @@ Material:
     - _TileSize: 32
     m_Colors:
     - _CliffOffset: {r: 0, g: 7, b: 0, a: 0}
-    - _ForestOffset: {r: 7, g: 0, b: 0, a: 0}
+    - _ForestOffset: {r: 21, g: 0, b: 0, a: 0}
     - _GrassOffset: {r: 14, g: 0, b: 0, a: 0}
     - _MapSize: {r: 512, g: 512, b: 0, a: 0}
-    - _RockOffset: {r: 14, g: 0, b: 0, a: 0}
+    - _RockOffset: {r: 28, g: 0, b: 0, a: 0}
     - _SandOffset: {r: 7, g: 0, b: 0, a: 0}
-    - _SnowOffset: {r: 0, g: 0, b: 0, a: 0}
+    - _SnowOffset: {r: 35, g: 0, b: 0, a: 0}
     - _Tint: {r: 1, g: 1, b: 1, a: 1}
     - _WaterOffset: {r: 0, g: 0, b: 0, a: 0}
   m_BuildTextureStacks: []

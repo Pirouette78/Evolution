@@ -20,6 +20,17 @@ Shader "Evolution/TerrainOverlay"
 
         // Cliff overlays (drawn on top of water tiles bordering land)
         _CliffOffset ("Cliff Offset (Col, Row)", Vector) = (0, 7, 0, 0)
+
+        // Shading parameters
+        _ShadeSteps ("Shade Steps", Float) = 4
+        _ShadeDarkness ("Max Darkness", Range(0, 1)) = 0.4
+        _NoiseStrength ("Noise Strength", Range(0, 1)) = 0.1
+        [Toggle] _ShadeWater ("Shade Water", Float) = 0
+        [Toggle] _ShadeSand ("Shade Sand", Float) = 1
+        [Toggle] _ShadeGrass ("Shade Grass", Float) = 1
+        [Toggle] _ShadeForest ("Shade Forest", Float) = 1
+        [Toggle] _ShadeRock ("Shade Rock", Float) = 1
+        [Toggle] _ShadeSnow ("Shade Snow", Float) = 1
     }
 
     SubShader
@@ -55,6 +66,16 @@ Shader "Evolution/TerrainOverlay"
             float4 _RockOffset;
             float4 _SnowOffset;
             float4 _CliffOffset;
+
+            float _ShadeSteps;
+            float _ShadeDarkness;
+            float _NoiseStrength;
+            float _ShadeWater;
+            float _ShadeSand;
+            float _ShadeGrass;
+            float _ShadeForest;
+            float _ShadeRock;
+            float _ShadeSnow;
 
             struct appdata
             {
@@ -124,6 +145,11 @@ Shader "Evolution/TerrainOverlay"
                 // MainTex is now purely storing Type in R channel (0 to 5)
                 float2 sampleUV = uv + float2(dx, dy) * _MainTex_TexelSize.xy;
                 return round(tex2D(_MainTex, sampleUV).r * 255.0);
+            }
+
+            // Pseudo-random noise based on tile coordinate
+            float random(float2 st) {
+                return frac(sin(dot(st.xy, float2(12.9898, 78.233))) * 43758.5453123);
             }
 
             v2f vert(appdata v)
@@ -269,6 +295,28 @@ Shader "Evolution/TerrainOverlay"
                     float2 layerUV = float2((offsets[L].x + localCoord.x + subUV.x) / atlasCols, (invRow + subUV.y) / atlasRows);
                     fixed4 layerCol = tex2Dlod(_TilesetTex, float4(layerUV, 0, 0));
                     result.rgb = lerp(result.rgb, layerCol.rgb, layerCol.a);
+                }
+
+                // --- Shading ---
+                float localBiomeHeight = saturate(tex2D(_MainTex, snappedUV).g);
+                float noise = (random(mapPixel) - 0.5) * _NoiseStrength;
+                float modifiedHeight = saturate(localBiomeHeight + noise);
+
+                // Safe step calculation ensure we don't exceed the top step index
+                float stepIndex = min(floor(modifiedHeight * _ShadeSteps), _ShadeSteps - 1.0);
+                float stepped = stepIndex / max(_ShadeSteps - 1.0, 1.0);
+                float shade = lerp(1.0 - _ShadeDarkness, 1.0, stepped);
+
+                bool applyShade = false;
+                if (c == 0 && _ShadeWater > 0.5) applyShade = true;
+                if (c == 1 && _ShadeSand > 0.5) applyShade = true;
+                if (c == 2 && _ShadeGrass > 0.5) applyShade = true;
+                if (c == 3 && _ShadeForest > 0.5) applyShade = true;
+                if (c == 4 && _ShadeRock > 0.5) applyShade = true;
+                if (c == 5 && _ShadeSnow > 0.5) applyShade = true;
+
+                if (applyShade) {
+                    result.rgb *= shade;
                 }
 
                 result.a *= _Alpha;

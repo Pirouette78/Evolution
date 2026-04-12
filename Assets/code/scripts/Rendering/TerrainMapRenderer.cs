@@ -194,6 +194,18 @@ public class TerrainMapRenderer : MonoBehaviour
         return 5; // Snow
     }
 
+    private float GetLocalBiomeHeight(float h)
+    {
+        if (h < WaterThreshold) return Mathf.InverseLerp(0f, WaterThreshold, h); // Water
+        
+        float land = Mathf.InverseLerp(WaterThreshold, 1f, h);
+        if (land < 0.05f) return Mathf.InverseLerp(0f, 0.05f, land); // Sand
+        if (land < 0.4f)  return Mathf.InverseLerp(0.05f, 0.4f, land); // Grass
+        if (land < 0.7f)  return Mathf.InverseLerp(0.4f, 0.7f, land); // Forest
+        if (land < 0.95f) return Mathf.InverseLerp(0.7f, 0.95f, land); // Rock
+        return Mathf.InverseLerp(0.95f, 1f, land); // Snow
+    }
+
     private void BuildTexture()
     {
         int[,] types = new int[Width, Height];
@@ -227,9 +239,11 @@ public class TerrainMapRenderer : MonoBehaviour
                 float h = HeightMap[x, y];
                 displayPixels[y * Width + x] = HeightToColour(h);
 
-                // Data (R = Terrain Type Brut)
+                // Data (R = Terrain Type Brut, G = Local Biome Height)
                 int type = types[x, y];
-                dataPixels[y * Width + x] = new Color32((byte)type, 0, 0, 255);
+                float localHeight = GetLocalBiomeHeight(HeightMap[x, y]);
+                byte heightVal = (byte)Mathf.Clamp(localHeight * 255f, 0f, 255f);
+                dataPixels[y * Width + x] = new Color32((byte)type, heightVal, 0, 255);
             }
         }
 
@@ -285,8 +299,16 @@ public class TerrainMapRenderer : MonoBehaviour
         // --- On donne la Map Data (Texture de calculs) au Shader d'Auto-Tiling ! ---
         if (ZoomLevelController.Instance != null && ZoomLevelController.Instance.TerrainOverlayMaterial != null)
         {
-            ZoomLevelController.Instance.TerrainOverlayMaterial.SetTexture("_MainTex", mapDataTexture);
-            ZoomLevelController.Instance.TerrainOverlayMaterial.SetVector("_MapSize", new Vector4(Width, Height, 0, 0));
+            var mat = ZoomLevelController.Instance.TerrainOverlayMaterial;
+            mat.SetTexture("_MainTex", mapDataTexture);
+            mat.SetVector("_MapSize",      new Vector4(Width, Height, 0, 0));
+            mat.SetVector("_WaterOffset",  new Vector4( 0, 0, 0, 0));
+            mat.SetVector("_SandOffset",   new Vector4( 7, 0, 0, 0));
+            mat.SetVector("_GrassOffset",  new Vector4(14, 0, 0, 0));
+            mat.SetVector("_ForestOffset", new Vector4(21, 0, 0, 0));
+            mat.SetVector("_RockOffset",   new Vector4(28, 0, 0, 0));
+            mat.SetVector("_SnowOffset",   new Vector4(35, 0, 0, 0));
+            mat.SetVector("_CliffOffset",  new Vector4( 0, 7, 0, 0));
         }
     }
 
