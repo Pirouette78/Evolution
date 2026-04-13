@@ -28,7 +28,6 @@ Shader "Evolution/TerrainOverlay"
         _Waviness ("Organic Waviness", Range(0, 1)) = 0.3
         
         // Sun Shading
-        _SunPosition ("Sun Position (Left to Right)", Range(-1, 1)) = 1.0
         _SunShadowStrength ("Sun Shadow Strength", Range(0, 1)) = 0.5
         _SlopeScale ("Slope Exaggeration", Range(0, 100)) = 20.0
 
@@ -100,7 +99,7 @@ Shader "Evolution/TerrainOverlay"
             float _SunShadeRock;
             float _SunShadeSnow;
 
-            float _SunPosition;
+            float _GlobalSunPosition;
             float _SunShadowStrength;
             float _SlopeScale;
 
@@ -398,7 +397,7 @@ Shader "Evolution/TerrainOverlay"
                 float3 normal = normalize(float3(-dX * _SlopeScale, -dY * _SlopeScale, 1.0));
                 
                 // Light direction: Z is up.
-                float3 lightDir = normalize(float3(_SunPosition, 0.0, 0.5));
+                float3 lightDir = normalize(float3(_GlobalSunPosition, 0.0, 0.5));
                 float NdotL = saturate(dot(normal, lightDir));
                 float flatLight = saturate(lightDir.z);
                 

@@ -7,6 +7,7 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
     [Header("Rendering")]
     public Mesh agentMesh;
     public Material agentMaterial;
+    public Material agentShadowMaterial;
 
     private MaterialPropertyBlock _mpb;
     private Texture2DArray _spriteArray;
@@ -35,6 +36,21 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
         else
         {
             agentMaterial.enableInstancing = true;
+        }
+
+        if (agentShadowMaterial == null)
+        {
+            Shader shadowShader = Shader.Find("Evolution/AgentTacticalShadow");
+            if (shadowShader != null)
+            {
+                agentShadowMaterial = new Material(shadowShader);
+                agentShadowMaterial.enableInstancing = true;
+            }
+            else Debug.LogError("[AgentTacticalLayer] Shader Evolution/AgentTacticalShadow introuvable !");
+        }
+        else
+        {
+            agentShadowMaterial.enableInstancing = true;
         }
 
         _mpb = new MaterialPropertyBlock();
@@ -195,7 +211,17 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
             _mpb.SetVector("_MapTerrainParams", new Vector4(mw, mh, 0, 0));
         }
 
-        Graphics.DrawMeshInstancedIndirect(agentMesh, 0, agentMaterial, drawBounds,
+        if (agentShadowMaterial != null)
+        {
+            Bounds shadowBounds = drawBounds;
+            shadowBounds.center = new Vector3(shadowBounds.center.x, shadowBounds.center.y, shadowBounds.center.z - 1.0f);
+            Graphics.DrawMeshInstancedIndirect(agentMesh, 0, agentShadowMaterial, shadowBounds,
+                renderer.VisibleArgsBuffer, 0, _mpb);
+        }
+
+        Bounds spriteBounds = drawBounds;
+        spriteBounds.center = new Vector3(spriteBounds.center.x, spriteBounds.center.y, spriteBounds.center.z - 2.0f);
+        Graphics.DrawMeshInstancedIndirect(agentMesh, 0, agentMaterial, spriteBounds,
             renderer.VisibleArgsBuffer, 0, _mpb);
     }
 

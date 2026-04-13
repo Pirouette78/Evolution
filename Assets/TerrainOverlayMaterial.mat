@@ -12,7 +12,13 @@ Material:
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
-  m_InvalidKeywords: []
+  m_InvalidKeywords:
+  - _SHADEFOREST_ON
+  - _SHADEGRASS_ON
+  - _SHADESAND_ON
+  - _SHADESNOW_ON
+  - _SHADEWATER_ON
+  - _SUNSHADEGRASS_ON
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
@@ -33,10 +39,29 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _Alpha: 1
+    - _Alpha: 0.99748844
     - _AtlasCols: 7
     - _AtlasRows: 7
+    - _NoiseStrength: 0.1
+    - _ShadeDarkness: 0.304
+    - _ShadeForest: 1
+    - _ShadeGrass: 1
+    - _ShadeRock: 0
+    - _ShadeSand: 1
+    - _ShadeSnow: 1
+    - _ShadeSteps: 3
+    - _ShadeWater: 1
+    - _SlopeScale: 11
+    - _SunPosition: 0.37
+    - _SunShadeForest: 1
+    - _SunShadeGrass: 1
+    - _SunShadeRock: 1
+    - _SunShadeSand: 1
+    - _SunShadeSnow: 1
+    - _SunShadeWater: 0
+    - _SunShadowStrength: 0.347
     - _TileSize: 32
+    - _Waviness: 0.3
     m_Colors:
     - _CliffOffset: {r: 0, g: 7, b: 0, a: 0}
     - _ForestOffset: {r: 21, g: 0, b: 0, a: 0}

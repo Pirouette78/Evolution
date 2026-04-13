@@ -34,7 +34,8 @@ public class UnitSpriteRenderer : MonoBehaviour
     }
 
     // Matériaux par spriteName (chargés lazily à la première registration)
-    private readonly Dictionary<string, Material>                    materials      = new();
+    private readonly Dictionary<string, Material>                    materials       = new();
+    private readonly Dictionary<string, Material>                    shadowMaterials = new();
     // Instances à rendre, groupées par spriteName
     private readonly Dictionary<string, List<SpriteEntry>>           entries        = new();
     private readonly Dictionary<string, List<BuildingSpriteEntry>>   buildingEntries = new();
@@ -44,6 +45,7 @@ public class UnitSpriteRenderer : MonoBehaviour
 
     private Mesh                 quadMesh;
     private MaterialPropertyBlock _mpb;
+    private MaterialPropertyBlock _shadowMpb;
 
     // Cache de matrices pré-alloué pour DrawMeshInstanced (max 1023 par batch, zéro alloc par frame)
     private const int BATCH_SIZE = 1023;
@@ -55,8 +57,11 @@ public class UnitSpriteRenderer : MonoBehaviour
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
-        quadMesh = CreateQuad();
-        _mpb     = new MaterialPropertyBlock();
+        quadMesh   = CreateQuad();
+        _mpb       = new MaterialPropertyBlock();
+        _shadowMpb = new MaterialPropertyBlock();
+        // Couleur de l'ombre : noir à 50% d'opacité
+        _shadowMpb.SetColor("_Color", new Color(0f, 0f, 0f, 0.5f));
     }
 
     /// <summary>
@@ -128,6 +133,12 @@ public class UnitSpriteRenderer : MonoBehaviour
         if (spriteAlpha <= 0f) return;
         _mpb.SetColor("_Color", new Color(1f, 1f, 1f, spriteAlpha));
 
+        // L'ombre utilise le meme alpha mais une couleur noire
+        // On récupère l'opacité depuis le manager global si présent
+        float shadowOpacity = 0.5f;
+        if (GlobalSunManager.Instance != null) shadowOpacity = GlobalSunManager.Instance.shadowOpacity;
+        _shadowMpb.SetColor("_Color", new Color(0f, 0f, 0f, spriteAlpha * shadowOpacity));
+
         Bounds b     = smr.DisplayTarget.bounds;
         float  mapW  = smr.Width;
         float  mapH  = smr.Height;
@@ -152,6 +163,8 @@ public class UnitSpriteRenderer : MonoBehaviour
         foreach (var kv in entries)
         {
             if (!materials.TryGetValue(kv.Key, out Material mat) || mat == null) continue;
+            shadowMaterials.TryGetValue(kv.Key, out Material shadowMat);
+
             var list = kv.Value;
             int count = list.Count;
             int batchStart = 0;
@@ -186,8 +199,22 @@ public class UnitSpriteRenderer : MonoBehaviour
                         Quaternion.identity,
                         new Vector3(scaleX, scaleY, 1f));
                 }
+
+                // Shadow pass
+                if (shadowMat != null)
+                {
+                    // Décalage Z vers l'arrière pour l'ombre
+                    for (int i = 0; i < batchCount; i++) { Matrix4x4 m = _batchMatrices[i]; m.m23 += 0.005f; _batchMatrices[i] = m; }
+                    Graphics.DrawMeshInstanced(quadMesh, 0, shadowMat, _batchMatrices, batchCount, _shadowMpb,
+                        UnityEngine.Rendering.ShadowCastingMode.Off, false, 0, null);
+                    // Restauration Z pour le sprite
+                    for (int i = 0; i < batchCount; i++) { Matrix4x4 m = _batchMatrices[i]; m.m23 -= 0.005f; _batchMatrices[i] = m; }
+                }
+
+                // Sprite pass
                 Graphics.DrawMeshInstanced(quadMesh, 0, mat, _batchMatrices, batchCount, _mpb,
                     UnityEngine.Rendering.ShadowCastingMode.Off, false, 0, null);
+                
                 batchStart += batchCount;
             }
         }
@@ -196,6 +223,8 @@ public class UnitSpriteRenderer : MonoBehaviour
         foreach (var kv in buildingEntries)
         {
             if (!materials.TryGetValue(kv.Key, out Material mat) || mat == null) continue;
+            shadowMaterials.TryGetValue(kv.Key, out Material shadowMat);
+
             var list  = kv.Value;
             int count = list.Count;
             int batchStart = 0;
@@ -230,8 +259,20 @@ public class UnitSpriteRenderer : MonoBehaviour
                         Quaternion.identity,
                         new Vector3(scaleX, scaleY, 1f));
                 }
+
+                // Shadow pass
+                if (shadowMat != null)
+                {
+                    for (int i = 0; i < batchCount; i++) { Matrix4x4 m = _batchMatrices[i]; m.m23 += 0.005f; _batchMatrices[i] = m; }
+                    Graphics.DrawMeshInstanced(quadMesh, 0, shadowMat, _batchMatrices, batchCount, _shadowMpb,
+                        UnityEngine.Rendering.ShadowCastingMode.Off, false, 0, null);
+                    for (int i = 0; i < batchCount; i++) { Matrix4x4 m = _batchMatrices[i]; m.m23 -= 0.005f; _batchMatrices[i] = m; }
+                }
+
+                // Sprite pass
                 Graphics.DrawMeshInstanced(quadMesh, 0, mat, _batchMatrices, batchCount, _mpb,
                     UnityEngine.Rendering.ShadowCastingMode.Off, false, 0, null);
+                
                 batchStart += batchCount;
             }
         }
@@ -266,9 +307,18 @@ public class UnitSpriteRenderer : MonoBehaviour
                     ? new Color(0.7f, 1f, 0.7f, spriteAlpha * 0.8f)
                     : new Color(1f, 0.3f, 0.3f, spriteAlpha * 0.8f));
 
-                Graphics.DrawMesh(quadMesh,
-                    Matrix4x4.TRS(new Vector3(wx, wy, sz), Quaternion.identity, new Vector3(scaleX, scaleY, 1f)),
-                    mat, 0, null, 0, previewMpb);
+                var trs = Matrix4x4.TRS(new Vector3(wx, wy, sz), Quaternion.identity, new Vector3(scaleX, scaleY, 1f));
+
+                // Preview Shadow
+                if (shadowMaterials.TryGetValue(def.spriteName, out Material shadowMat) && shadowMat != null)
+                {
+                    var shadowTrs = trs;
+                    shadowTrs.m23 += 0.0005f;
+                    Graphics.DrawMesh(quadMesh, shadowTrs, shadowMat, 0, null, 0, previewMpb);
+                }
+
+                // Preview Sprite
+                Graphics.DrawMesh(quadMesh, trs, mat, 0, null, 0, previewMpb);
             }
         }
     }
@@ -276,6 +326,8 @@ public class UnitSpriteRenderer : MonoBehaviour
     private void OnDestroy()
     {
         foreach (var mat in materials.Values)
+            if (mat != null) Destroy(mat);
+        foreach (var mat in shadowMaterials.Values)
             if (mat != null) Destroy(mat);
         if (quadMesh != null) Destroy(quadMesh);
     }
@@ -343,7 +395,7 @@ public class UnitSpriteRenderer : MonoBehaviour
 
     private void EnsureMaterial(string spriteName, int spriteFramePixelW, int spriteFramePixelH)
     {
-        if (materials.ContainsKey(spriteName)) return;
+        if (materials.ContainsKey(spriteName) && shadowMaterials.ContainsKey(spriteName)) return;
 
         string path = Path.Combine(Application.streamingAssetsPath, "Sprites", spriteName + ".png");
         if (!File.Exists(path))
@@ -403,8 +455,20 @@ public class UnitSpriteRenderer : MonoBehaviour
         var shader = Shader.Find("Evolution/UnitSprite") ?? Shader.Find("Sprites/Default");
         var mat    = new Material(shader) { mainTexture = useTex };
         mat.enableInstancing = true;
-
         materials[spriteName] = mat;
+
+        var shadowShader = Shader.Find("Evolution/SpriteGlobalShadow");
+        if (shadowShader != null)
+        {
+            var sMat = new Material(shadowShader) { mainTexture = useTex };
+            sMat.enableInstancing = true;
+            shadowMaterials[spriteName] = sMat;
+            Debug.Log($"[SPRITES] Shadow Material créé pour : {spriteName}");
+        }
+        else
+        {
+            Debug.LogError("[SPRITES] Erreur: Shader 'Evolution/SpriteGlobalShadow' introuvable !");
+        }
     }
 
     // ── Mesh quad centré (−0.5…+0.5) ────────────────────────────────
