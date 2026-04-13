@@ -8,11 +8,15 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
     public Mesh agentMesh;
     public Material agentMaterial;
     public Material agentShadowMaterial;
+    public bool showShadows = true;
 
     private MaterialPropertyBlock _mpb;
     private Texture2DArray _spriteArray;
     private Vector4[] _spriteData = new Vector4[32]; // cols, rows, uScale, vScale
     private Vector4[] _spriteScaleAnchor = new Vector4[32]; // stW, stH, ancX, ancY
+
+    // Buffer args dédié au shadow pour éviter le partage avec le sprite draw call
+    private ComputeBuffer _shadowArgsBuffer;
 
     // Nombre de slots pour lesquels le tableau a été construit (-1 = jamais)
     private int _builtForSlots = -1;
@@ -211,12 +215,21 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
             _mpb.SetVector("_MapTerrainParams", new Vector4(mw, mh, 0, 0));
         }
 
-        if (agentShadowMaterial != null)
+        if (showShadows && agentShadowMaterial != null)
         {
+            // Copier les args dans un buffer séparé pour éviter le conflit GPU quand
+            // deux DrawMeshInstancedIndirect partagent le même IndirectArguments buffer.
+            if (_shadowArgsBuffer == null)
+            {
+                _shadowArgsBuffer = new ComputeBuffer(5, sizeof(uint), ComputeBufferType.IndirectArguments);
+                _shadowArgsBuffer.SetData(new uint[] { 6, 0, 0, 0, 0 });
+            }
+            ComputeBuffer.CopyCount(renderer.VisibleAgentIdsBuffer, _shadowArgsBuffer, 4);
+
             Bounds shadowBounds = drawBounds;
             shadowBounds.center = new Vector3(shadowBounds.center.x, shadowBounds.center.y, shadowBounds.center.z - 1.0f);
             Graphics.DrawMeshInstancedIndirect(agentMesh, 0, agentShadowMaterial, shadowBounds,
-                renderer.VisibleArgsBuffer, 0, _mpb);
+                _shadowArgsBuffer, 0, _mpb);
         }
 
         Bounds spriteBounds = drawBounds;
@@ -232,5 +245,7 @@ public class AgentTacticalLayer : MonoBehaviour, ITacticalLayer
         if (ZoomLevelController.Instance != null)
             ZoomLevelController.Instance.UnregisterLayer(this);
         if (_spriteArray != null) Destroy(_spriteArray);
+        _shadowArgsBuffer?.Release();
+        _shadowArgsBuffer = null;
     }
 }

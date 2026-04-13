@@ -22,6 +22,8 @@ Shader "Evolution/AgentTactical"
             #pragma vertex vert
             #pragma fragment frag
             #pragma target 5.0
+            #pragma multi_compile_instancing
+            #pragma instancing_options assumeuniformscaling nomatrices nolightprobe nolightmap
 
             #include "UnityCG.cginc"
 

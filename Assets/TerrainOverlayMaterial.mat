@@ -18,7 +18,11 @@ Material:
   - _SHADESAND_ON
   - _SHADESNOW_ON
   - _SHADEWATER_ON
+  - _SUNSHADEFOREST_ON
   - _SUNSHADEGRASS_ON
+  - _SUNSHADEROCK_ON
+  - _SUNSHADESAND_ON
+  - _SUNSHADESNOW_ON
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
@@ -39,7 +43,7 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _Alpha: 0.99748844
+    - _Alpha: 0.8527717
     - _AtlasCols: 7
     - _AtlasRows: 7
     - _NoiseStrength: 0.1

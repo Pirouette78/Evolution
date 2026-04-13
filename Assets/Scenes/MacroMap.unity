@@ -444,7 +444,7 @@ MonoBehaviour:
   - {x: 0, y: 0, z: 0, w: 0}
   - {x: 0, y: 0, z: 0, w: 0}
   - {x: 0, y: 0, z: 0, w: 0}
-  MaxVisibleAgents: 2000
+  MaxVisibleAgents: 50000
   DeliveryCounts: 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
   interactionMatrixData:
   - 0
@@ -1283,6 +1283,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::AgentTacticalLayer
   agentMesh: {fileID: 0}
   agentMaterial: {fileID: 0}
+  agentShadowMaterial: {fileID: 0}
+  showShadows: 1
 --- !u!114 &481338756
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1389,6 +1391,53 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &986605943
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 986605945}
+  - component: {fileID: 986605944}
+  m_Layer: 0
+  m_Name: ManagerGlobalSun
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &986605944
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 986605943}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3e9f7d6b196c75747ad5bcd40a8c4257, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GlobalSunManager
+  sunPosition: 1
+  shadowSkewMultiplier: 1
+  shadowOpacity: 0.3
+--- !u!4 &986605945
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 986605943}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 135.93517, y: -0.00004, z: 3502.251}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1688,3 +1737,4 @@ SceneRoots:
   - {fileID: 481338757}
   - {fileID: 1730244609}
   - {fileID: 16178402}
+  - {fileID: 986605945}
