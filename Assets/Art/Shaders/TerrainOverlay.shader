@@ -26,6 +26,12 @@ Shader "Evolution/TerrainOverlay"
         _ShadeDarkness ("Max Darkness", Range(0, 1)) = 0.4
         _NoiseStrength ("Noise Strength", Range(0, 1)) = 0.1
         _Waviness ("Organic Waviness", Range(0, 1)) = 0.3
+        
+        // Sun Shading
+        _SunPosition ("Sun Position (Left to Right)", Range(-1, 1)) = 1.0
+        _SunShadowStrength ("Sun Shadow Strength", Range(0, 1)) = 0.5
+        _SlopeScale ("Slope Exaggeration", Range(0, 100)) = 20.0
+
         [Toggle] _ShadeWater ("Shade Water", Float) = 0
         [Toggle] _ShadeSand ("Shade Sand", Float) = 1
         [Toggle] _ShadeGrass ("Shade Grass", Float) = 1
@@ -79,6 +85,10 @@ Shader "Evolution/TerrainOverlay"
             float _ShadeForest;
             float _ShadeRock;
             float _ShadeSnow;
+
+            float _SunPosition;
+            float _SunShadowStrength;
+            float _SlopeScale;
 
             struct appdata
             {
@@ -359,6 +369,29 @@ Shader "Evolution/TerrainOverlay"
                 float globalHeight = GetGlobalHeightSmooth(i.uv);
                 float localBiomeHeight = saturate(GetBiomeLocalHeight(globalHeight, _WaterThreshold, pixelBiome));
                 
+                // Calculate Slope for Sun Shading
+                float2 uvX = float2(_MainTex_TexelSize.x * 2.0, 0);
+                float2 uvY = float2(0, _MainTex_TexelSize.y * 2.0);
+
+                float hL = GetGlobalHeightSmooth(i.uv - uvX);
+                float hR = GetGlobalHeightSmooth(i.uv + uvX);
+                float hD = GetGlobalHeightSmooth(i.uv - uvY);
+                float hU = GetGlobalHeightSmooth(i.uv + uvY);
+
+                float dX = (hR - hL);
+                float dY = (hU - hD);
+
+                float3 normal = normalize(float3(-dX * _SlopeScale, -dY * _SlopeScale, 1.0));
+                
+                // Light direction: Z is up.
+                float3 lightDir = normalize(float3(_SunPosition, 0.0, 0.5));
+                float NdotL = saturate(dot(normal, lightDir));
+                float flatLight = saturate(lightDir.z);
+                
+                // Only darken slopes facing away from the sun
+                float sunShadeFactor = min(1.0, NdotL / max(flatLight, 0.001));
+                float sunShade = lerp(1.0 - _SunShadowStrength, 1.0, sunShadeFactor);
+
                 // Wave distortion for extra organic boundary (controlled by Waviness)
                 float wavy = smoothNoise(i.uv * _MapSize.xy * 1.5);
                 
@@ -383,6 +416,7 @@ Shader "Evolution/TerrainOverlay"
 
                 if (applyShade) {
                     result.rgb *= shade;
+                    result.rgb *= sunShade;
                 }
 
                 result.a *= _Alpha;
