@@ -38,6 +38,13 @@ Shader "Evolution/TerrainOverlay"
         [Toggle] _ShadeForest ("Shade Forest", Float) = 1
         [Toggle] _ShadeRock ("Shade Rock", Float) = 1
         [Toggle] _ShadeSnow ("Shade Snow", Float) = 1
+
+        [Toggle] _SunShadeWater ("Sun Shade Water", Float) = 0
+        [Toggle] _SunShadeSand ("Sun Shade Sand", Float) = 1
+        [Toggle] _SunShadeGrass ("Sun Shade Grass", Float) = 1
+        [Toggle] _SunShadeForest ("Sun Shade Forest", Float) = 1
+        [Toggle] _SunShadeRock ("Sun Shade Rock", Float) = 1
+        [Toggle] _SunShadeSnow ("Sun Shade Snow", Float) = 1
     }
 
     SubShader
@@ -85,6 +92,13 @@ Shader "Evolution/TerrainOverlay"
             float _ShadeForest;
             float _ShadeRock;
             float _ShadeSnow;
+
+            float _SunShadeWater;
+            float _SunShadeSand;
+            float _SunShadeGrass;
+            float _SunShadeForest;
+            float _SunShadeRock;
+            float _SunShadeSnow;
 
             float _SunPosition;
             float _SunShadowStrength;
@@ -414,8 +428,18 @@ Shader "Evolution/TerrainOverlay"
                 if (pixelBiome == 4 && _ShadeRock > 0.5) applyShade = true;
                 if (pixelBiome == 5 && _ShadeSnow > 0.5) applyShade = true;
 
+                bool applySlope = false;
+                if (pixelBiome == 0 && _SunShadeWater > 0.5) applySlope = true;
+                if (pixelBiome == 1 && _SunShadeSand > 0.5) applySlope = true;
+                if (pixelBiome == 2 && _SunShadeGrass > 0.5) applySlope = true;
+                if (pixelBiome == 3 && _SunShadeForest > 0.5) applySlope = true;
+                if (pixelBiome == 4 && _SunShadeRock > 0.5) applySlope = true;
+                if (pixelBiome == 5 && _SunShadeSnow > 0.5) applySlope = true;
+
                 if (applyShade) {
                     result.rgb *= shade;
+                }
+                if (applySlope) {
                     result.rgb *= sunShade;
                 }
 
