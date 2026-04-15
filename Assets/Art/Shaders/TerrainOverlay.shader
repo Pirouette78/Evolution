@@ -10,6 +10,12 @@ Shader "Evolution/TerrainOverlay"
         _MapSize ("Map Size (Width, Height)", Vector) = (1280, 720, 0, 0)
         _TileSize ("Tile Size (Pixels)", Float) = 32
 
+        // Biome thresholds (set from TerrainMapRenderer)
+        _SandThreshold   ("Sand Threshold",   Float) = 0.05
+        _GrassThreshold  ("Grass Threshold",  Float) = 0.40
+        _ForestThreshold ("Forest Threshold", Float) = 0.70
+        _RockThreshold   ("Rock Threshold",   Float) = 0.95
+
         // Starting column/row for the 7x7 block of each terrain
         _WaterOffset ("Water Offset (Col, Row)", Vector) = (0, 0, 0, 0)
         _SandOffset ("Sand Offset (Col, Row)", Vector) = (7, 0, 0, 0)
@@ -23,7 +29,19 @@ Shader "Evolution/TerrainOverlay"
 
         // Shading parameters
         _ShadeSteps ("Shade Steps", Float) = 4
-        _ShadeDarkness ("Max Darkness", Range(0, 1)) = 0.4
+        _ShadeDarkness ("Shade Blend", Range(0, 1)) = 0.4
+        _ShadeRangeWater  ("Shade Range Water",  Range(0.01, 1)) = 1.0
+        _ShadeRangeSand   ("Shade Range Sand",   Range(0.01, 1)) = 0.15
+        _ShadeRangeGrass  ("Shade Range Grass",  Range(0.01, 1)) = 0.70
+        _ShadeRangeForest ("Shade Range Forest", Range(0.01, 1)) = 0.70
+        _ShadeRangeRock   ("Shade Range Rock",   Range(0.01, 1)) = 0.95
+        _ShadeRangeSnow   ("Shade Range Snow",   Range(0.01, 1)) = 1.0
+        _ShadeGradientWater  ("Shade Gradient Water",  2D) = "white" {}
+        _ShadeGradientSand   ("Shade Gradient Sand",   2D) = "white" {}
+        _ShadeGradientGrass  ("Shade Gradient Grass",  2D) = "white" {}
+        _ShadeGradientForest ("Shade Gradient Forest", 2D) = "white" {}
+        _ShadeGradientRock   ("Shade Gradient Rock",   2D) = "white" {}
+        _ShadeGradientSnow   ("Shade Gradient Snow",   2D) = "white" {}
         _NoiseStrength ("Noise Strength", Range(0, 1)) = 0.1
         _Waviness ("Organic Waviness", Range(0, 1)) = 0.3
         
@@ -82,9 +100,25 @@ Shader "Evolution/TerrainOverlay"
 
             float _ShadeSteps;
             float _ShadeDarkness;
+            float _ShadeRangeWater;
+            float _ShadeRangeSand;
+            float _ShadeRangeGrass;
+            float _ShadeRangeForest;
+            float _ShadeRangeRock;
+            float _ShadeRangeSnow;
+            sampler2D _ShadeGradientWater;
+            sampler2D _ShadeGradientSand;
+            sampler2D _ShadeGradientGrass;
+            sampler2D _ShadeGradientForest;
+            sampler2D _ShadeGradientRock;
+            sampler2D _ShadeGradientSnow;
             float _NoiseStrength;
             float _Waviness;
             float _WaterThreshold;
+            float _SandThreshold;
+            float _GrassThreshold;
+            float _ForestThreshold;
+            float _RockThreshold;
             float _ShadeWater;
             float _ShadeSand;
             float _ShadeGrass;
@@ -198,11 +232,30 @@ Shader "Evolution/TerrainOverlay"
             float GetBiomeLocalHeight(float h, float waterThresh, int c) {
                 if (c == 0) return InverseLerp(0.0, waterThresh, h);
                 float land = InverseLerp(waterThresh, 1.0, h);
-                if (c == 1) return InverseLerp(0.0, 0.05, land);
-                if (c == 2) return InverseLerp(0.05, 0.40, land);
-                if (c == 3) return InverseLerp(0.40, 0.70, land);
-                if (c == 4) return InverseLerp(0.70, 0.95, land);
-                if (c == 5) return InverseLerp(0.95, 1.0, land);
+                if (c == 1) return InverseLerp(0.0,              _SandThreshold,   land);
+                if (c == 2) return InverseLerp(_SandThreshold,   _GrassThreshold,  land);
+                if (c == 3) return InverseLerp(_GrassThreshold,  _ForestThreshold, land);
+                if (c == 4) return InverseLerp(_ForestThreshold, _RockThreshold,   land);
+                if (c == 5) return InverseLerp(_RockThreshold,   1.0,              land);
+                return 0.0;
+            }
+
+            // Version pour le shading uniquement : utilise la hauteur globale normalisée par biome
+            // mais avec une plage élargie pour avoir du contraste même dans les biomes étroits
+            float GetBiomeShadeHeight(float h, float waterThresh, int c,
+                float rWater, float rSand, float rGrass, float rForest, float rRock, float rSnow) {
+                if (c == 0) return InverseLerp(0.0, waterThresh * rWater, h);
+                float land = InverseLerp(waterThresh, 1.0, h);
+                float sandTop   = _SandThreshold   + (_GrassThreshold  - _SandThreshold)   * rSand;
+                float grassTop  = _SandThreshold   + (_GrassThreshold  - _SandThreshold)   * rGrass;
+                float forestTop = _GrassThreshold  + (_ForestThreshold - _GrassThreshold)  * rForest;
+                float rockTop   = _ForestThreshold + (_RockThreshold   - _ForestThreshold) * rRock;
+                float snowTop   = _RockThreshold   + (1.0              - _RockThreshold)   * rSnow;
+                if (c == 1) return InverseLerp(0.0,             sandTop,   land);
+                if (c == 2) return InverseLerp(_SandThreshold,  grassTop,  land);
+                if (c == 3) return InverseLerp(_GrassThreshold, forestTop, land);
+                if (c == 4) return InverseLerp(_ForestThreshold,rockTop,   land);
+                if (c == 5) return InverseLerp(_RockThreshold,  snowTop,   land);
                 return 0.0;
             }
 
@@ -380,7 +433,8 @@ Shader "Evolution/TerrainOverlay"
                 // --- Shading ---
                 // True global topographical contours!
                 float globalHeight = GetGlobalHeightSmooth(i.uv);
-                float localBiomeHeight = saturate(GetBiomeLocalHeight(globalHeight, _WaterThreshold, pixelBiome));
+                float localBiomeHeight = saturate(GetBiomeShadeHeight(globalHeight, _WaterThreshold, pixelBiome,
+                    _ShadeRangeWater, _ShadeRangeSand, _ShadeRangeGrass, _ShadeRangeForest, _ShadeRangeRock, _ShadeRangeSnow));
                 
                 // Calculate Slope for Sun Shading
                 float2 uvX = float2(_MainTex_TexelSize.x * 2.0, 0);
@@ -412,12 +466,29 @@ Shader "Evolution/TerrainOverlay"
                 float2 pixelCoord = floor(i.uv * _MapSize.xy * _TileSize);
                 float dither = random(pixelCoord);
                 
+                // Hauteur normalisée par biome : 0=bas du biome, 1=haut du biome → chaque biome utilise tout son gradient
                 float modifiedHeight = saturate(localBiomeHeight + (wavy - 0.5) * _Waviness + (dither - 0.5) * _NoiseStrength);
 
-                // Safe step calculation ensure we don't exceed the top step index
-                float stepIndex = min(floor(modifiedHeight * _ShadeSteps), _ShadeSteps - 1.0);
-                float stepped = stepIndex / max(_ShadeSteps - 1.0, 1.0);
-                float shade = lerp(1.0 - _ShadeDarkness, 1.0, stepped);
+                // Luminance du tile (greyscale → index dans le gradient)
+                float tileLuminance = dot(result.rgb, float3(0.299, 0.587, 0.114));
+
+                // Shade altitude : quantifié en steps, modulé bruit/waviness
+                // Quantification optionnelle : _ShadeSteps=1 = gradient continu, >1 = paliers
+                float stepped = modifiedHeight;
+                if (_ShadeSteps > 1.0) {
+                    float stepIndex = min(floor(modifiedHeight * _ShadeSteps), _ShadeSteps - 1.0);
+                    stepped = stepIndex / (_ShadeSteps - 1.0);
+                }
+
+                // X = ombre soleil (0=ombre, 1=soleil), Y = altitude (0=bas, 1=haut)
+                float2 gradUV = float2(sunShade, stepped);
+                float3 gradientColor = float3(1, 1, 1);
+                if      (pixelBiome == 0) gradientColor = tex2D(_ShadeGradientWater,  gradUV).rgb;
+                else if (pixelBiome == 1) gradientColor = tex2D(_ShadeGradientSand,   gradUV).rgb;
+                else if (pixelBiome == 2) gradientColor = tex2D(_ShadeGradientGrass,  gradUV).rgb;
+                else if (pixelBiome == 3) gradientColor = tex2D(_ShadeGradientForest, gradUV).rgb;
+                else if (pixelBiome == 4) gradientColor = tex2D(_ShadeGradientRock,   gradUV).rgb;
+                else if (pixelBiome == 5) gradientColor = tex2D(_ShadeGradientSnow,   gradUV).rgb;
 
                 bool applyShade = false;
                 if (pixelBiome == 0 && _ShadeWater > 0.5) applyShade = true;
@@ -436,9 +507,9 @@ Shader "Evolution/TerrainOverlay"
                 if (pixelBiome == 5 && _SunShadeSnow > 0.5) applySlope = true;
 
                 if (applyShade) {
-                    result.rgb *= shade;
+                    result.rgb = gradientColor;
                 }
-                if (applySlope) {
+                if (!applyShade && applySlope) {
                     result.rgb *= sunShade;
                 }
 

@@ -1090,12 +1090,12 @@ MonoBehaviour:
   Height: 512
   Noise:
     Scale: 50
-    Octaves: 6
+    Octaves: 5
     Persistance: 0.5
     Lacunarity: 2
     Seed: 42
     Offset: {x: 0, y: 0}
-  WaterThreshold: 0.3
+  WaterThreshold: 0.36
   DisplayTarget: {fileID: 338005912}
   DeepWater: {r: 0.05, g: 0.15, b: 0.4, a: 1}
   ShallowWater: {r: 0.1, g: 0.35, b: 0.6, a: 1}

@@ -16,7 +16,11 @@ public class TerrainMapRenderer : MonoBehaviour
     public NoiseSettings Noise = new NoiseSettings();
 
     [Header("Terrain Thresholds")]
-    [Range(0f, 1f)] public float WaterThreshold = 0.35f;
+    [Range(0f, 1f)] public float WaterThreshold  = 0.35f;
+    [Range(0f, 1f)] public float SandThreshold   = 0.05f;
+    [Range(0f, 1f)] public float GrassThreshold  = 0.40f;
+    [Range(0f, 1f)] public float ForestThreshold = 0.70f;
+    [Range(0f, 1f)] public float RockThreshold   = 0.95f;
 
     [Header("Output")]
     public MeshRenderer DisplayTarget;
@@ -184,14 +188,13 @@ public class TerrainMapRenderer : MonoBehaviour
 
     private int GetTerrainType(float h)
     {
-        if (h < WaterThreshold) return 0; // Water
-        
+        if (h < WaterThreshold) return 0;
         float land = Mathf.InverseLerp(WaterThreshold, 1f, h);
-        if (land < 0.05f) return 1; // Sand
-        if (land < 0.4f) return 2; // Grass
-        if (land < 0.7f) return 3; // Forest
-        if (land < 0.95f) return 4; // Rock
-        return 5; // Snow
+        if (land < SandThreshold)   return 1;
+        if (land < GrassThreshold)  return 2;
+        if (land < ForestThreshold) return 3;
+        if (land < RockThreshold)   return 4;
+        return 5;
     }
 
     private float GetLocalBiomeHeight(float h)
@@ -264,18 +267,15 @@ public class TerrainMapRenderer : MonoBehaviour
 
     private Color HeightToColour(float h)
     {
-        // Water band
         if (h < WaterThreshold * 0.6f) return DeepWater;
         if (h < WaterThreshold) return Color.Lerp(DeepWater, ShallowWater, Mathf.InverseLerp(WaterThreshold * 0.6f, WaterThreshold, h));
 
-        // Land bands
         float land = Mathf.InverseLerp(WaterThreshold, 1f, h);
 
-        if (land < 0.05f) return Sand;
-        if (land < 0.4f) return Color.Lerp(Grass, Forest, Mathf.InverseLerp(0.05f, 0.4f, land));
-        if (land < 0.7f) return Color.Lerp(Forest, Rock, Mathf.InverseLerp(0.4f, 0.7f, land));
-
-        return Color.Lerp(Rock, Snow, Mathf.InverseLerp(0.7f, 1f, land));
+        if (land < SandThreshold)   return Sand;
+        if (land < GrassThreshold)  return Color.Lerp(Grass, Forest, Mathf.InverseLerp(SandThreshold, GrassThreshold, land));
+        if (land < ForestThreshold) return Color.Lerp(Forest, Rock,  Mathf.InverseLerp(GrassThreshold, ForestThreshold, land));
+        return Color.Lerp(Rock, Snow, Mathf.InverseLerp(ForestThreshold, 1f, land));
     }
 
     private void ApplyTexture()
@@ -300,7 +300,11 @@ public class TerrainMapRenderer : MonoBehaviour
         {
             var mat = ZoomLevelController.Instance.TerrainOverlayMaterial;
             mat.SetTexture("_MainTex", mapDataTexture);
-            mat.SetFloat("_WaterThreshold", WaterThreshold);
+            mat.SetFloat("_WaterThreshold",  WaterThreshold);
+            mat.SetFloat("_SandThreshold",   SandThreshold);
+            mat.SetFloat("_GrassThreshold",  GrassThreshold);
+            mat.SetFloat("_ForestThreshold", ForestThreshold);
+            mat.SetFloat("_RockThreshold",   RockThreshold);
             mat.SetVector("_MapSize",      new Vector4(Width, Height, 0, 0));
             mat.SetVector("_WaterOffset",  new Vector4( 0, 0, 0, 0));
             mat.SetVector("_SandOffset",   new Vector4( 7, 0, 0, 0));
