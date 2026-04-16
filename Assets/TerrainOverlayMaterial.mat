@@ -13,6 +13,7 @@ Material:
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
   m_InvalidKeywords:
+  - _GRADIENTUSESUNX_ON
   - _SHADEFOREST_ON
   - _SHADEGRASS_ON
   - _SHADESAND_ON
@@ -22,7 +23,6 @@ Material:
   - _SUNSHADEGRASS_ON
   - _SUNSHADEROCK_ON
   - _SUNSHADESAND_ON
-  - _SUNSHADESNOW_ON
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
@@ -37,35 +37,75 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _ShadeGradient:
+        m_Texture: {fileID: 2800000, guid: f01afb1612dc95b46ac61d4563d9f333, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _ShadeGradientForest:
+        m_Texture: {fileID: 2800000, guid: d2cbf03fe1e891c43b44f6ab412af542, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _ShadeGradientGrass:
+        m_Texture: {fileID: 2800000, guid: 8fc0cf86659e4f54db927bcef2f5a3fe, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _ShadeGradientRock:
+        m_Texture: {fileID: 2800000, guid: 8fc0cf86659e4f54db927bcef2f5a3fe, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _ShadeGradientSand:
+        m_Texture: {fileID: 2800000, guid: d2cbf03fe1e891c43b44f6ab412af542, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _ShadeGradientSnow:
+        m_Texture: {fileID: 2800000, guid: d2cbf03fe1e891c43b44f6ab412af542, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _ShadeGradientWater:
+        m_Texture: {fileID: 2800000, guid: bda9961200f17784a934f5d6d1954f49, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _TilesetTex:
-        m_Texture: {fileID: 2800000, guid: 0984385027d8fa340b5be9384add3867, type: 3}
+        m_Texture: {fileID: 2800000, guid: fdc64ae46d498694185eddc9e1ee641d, type: 3}
         m_Scale: {x: 32, y: 32}
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _Alpha: 0.93976057
+    - _Alpha: 1
     - _AtlasCols: 7
     - _AtlasRows: 7
-    - _NoiseStrength: 0.1
-    - _ShadeDarkness: 0.304
+    - _ForestThreshold: 0.7
+    - _GradientUseSunX: 1
+    - _GrassThreshold: 0.4
+    - _NoiseStrength: 0.055
+    - _RockThreshold: 0.95
+    - _SandThreshold: 0.05
+    - _ShadeDarkness: 1
     - _ShadeForest: 1
     - _ShadeGrass: 1
+    - _ShadeRangeForest: 1
+    - _ShadeRangeGrass: 1
+    - _ShadeRangeRock: 1
+    - _ShadeRangeSand: 0.201
+    - _ShadeRangeSnow: 1
+    - _ShadeRangeWater: 1
     - _ShadeRock: 0
     - _ShadeSand: 1
     - _ShadeSnow: 1
-    - _ShadeSteps: 3
+    - _ShadeSteps: 15
     - _ShadeWater: 1
-    - _SlopeScale: 11
+    - _SlopeScale: 17.3
     - _SunPosition: 0.37
+    - _SunShadeEnabled: 0
     - _SunShadeForest: 1
     - _SunShadeGrass: 1
     - _SunShadeRock: 1
     - _SunShadeSand: 1
-    - _SunShadeSnow: 1
+    - _SunShadeSnow: 0
     - _SunShadeWater: 0
-    - _SunShadowStrength: 0.347
+    - _SunShadowStrength: 0.803
     - _TileSize: 32
-    - _Waviness: 0.3
+    - _Waviness: 0.145
     m_Colors:
     - _CliffOffset: {r: 0, g: 7, b: 0, a: 0}
     - _ForestOffset: {r: 21, g: 0, b: 0, a: 0}

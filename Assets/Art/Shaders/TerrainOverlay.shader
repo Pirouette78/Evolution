@@ -46,8 +46,10 @@ Shader "Evolution/TerrainOverlay"
         _Waviness ("Organic Waviness", Range(0, 1)) = 0.3
         
         // Sun Shading
+        [Toggle] _SunShadeEnabled ("Sun Shade Enabled", Float) = 1
         _SunShadowStrength ("Sun Shadow Strength", Range(0, 1)) = 0.5
         _SlopeScale ("Slope Exaggeration", Range(0, 100)) = 20.0
+        [Toggle] _GradientUseSunX ("Gradient X = Sun Shadow", Float) = 0
 
         [Toggle] _ShadeWater ("Shade Water", Float) = 0
         [Toggle] _ShadeSand ("Shade Sand", Float) = 1
@@ -133,6 +135,8 @@ Shader "Evolution/TerrainOverlay"
             float _SunShadeRock;
             float _SunShadeSnow;
 
+            float _SunShadeEnabled;
+            float _GradientUseSunX;
             float _GlobalSunPosition;
             float _SunShadowStrength;
             float _SlopeScale;
@@ -251,10 +255,10 @@ Shader "Evolution/TerrainOverlay"
                 float forestTop = _GrassThreshold  + (_ForestThreshold - _GrassThreshold)  * rForest;
                 float rockTop   = _ForestThreshold + (_RockThreshold   - _ForestThreshold) * rRock;
                 float snowTop   = _RockThreshold   + (1.0              - _RockThreshold)   * rSnow;
-                if (c == 1) return InverseLerp(0.0,             sandTop,   land);
+                if (c == 1) return 0.3+ InverseLerp(0.0,             sandTop,   land);
                 if (c == 2) return InverseLerp(_SandThreshold,  grassTop,  land);
-                if (c == 3) return InverseLerp(_GrassThreshold, forestTop, land);
-                if (c == 4) return InverseLerp(_ForestThreshold,rockTop,   land);
+                if (c == 3) return 0.2+InverseLerp(_GrassThreshold, forestTop, land);
+                if (c == 4) return  InverseLerp(_ForestThreshold,rockTop,   land);
                 if (c == 5) return InverseLerp(_RockThreshold,  snowTop,   land);
                 return 0.0;
             }
@@ -469,19 +473,22 @@ Shader "Evolution/TerrainOverlay"
                 // Hauteur normalisée par biome : 0=bas du biome, 1=haut du biome → chaque biome utilise tout son gradient
                 float modifiedHeight = saturate(localBiomeHeight + (wavy - 0.5) * _Waviness + (dither - 0.5) * _NoiseStrength);
 
-                // Luminance du tile (greyscale → index dans le gradient)
+                // Luminance du tile : 0.5 = neutre, <0.5 = tire vers le sombre du gradient, >0.5 = tire vers le clair
                 float tileLuminance = dot(result.rgb, float3(0.299, 0.587, 0.114));
+                float tileOffset = (tileLuminance - 0.5) * _ShadeDarkness;
 
-                // Shade altitude : quantifié en steps, modulé bruit/waviness
-                // Quantification optionnelle : _ShadeSteps=1 = gradient continu, >1 = paliers
-                float stepped = modifiedHeight;
+                // Shade altitude : quantifié en steps, modulé bruit/waviness + offset luminance tile
+                float heightWithTile = saturate(modifiedHeight + tileOffset);
+                float stepped = heightWithTile;
                 if (_ShadeSteps > 1.0) {
-                    float stepIndex = min(floor(modifiedHeight * _ShadeSteps), _ShadeSteps - 1.0);
+                    float stepIndex = min(floor(heightWithTile * _ShadeSteps), _ShadeSteps - 1.0);
                     stepped = stepIndex / (_ShadeSteps - 1.0);
                 }
 
-                // X = ombre soleil (0=ombre, 1=soleil), Y = altitude (0=bas, 1=haut)
-                float2 gradUV = float2(sunShade, stepped);
+                // X = altitude ou soleil selon toggle, Y = soleil ou 0.5
+                float gradX = (_GradientUseSunX > 0.5) ? sunShade : stepped;
+                float gradY = (_GradientUseSunX > 0.5) ? stepped  : 0.5;
+                float2 gradUV = float2(gradX, gradY);
                 float3 gradientColor = float3(1, 1, 1);
                 if      (pixelBiome == 0) gradientColor = tex2D(_ShadeGradientWater,  gradUV).rgb;
                 else if (pixelBiome == 1) gradientColor = tex2D(_ShadeGradientSand,   gradUV).rgb;
@@ -509,7 +516,7 @@ Shader "Evolution/TerrainOverlay"
                 if (applyShade) {
                     result.rgb = gradientColor;
                 }
-                if (!applyShade && applySlope) {
+                if (_SunShadeEnabled > 0.5 && applySlope) {
                     result.rgb *= sunShade;
                 }
 
