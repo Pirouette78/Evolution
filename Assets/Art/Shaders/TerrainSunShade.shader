@@ -98,13 +98,8 @@ Shader "Evolution/TerrainSunShade"
                 float hD = GetHeight(i.uv - uvY);
                 float hU = GetHeight(i.uv + uvY);
 
-                float slopeScale = _SlopeScaleGrass;
-                if      (c == 0) slopeScale = _SlopeScaleWater;
-                else if (c == 1) slopeScale = _SlopeScaleSand;
-                else if (c == 2) slopeScale = _SlopeScaleGrass;
-                else if (c == 3) slopeScale = _SlopeScaleForest;
-                else if (c == 4) slopeScale = _SlopeScaleRock;
-                else if (c == 5) slopeScale = _SlopeScaleSnow;
+                // Slope uniforme pour l'edge detection — évite les discontinuités aux frontières de biomes
+                float slopeScale = _SlopeScaleRock;
 
                 float3 normal   = normalize(float3(-(hR - hL) * slopeScale, -(hU - hD) * slopeScale, 1.0));
                 float3 lightDir = normalize(float3(_GlobalSunPosition, 0.0, 0.5));
