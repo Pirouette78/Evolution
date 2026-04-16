@@ -48,7 +48,12 @@ Shader "Evolution/TerrainOverlay"
         // Sun Shading
         [Toggle] _SunShadeEnabled ("Sun Shade Enabled", Float) = 1
         _SunShadowStrength ("Sun Shadow Strength", Range(0, 1)) = 0.5
-        _SlopeScale ("Slope Exaggeration", Range(0, 100)) = 20.0
+        _SlopeScaleWater  ("Slope Exag. Water",  Range(0, 100)) = 20.0
+        _SlopeScaleSand   ("Slope Exag. Sand",   Range(0, 100)) = 20.0
+        _SlopeScaleGrass  ("Slope Exag. Grass",  Range(0, 100)) = 20.0
+        _SlopeScaleForest ("Slope Exag. Forest", Range(0, 100)) = 20.0
+        _SlopeScaleRock   ("Slope Exag. Rock",   Range(0, 100)) = 20.0
+        _SlopeScaleSnow   ("Slope Exag. Snow",   Range(0, 100)) = 20.0
         [Toggle] _GradientUseSunX ("Gradient X = Sun Shadow", Float) = 0
 
         [Toggle] _ShadeWater ("Shade Water", Float) = 0
@@ -139,7 +144,12 @@ Shader "Evolution/TerrainOverlay"
             float _GradientUseSunX;
             float _GlobalSunPosition;
             float _SunShadowStrength;
-            float _SlopeScale;
+            float _SlopeScaleWater;
+            float _SlopeScaleSand;
+            float _SlopeScaleGrass;
+            float _SlopeScaleForest;
+            float _SlopeScaleRock;
+            float _SlopeScaleSnow;
 
             struct appdata
             {
@@ -455,7 +465,15 @@ Shader "Evolution/TerrainOverlay"
                 float dX = (hR - hL);
                 float dY = (hU - hD);
 
-                float3 normal = normalize(float3(-dX * _SlopeScale, -dY * _SlopeScale, 1.0));
+                float slopeScale = _SlopeScaleGrass;
+                if      (pixelBiome == 0) slopeScale = _SlopeScaleWater;
+                else if (pixelBiome == 1) slopeScale = _SlopeScaleSand;
+                else if (pixelBiome == 2) slopeScale = _SlopeScaleGrass;
+                else if (pixelBiome == 3) slopeScale = _SlopeScaleForest;
+                else if (pixelBiome == 4) slopeScale = _SlopeScaleRock;
+                else if (pixelBiome == 5) slopeScale = _SlopeScaleSnow;
+
+                float3 normal = normalize(float3(-dX * slopeScale, -dY * slopeScale, 1.0));
                 
                 // Light direction: Z is up.
                 float3 lightDir = normalize(float3(_GlobalSunPosition, 0.0, 0.5));
@@ -528,6 +546,7 @@ Shader "Evolution/TerrainOverlay"
             }
             ENDCG
         }
+
     }
     FallBack "Transparent/Diffuse"
 }
