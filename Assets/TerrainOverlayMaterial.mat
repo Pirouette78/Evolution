@@ -23,6 +23,7 @@ Material:
   - _SUNSHADEGRASS_ON
   - _SUNSHADEROCK_ON
   - _SUNSHADESAND_ON
+  - _SUNSHADESNOW_ON
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
@@ -42,7 +43,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _ShadeGradientForest:
-        m_Texture: {fileID: 2800000, guid: d2cbf03fe1e891c43b44f6ab412af542, type: 3}
+        m_Texture: {fileID: 2800000, guid: 47947a4d038cc9a44bba84a369645dd9, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _ShadeGradientGrass:
@@ -50,7 +51,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _ShadeGradientRock:
-        m_Texture: {fileID: 2800000, guid: 8fc0cf86659e4f54db927bcef2f5a3fe, type: 3}
+        m_Texture: {fileID: 2800000, guid: 36553b2f985da9449a596449440da985, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _ShadeGradientSand:
@@ -58,7 +59,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _ShadeGradientSnow:
-        m_Texture: {fileID: 2800000, guid: d2cbf03fe1e891c43b44f6ab412af542, type: 3}
+        m_Texture: {fileID: 2800000, guid: 36553b2f985da9449a596449440da985, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _ShadeGradientWater:
@@ -66,7 +67,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _TilesetTex:
-        m_Texture: {fileID: 2800000, guid: fdc64ae46d498694185eddc9e1ee641d, type: 3}
+        m_Texture: {fileID: 2800000, guid: bfd630e0fc715da4e8bf49ea569cec36, type: 3}
         m_Scale: {x: 32, y: 32}
         m_Offset: {x: 0, y: 0}
     m_Ints: []
@@ -78,9 +79,9 @@ Material:
     - _GradientUseSunX: 1
     - _GrassThreshold: 0.4
     - _NoiseStrength: 0.055
-    - _RockThreshold: 0.95
+    - _RockThreshold: 0.7
     - _SandThreshold: 0.05
-    - _ShadeDarkness: 1
+    - _ShadeDarkness: 0.387
     - _ShadeForest: 1
     - _ShadeGrass: 1
     - _ShadeRangeForest: 1
@@ -92,20 +93,20 @@ Material:
     - _ShadeRock: 0
     - _ShadeSand: 1
     - _ShadeSnow: 1
-    - _ShadeSteps: 15
+    - _ShadeSteps: 10
     - _ShadeWater: 1
-    - _SlopeScale: 17.3
+    - _SlopeScale: 26
     - _SunPosition: 0.37
     - _SunShadeEnabled: 0
     - _SunShadeForest: 1
     - _SunShadeGrass: 1
     - _SunShadeRock: 1
     - _SunShadeSand: 1
-    - _SunShadeSnow: 0
+    - _SunShadeSnow: 1
     - _SunShadeWater: 0
-    - _SunShadowStrength: 0.803
+    - _SunShadowStrength: 0.734
     - _TileSize: 32
-    - _Waviness: 0.145
+    - _Waviness: 0.14
     m_Colors:
     - _CliffOffset: {r: 0, g: 7, b: 0, a: 0}
     - _ForestOffset: {r: 21, g: 0, b: 0, a: 0}

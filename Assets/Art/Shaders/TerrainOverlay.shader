@@ -255,11 +255,11 @@ Shader "Evolution/TerrainOverlay"
                 float forestTop = _GrassThreshold  + (_ForestThreshold - _GrassThreshold)  * rForest;
                 float rockTop   = _ForestThreshold + (_RockThreshold   - _ForestThreshold) * rRock;
                 float snowTop   = _RockThreshold   + (1.0              - _RockThreshold)   * rSnow;
-                if (c == 1) return 0.3+ InverseLerp(0.0,             sandTop,   land);
-                if (c == 2) return InverseLerp(_SandThreshold,  grassTop,  land);
-                if (c == 3) return 0.2+InverseLerp(_GrassThreshold, forestTop, land);
-                if (c == 4) return  InverseLerp(_ForestThreshold,rockTop,   land);
-                if (c == 5) return InverseLerp(_RockThreshold,  snowTop,   land);
+                if (c == 1) return InverseLerp(0.0,              sandTop,   land) * 0.7;
+                if (c == 2) return       InverseLerp(_SandThreshold,  grassTop,  land);
+                if (c == 3) return InverseLerp(_GrassThreshold, forestTop, land) * 0.8;
+                if (c == 4) return       InverseLerp(_ForestThreshold,rockTop,   land);
+                if (c == 5) return       InverseLerp(_RockThreshold,  snowTop,   land);
                 return 0.0;
             }
 
@@ -431,6 +431,9 @@ Shader "Evolution/TerrainOverlay"
                     
                     if (layerCol.a > 0.5) {
                         pixelBiome = L;
+                    } else if (c == L) {
+                        // Pas de tile dessiné mais le biome est bien ici → utilise c comme fallback
+                        pixelBiome = c;
                     }
                 }
 
@@ -514,7 +517,7 @@ Shader "Evolution/TerrainOverlay"
                 if (pixelBiome == 5 && _SunShadeSnow > 0.5) applySlope = true;
 
                 if (applyShade) {
-                    result.rgb = gradientColor;
+                    result.rgb = lerp(gradientColor * (1.0 - _ShadeDarkness), gradientColor * (1.0 + _ShadeDarkness), tileLuminance);
                 }
                 if (_SunShadeEnabled > 0.5 && applySlope) {
                     result.rgb *= sunShade;

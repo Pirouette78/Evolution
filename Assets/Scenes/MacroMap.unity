@@ -1096,6 +1096,10 @@ MonoBehaviour:
     Seed: 42
     Offset: {x: 0, y: 0}
   WaterThreshold: 0.36
+  SandThreshold: 0.05
+  GrassThreshold: 0.4
+  ForestThreshold: 0.7
+  RockThreshold: 0.2
   DisplayTarget: {fileID: 338005912}
   DeepWater: {r: 0.05, g: 0.15, b: 0.4, a: 1}
   ShallowWater: {r: 0.1, g: 0.35, b: 0.6, a: 1}
