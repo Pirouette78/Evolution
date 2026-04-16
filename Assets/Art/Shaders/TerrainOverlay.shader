@@ -255,11 +255,11 @@ Shader "Evolution/TerrainOverlay"
                 float forestTop = _GrassThreshold  + (_ForestThreshold - _GrassThreshold)  * rForest;
                 float rockTop   = _ForestThreshold + (_RockThreshold   - _ForestThreshold) * rRock;
                 float snowTop   = _RockThreshold   + (1.0              - _RockThreshold)   * rSnow;
-                if (c == 1) return InverseLerp(0.0,              sandTop,   land) * 0.7;
-                if (c == 2) return       InverseLerp(_SandThreshold,  grassTop,  land);
-                if (c == 3) return InverseLerp(_GrassThreshold, forestTop, land) * 0.8;
-                if (c == 4) return       InverseLerp(_ForestThreshold,rockTop,   land);
-                if (c == 5) return       InverseLerp(_RockThreshold,  snowTop,   land);
+                if (c == 1) return InverseLerp(0.0,              sandTop,   land);
+                if (c == 2) return InverseLerp(_SandThreshold,  grassTop,  land);
+                if (c == 3) return InverseLerp(_GrassThreshold, forestTop, land);
+                if (c == 4) return InverseLerp(_ForestThreshold, rockTop,  land);
+                if (c == 5) return InverseLerp(_RockThreshold,  snowTop,   land);
                 return 0.0;
             }
 
