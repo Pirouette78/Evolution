@@ -128,7 +128,8 @@ public class TerrainEdgeRendererFeature : ScriptableRendererFeature
                 passData.edgeMat         = _edgeMat;
                 passData.sunShadeMat     = _sunShadeMat;
                 passData.threshold       = _settings.threshold;
-                passData.blend           = _settings.blend;
+                float tacticalBlend      = ZoomLevelController.Instance?.TacticalBlend ?? 1f;
+                passData.blend           = _settings.blend * tacticalBlend;
                 passData.color           = _settings.color;
                 passData.biomeMask       = BiomeMask();
                 passData.sunShadeRT      = _sunShadeRT;

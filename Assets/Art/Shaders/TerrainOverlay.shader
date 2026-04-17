@@ -27,6 +27,14 @@ Shader "Evolution/TerrainOverlay"
         // Cliff overlays (drawn on top of water tiles bordering land)
         _CliffOffset ("Cliff Offset (Col, Row)", Vector) = (0, 7, 0, 0)
 
+        // Biome base colors (used instead of tileset)
+        _ColorWater  ("Color Water",  Color) = (0.10, 0.35, 0.60, 1)
+        _ColorSand   ("Color Sand",   Color) = (0.76, 0.70, 0.50, 1)
+        _ColorGrass  ("Color Grass",  Color) = (0.22, 0.55, 0.22, 1)
+        _ColorForest ("Color Forest", Color) = (0.13, 0.37, 0.13, 1)
+        _ColorRock   ("Color Rock",   Color) = (0.45, 0.40, 0.35, 1)
+        _ColorSnow   ("Color Snow",   Color) = (0.95, 0.95, 0.97, 1)
+
         // Shading parameters
         _ShadeSteps ("Shade Steps", Float) = 4
         _ShadeDarkness ("Shade Blend", Range(0, 1)) = 0.4
@@ -96,6 +104,13 @@ Shader "Evolution/TerrainOverlay"
 
             float4 _MapSize;
             float _TileSize;
+
+            float4 _ColorWater;
+            float4 _ColorSand;
+            float4 _ColorGrass;
+            float4 _ColorForest;
+            float4 _ColorRock;
+            float4 _ColorSnow;
 
             float4 _WaterOffset;
             float4 _SandOffset;
@@ -317,7 +332,6 @@ Shader "Evolution/TerrainOverlay"
                 int s  = getMapType(snappedUV,  0, -1);
                 int se = getMapType(snappedUV,  1, -1);
 
-                int maxLayer = max(max(max(c, nw), max(n, ne)), max(max(w, e), max(sw, max(s, se))));
 
                 float2 offsets[6];
                 offsets[0] = _WaterOffset.xy;
@@ -333,119 +347,26 @@ Shader "Evolution/TerrainOverlay"
                 float halfTexel = 0.5 / _TileSize;
                 float2 subUV = clamp(i.uv * _MapSize.xy - mapPixel, halfTexel, 1.0 - halfTexel);
 
-                // Layer 0 (Base layer) is drawn as a full solid tile.
-                // In Godot 47-blob, solid block is at (1, 4)
-                float2 solidCoord = float2(1, 4);
-                float invRowBase = atlasRows - 1.0 - (offsets[0].y + solidCoord.y);
-                float2 baseUV = float2((offsets[0].x + solidCoord.x + subUV.x) / atlasCols, (invRowBase + subUV.y) / atlasRows);
-                fixed4 result = tex2Dlod(_TilesetTex, float4(baseUV, 0, 0)) * _Tint;
-                
-                int pixelBiome = c; // Track the actual visible biome at this pixel
+                // Biome continu : recalcule le biome à partir de la hauteur interpolée
+                // → frontières définies par la hauteur, pas par la grille de tiles
+                float h = GetGlobalHeightSmooth(i.uv);
+                float land = saturate((h - _WaterThreshold) / (1.0 - _WaterThreshold));
 
-                // Cliff pass (eau seulement, dessiné AVANT le débordement des terrains)
-                if (c == 0) {
-                    bool cn = (n >= 1);
-                    bool ce = (e >= 1);
-                    bool cs = (s >= 1);
-                    bool cw = (w >= 1);
-                    bool cne = cn && ce && (ne >= 1);
-                    bool cse = cs && ce && (se >= 1);
-                    bool csw = cs && cw && (sw >= 1);
-                    bool cnw = cn && cw && (nw >= 1);
+                int continuousBiome;
+                if (h < _WaterThreshold)                   continuousBiome = 0;
+                else if (land < _SandThreshold)            continuousBiome = 1;
+                else if (land < _GrassThreshold)           continuousBiome = 2;
+                else if (land < _ForestThreshold)          continuousBiome = 3;
+                else if (land < _RockThreshold)            continuousBiome = 4;
+                else                                       continuousBiome = 5;
 
-                    bool in_ = !cn;
-                    bool ie  = !ce;
-                    bool is_ = !cs;
-                    bool iw  = !cw;
-                    bool ine = in_ && ie && (ne < 1);
-                    bool ise = is_ && ie && (se < 1);
-                    bool isw = is_ && iw && (sw < 1);
-                    bool inw = in_ && iw && (nw < 1);
+                float2 solidCoord = float2(5, 4);
+                float invRow = atlasRows - 1.0 - (offsets[continuousBiome].y + solidCoord.y);
+                float2 tileUV = float2((offsets[continuousBiome].x + solidCoord.x + subUV.x) / atlasCols,
+                                       (invRow + subUV.y) / atlasRows);
+                fixed4 result = tex2Dlod(_TilesetTex, float4(tileUV, 0, 0)) * _Tint;
 
-                    int cliffMask = 0;
-                    if (in_) cliffMask |= 1;
-                    if (ine) cliffMask |= 2;
-                    if (ie)  cliffMask |= 4;
-                    if (ise) cliffMask |= 8;
-                    if (is_) cliffMask |= 16;
-                    if (isw) cliffMask |= 32;
-                    if (iw)  cliffMask |= 64;
-                    if (inw) cliffMask |= 128;
-
-                    if (cn || ce || cs || cw || (ne >= 1) || (se >= 1) || (sw >= 1) || (nw >= 1)) {
-                        float2 cliffCoord = GetGodotImagePosition(cliffMask);
-                        float invRowCliff = atlasRows - 1.0 - (_CliffOffset.y + cliffCoord.y);
-                        float2 cliffUV = float2((_CliffOffset.x + cliffCoord.x + subUV.x) / atlasCols, (invRowCliff + subUV.y) / atlasRows);
-                        fixed4 cliffCol = tex2Dlod(_TilesetTex, float4(cliffUV, 0, 0));
-                        result.rgb = lerp(result.rgb, cliffCol.rgb, cliffCol.a);
-                    }
-                }
-
-                // Terrain layers : tile pleine si c >= L, débordement sur toutes cases inférieures (y compris eau)
-                [unroll(5)]
-                for (int L = 1; L <= 5; L++) {
-                    if (L > maxLayer) break;
-
-                    bool bn = (n >= L);
-                    bool be = (e >= L);
-                    bool bs = (s >= L);
-                    bool bw = (w >= L);
-                    bool bne = bn && be && (ne >= L);
-                    bool bse = bs && be && (se >= L);
-                    bool bsw = bs && bw && (sw >= L);
-                    bool bnw = bn && bw && (nw >= L);
-
-                    // Voisins inférieurs (là où ce terrain déborde)
-                    bool in_ = (n < L);
-                    bool ie  = (e < L);
-                    bool is_ = (s < L);
-                    bool iw  = (w < L);
-                    bool ine = in_ && ie && (ne < L);
-                    bool ise = is_ && ie && (se < L);
-                    bool isw = is_ && iw && (sw < L);
-                    bool inw = in_ && iw && (nw < L);
-
-                    float2 localCoord;
-                    if (c >= L) {
-                        // Case appartient au layer → tile pleine (atlas inversé : pleine = mask 0 → pos (4,5))
-                        localCoord = float2(5, 4);
-                    } else if (bn || be || bs || bw || (ne >= L) || (se >= L) || (sw >= L) || (nw >= L)) {
-                        // Case inférieure : masque inversé des voisins supérieurs
-                        bool dn  = !bn;
-                        bool de  = !be;
-                        bool ds  = !bs;
-                        bool dw  = !bw;
-                        bool dne = dn && de && (ne < L);
-                        bool dse = ds && de && (se < L);
-                        bool dsw = ds && dw && (sw < L);
-                        bool dnw = dn && dw && (nw < L);
-                        int mask = 0;
-                        if (dn)  mask |= 1;
-                        if (dne) mask |= 2;
-                        if (de)  mask |= 4;
-                        if (dse) mask |= 8;
-                        if (ds)  mask |= 16;
-                        if (dsw) mask |= 32;
-                        if (dw)  mask |= 64;
-                        if (dnw) mask |= 128;
-                        localCoord = GetGodotImagePosition(mask);
-                    } else {
-                        continue;
-                    }
-
-
-                    float invRow = atlasRows - 1.0 - (offsets[L].y + localCoord.y);
-                    float2 layerUV = float2((offsets[L].x + localCoord.x + subUV.x) / atlasCols, (invRow + subUV.y) / atlasRows);
-                    fixed4 layerCol = tex2Dlod(_TilesetTex, float4(layerUV, 0, 0));
-                    result.rgb = lerp(result.rgb, layerCol.rgb, layerCol.a);
-                    
-                    if (layerCol.a > 0.5) {
-                        pixelBiome = L;
-                    } else if (c == L) {
-                        // Pas de tile dessiné mais le biome est bien ici → utilise c comme fallback
-                        pixelBiome = c;
-                    }
-                }
+                int pixelBiome = continuousBiome;
 
                 // --- Shading ---
                 // True global topographical contours!
