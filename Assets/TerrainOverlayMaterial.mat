@@ -13,9 +13,11 @@ Material:
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
   m_InvalidKeywords:
+  - _EDGEFOREST_ON
   - _GRADIENTUSESUNX_ON
   - _SHADEFOREST_ON
   - _SHADEGRASS_ON
+  - _SHADEROCK_ON
   - _SHADESAND_ON
   - _SHADESNOW_ON
   - _SHADEWATER_ON
@@ -43,7 +45,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _ShadeGradientForest:
-        m_Texture: {fileID: 2800000, guid: 47947a4d038cc9a44bba84a369645dd9, type: 3}
+        m_Texture: {fileID: 2800000, guid: c2a756afffede6a4c9c59371fe9aa152, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _ShadeGradientGrass:
@@ -51,7 +53,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _ShadeGradientRock:
-        m_Texture: {fileID: 2800000, guid: 36553b2f985da9449a596449440da985, type: 3}
+        m_Texture: {fileID: 2800000, guid: 47947a4d038cc9a44bba84a369645dd9, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _ShadeGradientSand:
@@ -72,30 +74,51 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _Alpha: 0.9871538
+    - _Alpha: 0.98715323
     - _AtlasCols: 7
     - _AtlasRows: 7
-    - _ForestThreshold: 0.693
+    - _BiomeBlendWidth: 0.05
+    - _EdgeBlend: 1
+    - _EdgeDistance: 1
+    - _EdgeForest: 1
+    - _EdgeGrass: 0
+    - _EdgeRock: 0
+    - _EdgeSand: 0
+    - _EdgeSnow: 0
+    - _EdgeThresholdForest: 0.74
+    - _EdgeThresholdGrass: 0.05
+    - _EdgeThresholdRock: 0.049
+    - _EdgeThresholdSand: 0.05
+    - _EdgeThresholdSnow: 0.019
+    - _EdgeThresholdWater: 0.05
+    - _EdgeWater: 0
+    - _ForestThreshold: 0.6
     - _GradientUseSunX: 1
-    - _GrassThreshold: 0.575
-    - _NoiseStrength: 0.055
-    - _RockThreshold: 0.681
+    - _GrassThreshold: 0.4
+    - _NoiseStrength: 0
+    - _RockThreshold: 0.7
     - _SandThreshold: 0.05
-    - _ShadeDarkness: 0.192
+    - _ShadeDarkness: 0.523
     - _ShadeForest: 1
     - _ShadeGrass: 1
     - _ShadeRangeForest: 1
     - _ShadeRangeGrass: 1
     - _ShadeRangeRock: 1
-    - _ShadeRangeSand: 0.856
+    - _ShadeRangeSand: 1
     - _ShadeRangeSnow: 1
     - _ShadeRangeWater: 1
-    - _ShadeRock: 0
+    - _ShadeRock: 1
     - _ShadeSand: 1
     - _ShadeSnow: 1
-    - _ShadeSteps: 5
+    - _ShadeSteps: 0
     - _ShadeWater: 1
-    - _SlopeScale: 6.5
+    - _SlopeScale: 11
+    - _SlopeScaleForest: 18.4
+    - _SlopeScaleGrass: 13.2
+    - _SlopeScaleRock: 100
+    - _SlopeScaleSand: 13.2
+    - _SlopeScaleSnow: 100
+    - _SlopeScaleWater: 0
     - _SunPosition: 0.37
     - _SunShadeEnabled: 0
     - _SunShadeForest: 1
@@ -106,11 +129,23 @@ Material:
     - _SunShadeWater: 0
     - _SunShadowStrength: 1
     - _TileSize: 32
-    - _Waviness: 0.14
+    - _Waviness: 0
     m_Colors:
     - _CliffOffset: {r: 0, g: 7, b: 0, a: 0}
+    - _ColorForest: {r: 0.12999997, g: 0.36999997, b: 0.12999997, a: 1}
+    - _ColorGrass: {r: 0.21999997, g: 0.54999995, b: 0.21999997, a: 1}
+    - _ColorRock: {r: 0.45, g: 0.39999998, b: 0.34999996, a: 1}
+    - _ColorSand: {r: 0.76, g: 0.7, b: 0.5, a: 1}
+    - _ColorSnow: {r: 0.95, g: 0.95, b: 0.96999997, a: 1}
+    - _ColorWater: {r: 0.09999997, g: 0.34999996, b: 0.6, a: 1}
     - _ForestOffset: {r: 21, g: 0, b: 0, a: 0}
     - _GrassOffset: {r: 14, g: 0, b: 0, a: 0}
+    - _HeightOffsetForest: {r: 21, g: 7, b: 0, a: 0}
+    - _HeightOffsetGrass: {r: 14, g: 7, b: 0, a: 0}
+    - _HeightOffsetRock: {r: 28, g: 7, b: 0, a: 0}
+    - _HeightOffsetSand: {r: 7, g: 7, b: 0, a: 0}
+    - _HeightOffsetSnow: {r: 35, g: 7, b: 0, a: 0}
+    - _HeightOffsetWater: {r: 0, g: 7, b: 0, a: 0}
     - _MapSize: {r: 512, g: 512, b: 0, a: 0}
     - _RockOffset: {r: 28, g: 0, b: 0, a: 0}
     - _SandOffset: {r: 7, g: 0, b: 0, a: 0}

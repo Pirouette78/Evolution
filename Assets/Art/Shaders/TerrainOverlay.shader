@@ -10,7 +10,18 @@ Shader "Evolution/TerrainOverlay"
         _MapSize ("Map Size (Width, Height)", Vector) = (1280, 720, 0, 0)
         _TileSize ("Tile Size (Pixels)", Float) = 32
 
-        // Biome thresholds (set from TerrainMapRenderer)
+        // Biome 2D ranges (HeightMin, HeightMax, ClimateMin, ClimateMax)
+        _BiomeRangeWater  ("Range Water  (hMin,hMax,cMin,cMax)", Vector) = (0.00, 0.35, 0.00, 1.00)
+        _BiomeRangeSand   ("Range Sand   (hMin,hMax,cMin,cMax)", Vector) = (0.35, 0.50, 0.00, 1.00)
+        _BiomeRangeGrass  ("Range Grass  (hMin,hMax,cMin,cMax)", Vector) = (0.35, 0.80, 0.50, 1.00)
+        _BiomeRangeForest ("Range Forest (hMin,hMax,cMin,cMax)", Vector) = (0.35, 0.80, 0.00, 0.55)
+        _BiomeRangeRock   ("Range Rock   (hMin,hMax,cMin,cMax)", Vector) = (0.65, 0.95, 0.00, 1.00)
+        _BiomeRangeSnow   ("Range Snow   (hMin,hMax,cMin,cMax)", Vector) = (0.90, 1.00, 0.00, 1.00)
+
+        // Climate noise scale
+        _ClimateScale ("Climate Noise Scale", Range(0.1, 10)) = 1.0
+
+        // Legacy thresholds (gardés pour le shading)
         _SandThreshold   ("Sand Threshold",   Float) = 0.05
         _GrassThreshold  ("Grass Threshold",  Float) = 0.40
         _ForestThreshold ("Forest Threshold", Float) = 0.70
@@ -26,6 +37,22 @@ Shader "Evolution/TerrainOverlay"
 
         // Cliff overlays (drawn on top of water tiles bordering land)
         _CliffOffset ("Cliff Offset (Col, Row)", Vector) = (0, 7, 0, 0)
+
+        // Height tiles pour le blending (ligne 8, meme colonne que les tiles couleur)
+        _HeightOffsetWater  ("Height Offset Water",  Vector) = (5,  7, 0, 0)
+        _HeightOffsetSand   ("Height Offset Sand",   Vector) = (12, 7, 0, 0)
+        _HeightOffsetGrass  ("Height Offset Grass",  Vector) = (19, 7, 0, 0)
+        _HeightOffsetForest ("Height Offset Forest", Vector) = (26, 7, 0, 0)
+        _HeightOffsetRock   ("Height Offset Rock",   Vector) = (33, 7, 0, 0)
+        _HeightOffsetSnow   ("Height Offset Snow",   Vector) = (40, 7, 0, 0)
+
+        // Slope limits per biome (0=flat only, 1=any slope). Au dessus → biome exclu → roche
+        _BiomeSlopeLimitWater  ("Slope Limit Water",  Range(0,1)) = 1.0
+        _BiomeSlopeLimitSand   ("Slope Limit Sand",   Range(0,1)) = 0.15
+        _BiomeSlopeLimitGrass  ("Slope Limit Grass",  Range(0,1)) = 0.25
+        _BiomeSlopeLimitForest ("Slope Limit Forest", Range(0,1)) = 0.40
+        _BiomeSlopeLimitRock   ("Slope Limit Rock",   Range(0,1)) = 1.0
+        _BiomeSlopeLimitSnow   ("Slope Limit Snow",   Range(0,1)) = 1.0
 
         // Biome base colors (used instead of tileset)
         _ColorWater  ("Color Water",  Color) = (0.10, 0.35, 0.60, 1)
@@ -52,6 +79,9 @@ Shader "Evolution/TerrainOverlay"
         _ShadeGradientSnow   ("Shade Gradient Snow",   2D) = "white" {}
         _NoiseStrength ("Noise Strength", Range(0, 1)) = 0.1
         _Waviness ("Organic Waviness", Range(0, 1)) = 0.3
+        _BiomeBlendWidth ("Biome Blend Width", Range(0, 0.5)) = 0.3
+        _BiomeBorderScale ("Biome Border Sharpness", Range(0.5, 32)) = 8
+        _BiomeBlendMinSource ("Min Biome qui deborde (0=eau 1=sable 2=herbe...)", Range(0, 5)) = 2
         
         // Sun Shading
         [Toggle] _SunShadeEnabled ("Sun Shade Enabled", Float) = 1
@@ -119,6 +149,12 @@ Shader "Evolution/TerrainOverlay"
             float4 _RockOffset;
             float4 _SnowOffset;
             float4 _CliffOffset;
+            float4 _HeightOffsetWater;
+            float4 _HeightOffsetSand;
+            float4 _HeightOffsetGrass;
+            float4 _HeightOffsetForest;
+            float4 _HeightOffsetRock;
+            float4 _HeightOffsetSnow;
 
             float _ShadeSteps;
             float _ShadeDarkness;
@@ -136,6 +172,23 @@ Shader "Evolution/TerrainOverlay"
             sampler2D _ShadeGradientSnow;
             float _NoiseStrength;
             float _Waviness;
+            float _BiomeBlendWidth;
+            float _BiomeBorderScale;
+            float _BiomeBlendMinSource;
+            float4 _BiomeRangeWater;
+            float4 _BiomeRangeSand;
+            float4 _BiomeRangeGrass;
+            float4 _BiomeRangeForest;
+            float4 _BiomeRangeRock;
+            float4 _BiomeRangeSnow;
+            float _ClimateScale;
+            float _BiomeSlopeLimitWater;
+            float _BiomeSlopeLimitSand;
+            float _BiomeSlopeLimitGrass;
+            float _BiomeSlopeLimitForest;
+            float _BiomeSlopeLimitRock;
+            float _BiomeSlopeLimitSnow;
+
             float _WaterThreshold;
             float _SandThreshold;
             float _GrassThreshold;
@@ -239,6 +292,31 @@ Shader "Evolution/TerrainOverlay"
             // Pseudo-random noise based on tile coordinate
             float random(float2 st) {
                 return frac(sin(dot(st.xy, float2(12.9898, 78.233))) * 43758.5453123);
+            }
+
+            // Noise en coordonnées pixels écran — résolution native, aucune dépendance à la grille map
+            float screenNoise(float2 screenPixel, float scale) {
+                float2 st = screenPixel / scale;
+                float2 i = floor(st);
+                float2 f = frac(st);
+                float2 u = f * f * (3.0 - 2.0 * f);
+                float a = random(i);
+                float b = random(i + float2(1, 0));
+                float c = random(i + float2(0, 1));
+                float d = random(i + float2(1, 1));
+                float n  = lerp(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+                // 3 octaves pour des formes organiques
+                st *= 2.1;
+                i = floor(st); f = frac(st); u = f * f * (3.0 - 2.0 * f);
+                a = random(i + float2(5.2, 1.3)); b = random(i + float2(6.2, 1.3));
+                c = random(i + float2(5.2, 2.3)); d = random(i + float2(6.2, 2.3));
+                n += 0.5 * (lerp(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y);
+                st *= 2.1;
+                i = floor(st); f = frac(st); u = f * f * (3.0 - 2.0 * f);
+                a = random(i + float2(1.7, 9.2)); b = random(i + float2(2.7, 9.2));
+                c = random(i + float2(1.7, 10.2)); d = random(i + float2(2.7, 10.2));
+                n += 0.25 * (lerp(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y);
+                return saturate(n / 1.75);
             }
 
             // Smooth procedural noise for organic blob transitions inside the tile
@@ -347,26 +425,62 @@ Shader "Evolution/TerrainOverlay"
                 float halfTexel = 0.5 / _TileSize;
                 float2 subUV = clamp(i.uv * _MapSize.xy - mapPixel, halfTexel, 1.0 - halfTexel);
 
-                // Biome continu : recalcule le biome à partir de la hauteur interpolée
-                // → frontières définies par la hauteur, pas par la grille de tiles
                 float h = GetGlobalHeightSmooth(i.uv);
                 float land = saturate((h - _WaterThreshold) / (1.0 - _WaterThreshold));
 
-                int continuousBiome;
-                if (h < _WaterThreshold)                   continuousBiome = 0;
-                else if (land < _SandThreshold)            continuousBiome = 1;
-                else if (land < _GrassThreshold)           continuousBiome = 2;
-                else if (land < _ForestThreshold)          continuousBiome = 3;
-                else if (land < _RockThreshold)            continuousBiome = 4;
-                else                                       continuousBiome = 5;
+                // Calcul de la pente (0=plat, 1=vertical) — indépendant du slopeScale visuel
+                float2 uvX2 = float2(_MainTex_TexelSize.x * 2.0, 0);
+                float2 uvY2 = float2(0, _MainTex_TexelSize.y * 2.0);
+                float slopeGradX = GetGlobalHeightSmooth(i.uv + uvX2) - GetGlobalHeightSmooth(i.uv - uvX2);
+                float slopeGradY = GetGlobalHeightSmooth(i.uv + uvY2) - GetGlobalHeightSmooth(i.uv - uvY2);
+                float slope = saturate(sqrt(slopeGradX*slopeGradX + slopeGradY*slopeGradY) * 4.0);
+
+                float slopeLimits[6];
+                slopeLimits[0] = _BiomeSlopeLimitWater;
+                slopeLimits[1] = _BiomeSlopeLimitSand;
+                slopeLimits[2] = _BiomeSlopeLimitGrass;
+                slopeLimits[3] = _BiomeSlopeLimitForest;
+                slopeLimits[4] = _BiomeSlopeLimitRock;
+                slopeLimits[5] = _BiomeSlopeLimitSnow;
+
+                // Noise climat — axe 2 indépendant de la hauteur
+                float2 mapPixelCoord = i.uv * _MapSize.xy * _TileSize;
+                float climate = screenNoise(mapPixelCoord, _TileSize / _ClimateScale);
+
+                // Noise de blend pour frontières organiques
+                float blendNoise = screenNoise(mapPixelCoord, _TileSize / _BiomeBorderScale);
+                float noisyH = h + (blendNoise - 0.5) * _BiomeBlendWidth;
+                float noisyC = climate + (blendNoise - 0.5) * _BiomeBlendWidth * 0.5;
+
+                // Sélection du biome : priorité décroissante (snow > rock > forest > grass > sand > water)
+                // Un biome est actif si (h, climate) est dans son rectangle (hMin, hMax, cMin, cMax)
+                #define IN_RANGE(val, r) (val >= r.x && val <= r.y)
+                #define BIOME_MATCH(b, r) (IN_RANGE(noisyH, r.xy) && IN_RANGE(noisyC, r.zw) && slope <= slopeLimits[b])
+                #define BIOME_MATCH_CLEAN(b, r) (IN_RANGE(h, r.xy) && IN_RANGE(climate, r.zw) && slope <= slopeLimits[b])
+
+                int renderBiome = 4; // roche par défaut si pente trop forte
+                if (BIOME_MATCH(0, _BiomeRangeWater))  renderBiome = 0;
+                if (BIOME_MATCH(1, _BiomeRangeSand))   renderBiome = 1;
+                if (BIOME_MATCH(2, _BiomeRangeGrass))  renderBiome = 2;
+                if (BIOME_MATCH(3, _BiomeRangeForest)) renderBiome = 3;
+                if (BIOME_MATCH(4, _BiomeRangeRock))   renderBiome = 4;
+                if (BIOME_MATCH(5, _BiomeRangeSnow))   renderBiome = 5;
+
+                int continuousBiome = 4;
+                if (BIOME_MATCH_CLEAN(0, _BiomeRangeWater))  continuousBiome = 0;
+                if (BIOME_MATCH_CLEAN(1, _BiomeRangeSand))   continuousBiome = 1;
+                if (BIOME_MATCH_CLEAN(2, _BiomeRangeGrass))  continuousBiome = 2;
+                if (BIOME_MATCH_CLEAN(3, _BiomeRangeForest)) continuousBiome = 3;
+                if (BIOME_MATCH_CLEAN(4, _BiomeRangeRock))   continuousBiome = 4;
+                if (BIOME_MATCH_CLEAN(5, _BiomeRangeSnow))   continuousBiome = 5;
 
                 float2 solidCoord = float2(5, 4);
-                float invRow = atlasRows - 1.0 - (offsets[continuousBiome].y + solidCoord.y);
-                float2 tileUV = float2((offsets[continuousBiome].x + solidCoord.x + subUV.x) / atlasCols,
-                                       (invRow + subUV.y) / atlasRows);
-                fixed4 result = tex2Dlod(_TilesetTex, float4(tileUV, 0, 0)) * _Tint;
+                float invRowR = atlasRows - 1.0 - (offsets[renderBiome].y + solidCoord.y);
+                fixed4 result = tex2Dlod(_TilesetTex, float4(
+                    (offsets[renderBiome].x + solidCoord.x + subUV.x) / atlasCols,
+                    (invRowR + subUV.y) / atlasRows, 0, 0)) * _Tint;
 
-                int pixelBiome = continuousBiome;
+                int pixelBiome = renderBiome;
 
                 // --- Shading ---
                 // True global topographical contours!
