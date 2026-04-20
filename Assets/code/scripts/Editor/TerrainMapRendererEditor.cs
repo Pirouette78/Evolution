@@ -58,8 +58,10 @@ public class TerrainMapRendererEditor : Editor
             switch (view)
             {
                 case DebugView.Altitude:
-                    val = r.HeightMap[x, y];
-                    pixels[y * w + x] = new Color(val, val, val);
+                    // Couleur du biome correspondant à cette altitude (temp/humid neutres = 0.5)
+                    int altBiome = r.GetBiomePublic(x, y);
+                    altBiome = Mathf.Clamp(altBiome, 0, BiomeGrid.BiomeColors.Length - 1);
+                    pixels[y * w + x] = BiomeGrid.BiomeColors[altBiome];
                     break;
                 case DebugView.Temperature:
                     val = r.GetTemperaturePublic(x, y);

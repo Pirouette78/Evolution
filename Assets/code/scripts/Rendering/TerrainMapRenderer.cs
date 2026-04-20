@@ -336,16 +336,21 @@ public class TerrainMapRenderer : MonoBehaviour
         {
             for (int x = 0; x < Width; x++)
             {
-                // Visual
+                // Visual — couleur du biome calculé
                 float h = HeightMap[x, y];
-                displayPixels[y * Width + x] = HeightToColour(h);
+                float tempV  = GetTemperature(x, y);
+                float humidV = GetHumidity(x, y);
+                float slopeV = GetSlope(x, y);
+                int biomeV = GetBiome(h, tempV, humidV, slopeV);
+                biomeV = Mathf.Clamp(biomeV, 0, BiomeGrid.BiomeColors.Length - 1);
+                displayPixels[y * Width + x] = BiomeGrid.BiomeColors[biomeV];
 
                 // Data (R = Biome ID, G = Hauteur, B = Température, A = Humidité)
-                float hVal  = HeightMap[x, y];
-                float temp  = GetTemperature(x, y);
-                float humid = GetHumidity(x, y);
-                float slope = GetSlope(x, y);
-                int   biome = GetBiome(hVal, temp, humid, slope);
+                float hVal  = h;
+                float temp  = tempV;
+                float humid = humidV;
+                float slope = slopeV;
+                int   biome = biomeV;
                 dataPixels[y * Width + x] = new Color32(
                     (byte)biome,
                     (byte)Mathf.Clamp(hVal  * 255f, 0f, 255f),
