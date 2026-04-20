@@ -420,7 +420,7 @@ public class TerrainMapRenderer : MonoBehaviour
             mat.SetVector("_CliffOffset",  new Vector4( 0, 7, 0, 0));
 
             // Grille de biomes → texture 10x10, R = biomeID / 7.0
-            var gridTex = new Texture2D(10, 10, TextureFormat.R8, false);
+            var gridTex = new Texture2D(10, 10, TextureFormat.R8, false, true); // linear=true, pas de correction gamma
             gridTex.filterMode = FilterMode.Point;
             gridTex.wrapMode   = TextureWrapMode.Clamp;
             var gridPixels = new Color[100];
