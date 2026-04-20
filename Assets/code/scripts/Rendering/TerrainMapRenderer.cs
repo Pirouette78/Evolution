@@ -27,6 +27,11 @@ public class TerrainMapRenderer : MonoBehaviour
 
     [Header("Biome Grid (Température x Humidité)")]
     public BiomeGrid Biomes = new BiomeGrid();
+
+    [Header("Altitude Grid")]
+    public AltitudeGrid AltitudeBiomes = new AltitudeGrid();
+    [Range(0f, 1f)] public float AltitudeGridInfluence = 0f;
+    [Range(0.001f, 0.1f)] public float AltitudeBlendScale = 0.01f;
     [Range(0f,1f)] public float SnowAltitude = 0.85f;
     [Range(0f,1f)] public float SlopeRockMax = 0.30f;
 
@@ -244,7 +249,7 @@ public class TerrainMapRenderer : MonoBehaviour
     // Méthodes publiques pour l'éditeur debug
     public float GetTemperaturePublic(int x, int y) => GetTemperature(x, y);
     public float GetHumidityPublic(int x, int y)    => GetHumidity(x, y);
-    public int   GetBiomePublic(int x, int y)       => GetBiome(HeightMap[x,y], GetTemperature(x,y), GetHumidity(x,y), GetSlope(x,y));
+    public int   GetBiomePublic(int x, int y)       => GetBiome(HeightMap[x,y], GetTemperature(x,y), GetHumidity(x,y), GetSlope(x,y), x, y, FBM(x*AltitudeBlendScale+31.7f, y*AltitudeBlendScale+17.3f));
 
     public void SetDebugTexture(Texture2D tex)
     {
@@ -271,17 +276,28 @@ public class TerrainMapRenderer : MonoBehaviour
         return Mathf.Clamp01(Mathf.Sqrt((hR-hL)*(hR-hL) + (hU-hD)*(hU-hD)) * 4f);
     }
 
-    int GetBiome(float h, float temp, float humidity, float slope)
+    int GetBiome(float h, float temp, float humidity, float slope, int x = 0, int y = 0, float blendNoise = 0.5f)
     {
-        if (h < WaterThreshold) return 0; // eau — seul override absolu
-
+        if (h < WaterThreshold) return 0;
         float land = Mathf.InverseLerp(WaterThreshold, 1f, h);
-        if (land > SnowAltitude) return 5; // neige — override altitude haute
+        if (land > SnowAltitude) return 5;
 
-        // Tout le reste vient de la grille
-        int tIdx  = Mathf.Clamp((int)(temp     * BiomeGrid.Size), 0, BiomeGrid.Size - 1);
-        int hIdx  = Mathf.Clamp((int)(humidity * BiomeGrid.Size), 0, BiomeGrid.Size - 1);
-        return Mathf.Clamp(Biomes.Get(tIdx, hIdx), 0, 5);
+        // Biome depuis grille température × humidité
+        int tIdx = Mathf.Clamp((int)(temp     * BiomeGrid.Size), 0, BiomeGrid.Size - 1);
+        int hIdx = Mathf.Clamp((int)(humidity * BiomeGrid.Size), 0, BiomeGrid.Size - 1);
+        int tempHumidBiome = Mathf.Clamp(Biomes.Get(tIdx, hIdx), 0, 5);
+
+        if (AltitudeGridInfluence <= 0f) return tempHumidBiome;
+
+        // Biome depuis grille altitude — indexé sur land (0=bord eau, 1=bord neige)
+        float landNorm = Mathf.Clamp01(land / SnowAltitude);
+        int aIdx = Mathf.Clamp((int)(landNorm * AltitudeGrid.Size), 0, AltitudeGrid.Size - 1);
+        int altBiome = Mathf.Clamp(AltitudeBiomes.Get(aIdx), 0, 5);
+
+        if (AltitudeGridInfluence >= 1f) return altBiome;
+
+        // Blend noise déjà calculé et passé en paramètre via le canal R
+        return (blendNoise < AltitudeGridInfluence) ? altBiome : tempHumidBiome;
     }
 
     private int GetTerrainType(float h)
@@ -341,21 +357,17 @@ public class TerrainMapRenderer : MonoBehaviour
                 float tempV  = GetTemperature(x, y);
                 float humidV = GetHumidity(x, y);
                 float slopeV = GetSlope(x, y);
-                int biomeV = GetBiome(h, tempV, humidV, slopeV);
+                float blendN = FBM(x * AltitudeBlendScale + 31.7f, y * AltitudeBlendScale + 17.3f);
+                int biomeV = GetBiome(h, tempV, humidV, slopeV, x, y, blendN);
                 biomeV = Mathf.Clamp(biomeV, 0, BiomeGrid.BiomeColors.Length - 1);
                 displayPixels[y * Width + x] = BiomeGrid.BiomeColors[biomeV];
 
-                // Data (R = Biome ID, G = Hauteur, B = Température, A = Humidité)
-                float hVal  = h;
-                float temp  = tempV;
-                float humid = humidV;
-                float slope = slopeV;
-                int   biome = biomeV;
+                // Data (R = blend noise, G = hauteur, B = temp, A = humid)
                 dataPixels[y * Width + x] = new Color32(
-                    (byte)biome,
-                    (byte)Mathf.Clamp(hVal  * 255f, 0f, 255f),
-                    (byte)Mathf.Clamp(temp  * 255f, 0f, 255f),
-                    (byte)Mathf.Clamp(humid * 255f, 0f, 255f));
+                    (byte)Mathf.Clamp(blendN  * 255f, 0f, 255f),
+                    (byte)Mathf.Clamp(h       * 255f, 0f, 255f),
+                    (byte)Mathf.Clamp(tempV   * 255f, 0f, 255f),
+                    (byte)Mathf.Clamp(humidV  * 255f, 0f, 255f));
             }
         }
 
@@ -434,6 +446,18 @@ public class TerrainMapRenderer : MonoBehaviour
             gridTex.SetPixels(gridPixels);
             gridTex.Apply();
             mat.SetTexture("_BiomeGridTex", gridTex);
+
+            // Altitude grid → texture 10x1
+            var altTex = new Texture2D(10, 1, TextureFormat.R8, false, true);
+            altTex.filterMode = FilterMode.Point;
+            altTex.wrapMode   = TextureWrapMode.Clamp;
+            var altPixels = new Color[10];
+            for (int ai = 0; ai < 10; ai++)
+                altPixels[ai] = new Color(Mathf.Clamp(AltitudeBiomes.cells[ai], 0, 5) / 5f, 0, 0, 1);
+            altTex.SetPixels(altPixels);
+            altTex.Apply();
+            mat.SetTexture("_AltitudeGridTex", altTex);
+            mat.SetFloat("_AltitudeGridInfluence", AltitudeGridInfluence);
             mat.SetFloat("_SnowAltitude", SnowAltitude);
             mat.SetFloat("_SlopeRockMax", SlopeRockMax);
             mat.SetFloat("_WaterThreshold", WaterThreshold);

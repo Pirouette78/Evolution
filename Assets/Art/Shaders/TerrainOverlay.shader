@@ -154,6 +154,8 @@ Shader "Evolution/TerrainOverlay"
             float _WaterThreshold;
             float _SnowAltitude;
             sampler2D _BiomeGridTex;
+            sampler2D _AltitudeGridTex;
+            float _AltitudeGridInfluence;
             float _SandThreshold;
             float _GrassThreshold;
             float _ForestThreshold;
@@ -380,8 +382,27 @@ Shader "Evolution/TerrainOverlay"
                 } else if (land > _SnowAltitude) {
                     renderBiome = 5;
                 } else {
+                    // Biome grille température × humidité
                     float2 gridUV = float2(tempVal, humidVal);
-                    renderBiome = (int)clamp(round(tex2D(_BiomeGridTex, gridUV).r * 5.0), 0, 5);
+                    int tempHumidBiome = (int)clamp(round(tex2D(_BiomeGridTex, gridUV).r * 5.0), 0, 5);
+
+                    if (_AltitudeGridInfluence <= 0.0) {
+                        renderBiome = tempHumidBiome;
+                    } else {
+                        // Biome grille altitude — indexé sur land normalisé [0=bord eau, 1=bord neige]
+                        float landNorm = saturate(land / _SnowAltitude);
+                        float altUV = clamp(landNorm, 0.05, 0.95);
+                        int altBiome = (int)clamp(round(tex2D(_AltitudeGridTex, float2(altUV, 0.5)).r * 5.0), 0, 5);
+
+                        if (_AltitudeGridInfluence >= 1.0) {
+                            renderBiome = altBiome;
+                        } else {
+                            // Blend via noise organique
+                            // Blend noise précalculé en C# — stocké dans canal R, lu en bilinéaire
+                            float blendNoise = tex2D(_MainTex, i.uv).r;
+                            renderBiome = (blendNoise < _AltitudeGridInfluence) ? altBiome : tempHumidBiome;
+                        }
+                    }
                 }
 
                 int continuousBiome = renderBiome;
