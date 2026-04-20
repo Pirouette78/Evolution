@@ -78,7 +78,7 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _Alpha: 0
+    - _Alpha: 1
     - _AtlasCols: 7
     - _AtlasRows: 7
     - _BiomeBlendMinSource: 0
@@ -128,10 +128,10 @@ Material:
     - _ShadeWater: 1
     - _SlopeRockMax: 1
     - _SlopeScale: 11
-    - _SlopeScaleForest: 13.8
+    - _SlopeScaleForest: 8.2
     - _SlopeScaleGrass: 13.2
-    - _SlopeScaleRock: 79.9
-    - _SlopeScaleSand: 13.2
+    - _SlopeScaleRock: 100
+    - _SlopeScaleSand: 20.2
     - _SlopeScaleSnow: 100
     - _SlopeScaleWater: 0
     - _SnowAltitude: 0.884
@@ -143,7 +143,7 @@ Material:
     - _SunShadeSand: 1
     - _SunShadeSnow: 1
     - _SunShadeWater: 0
-    - _SunShadowStrength: 0.895
+    - _SunShadowStrength: 1
     - _TileSize: 32
     - _Waviness: 0
     m_Colors:

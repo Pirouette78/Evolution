@@ -152,6 +152,8 @@ Shader "Evolution/TerrainOverlay"
             float _NoiseStrength;
             float _Waviness;
             float _WaterThreshold;
+            float _SnowAltitude;
+            sampler2D _BiomeGridTex;
             float _SandThreshold;
             float _GrassThreshold;
             float _ForestThreshold;
@@ -366,10 +368,21 @@ Shader "Evolution/TerrainOverlay"
                 float h = GetGlobalHeightSmooth(i.uv);
                 float land = saturate((h - _WaterThreshold) / (1.0 - _WaterThreshold));
 
-                // Biome calculé en C# — lu depuis canal R (source unique de vérité)
-                // Interpolation bilinéaire sur i.uv pour frontières lisses
-                float biomeRaw = tex2D(_MainTex, i.uv).r;
-                int renderBiome = (int)round(biomeRaw * 255.0);
+                // Biome recalculé dans le shader — même logique que C# GetBiome()
+                // temp/humid lus en bilinéaire → frontières organiques
+                // eau et neige = seuls overrides (identiques au C#)
+                float4 mapSample = tex2D(_MainTex, i.uv);
+                float tempVal  = mapSample.b;
+                float humidVal = mapSample.a;
+                int renderBiome;
+                if (h < _WaterThreshold) {
+                    renderBiome = 0;
+                } else if (land > _SnowAltitude) {
+                    renderBiome = 5;
+                } else {
+                    float2 gridUV = float2(tempVal, humidVal);
+                    renderBiome = (int)clamp(round(tex2D(_BiomeGridTex, gridUV).r * 5.0), 0, 5);
+                }
 
                 int continuousBiome = renderBiome;
 

@@ -273,19 +273,15 @@ public class TerrainMapRenderer : MonoBehaviour
 
     int GetBiome(float h, float temp, float humidity, float slope)
     {
-        if (h < WaterThreshold) return 0; // eau — override absolu
+        if (h < WaterThreshold) return 0; // eau — seul override absolu
 
         float land = Mathf.InverseLerp(WaterThreshold, 1f, h);
-        if (land < SandThreshold)  return slope > SlopeRockMax ? 4 : 1; // sable ou roche
-        if (land > SnowAltitude)   return 5; // neige — override altitude haute
-        if (slope > SlopeRockMax)  return 4; // roche sur pente forte
+        if (land > SnowAltitude) return 5; // neige — override altitude haute
 
-        // Zone intermédiaire : lookup dans la grille température × humidité
+        // Tout le reste vient de la grille
         int tIdx  = Mathf.Clamp((int)(temp     * BiomeGrid.Size), 0, BiomeGrid.Size - 1);
         int hIdx  = Mathf.Clamp((int)(humidity * BiomeGrid.Size), 0, BiomeGrid.Size - 1);
-        int biome = Biomes.Get(tIdx, hIdx);
-        // Limite aux biomes supportés par le shader (0-5) — à étendre quand les tiles seront prêtes
-        return Mathf.Clamp(biome, 0, 5);
+        return Mathf.Clamp(Biomes.Get(tIdx, hIdx), 0, 5);
     }
 
     private int GetTerrainType(float h)
