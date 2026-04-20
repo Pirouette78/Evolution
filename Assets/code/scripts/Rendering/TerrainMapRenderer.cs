@@ -16,11 +16,27 @@ public class TerrainMapRenderer : MonoBehaviour
     public NoiseSettings Noise = new NoiseSettings();
 
     [Header("Terrain Thresholds")]
-    [Range(0f, 1f)] public float WaterThreshold  = 0.35f;
-    [Range(0f, 1f)] public float SandThreshold   = 0.05f;
-    [Range(0f, 1f)] public float GrassThreshold  = 0.40f;
-    [Range(0f, 1f)] public float ForestThreshold = 0.70f;
-    [Range(0f, 1f)] public float RockThreshold   = 0.95f;
+    [Range(0f, 1f)] public float WaterThreshold = 0.35f;
+
+    // Seuils legacy — utilisés uniquement pour la texture visuelle de fond et le shading
+    // Le rendu biome passe par la grille Température×Humidité
+    const float SandThreshold   = 0.05f;
+    const float GrassThreshold  = 0.40f;
+    const float ForestThreshold = 0.70f;
+    const float RockThreshold   = 0.95f;
+
+    [Header("Biome Grid (Température x Humidité)")]
+    public BiomeGrid Biomes = new BiomeGrid();
+    [Range(0f,1f)] public float SnowAltitude = 0.85f;
+    [Range(0f,1f)] public float SlopeRockMax = 0.30f;
+
+    [Header("Temperature Noise")]
+    [Range(0.1f, 10f)] public float TemperatureScale  = 1.5f;
+    public Vector2 TemperatureOffset = Vector2.zero;
+
+    [Header("Humidity Noise")]
+    [Range(0.1f, 10f)] public float HumidityScale = 1.2f;
+    public Vector2 HumidityOffset = new Vector2(100f, 100f);
 
     [Header("Output")]
     public MeshRenderer DisplayTarget;
@@ -186,6 +202,83 @@ public class TerrainMapRenderer : MonoBehaviour
         walkabilityTexture.Apply();
     }
 
+    // ── Noise helpers ──────────────────────────────────────────────────────
+    static float Rand2(float x, float y) =>
+        Mathf.Abs(Mathf.Sin(Vector2.Dot(new Vector2(x, y), new Vector2(12.9898f, 78.233f))) * 43758.5453f % 1f);
+
+    static float SmoothN(float x, float y)
+    {
+        float ix = Mathf.Floor(x), iy = Mathf.Floor(y);
+        float fx = x - ix, fy = y - iy;
+        float ux = fx * fx * (3f - 2f * fx), uy = fy * fy * (3f - 2f * fy);
+        float a = Rand2(ix, iy), b = Rand2(ix+1, iy), c = Rand2(ix, iy+1), d = Rand2(ix+1, iy+1);
+        return a + (b-a)*ux + (c-a)*uy + (a-b-c+d)*ux*uy;
+    }
+
+    float FBM(float x, float y)
+    {
+        float n  = SmoothN(x, y)               * 0.500f;
+              n += SmoothN(x*2.03f+1.7f, y*2.03f+9.2f) * 0.250f;
+              n += SmoothN(x*4.01f+8.3f, y*4.01f+2.8f) * 0.125f;
+              n += SmoothN(x*8.05f+3.1f, y*8.05f+6.4f) * 0.125f;
+        return Mathf.Clamp01(n);
+    }
+
+    float GetTemperature(int x, int y) =>
+        FBM(x / (float)Width * TemperatureScale + TemperatureOffset.x,
+            y / (float)Height * TemperatureScale + TemperatureOffset.y);
+
+    float GetHumidity(int x, int y) =>
+        FBM(x / (float)Width * HumidityScale + HumidityOffset.x,
+            y / (float)Height * HumidityScale + HumidityOffset.y);
+
+    // Méthodes publiques pour l'éditeur debug
+    public float GetTemperaturePublic(int x, int y) => GetTemperature(x, y);
+    public float GetHumidityPublic(int x, int y)    => GetHumidity(x, y);
+    public int   GetBiomePublic(int x, int y)       => GetBiome(HeightMap[x,y], GetTemperature(x,y), GetHumidity(x,y), GetSlope(x,y));
+
+    public void SetDebugTexture(Texture2D tex)
+    {
+        if (DisplayTarget != null)
+        {
+            var mat = DisplayTarget.sharedMaterial;
+            if (mat != null) mat.mainTexture = tex;
+        }
+    }
+
+    public void RestoreNormalView()
+    {
+        if (DisplayTarget != null)
+        {
+            var mat = DisplayTarget.sharedMaterial;
+            if (mat != null) mat.mainTexture = GetTexture();
+        }
+    }
+
+    float GetSlope(int x, int y)
+    {
+        float hL = HeightMap[Mathf.Max(0, x-1), y], hR = HeightMap[Mathf.Min(Width-1, x+1), y];
+        float hD = HeightMap[x, Mathf.Max(0, y-1)], hU = HeightMap[x, Mathf.Min(Height-1, y+1)];
+        return Mathf.Clamp01(Mathf.Sqrt((hR-hL)*(hR-hL) + (hU-hD)*(hU-hD)) * 4f);
+    }
+
+    int GetBiome(float h, float temp, float humidity, float slope)
+    {
+        if (h < WaterThreshold) return 0; // eau — override absolu
+
+        float land = Mathf.InverseLerp(WaterThreshold, 1f, h);
+        if (land < SandThreshold)  return slope > SlopeRockMax ? 4 : 1; // sable ou roche
+        if (land > SnowAltitude)   return 5; // neige — override altitude haute
+        if (slope > SlopeRockMax)  return 4; // roche sur pente forte
+
+        // Zone intermédiaire : lookup dans la grille température × humidité
+        int tIdx  = Mathf.Clamp((int)(temp     * BiomeGrid.Size), 0, BiomeGrid.Size - 1);
+        int hIdx  = Mathf.Clamp((int)(humidity * BiomeGrid.Size), 0, BiomeGrid.Size - 1);
+        int biome = Biomes.Get(tIdx, hIdx);
+        // Limite aux biomes supportés par le shader (0-5) — à étendre quand les tiles seront prêtes
+        return Mathf.Clamp(biome, 0, 5);
+    }
+
     private int GetTerrainType(float h)
     {
         if (h < WaterThreshold) return 0;
@@ -227,8 +320,8 @@ public class TerrainMapRenderer : MonoBehaviour
 
         // Texture DATA (Auto-tiling Multi-Layers)
         // Format R8 est idéal (1 octet par pixel) mais RGBA32 est universel. On utilisera juste le canal R = Type de Terrain
-        mapDataTexture = new Texture2D(Width, Height, TextureFormat.RGBA32, false, true); 
-        mapDataTexture.filterMode = FilterMode.Point;
+        mapDataTexture = new Texture2D(Width, Height, TextureFormat.RGBA32, false, true);
+        mapDataTexture.filterMode = FilterMode.Bilinear;
         mapDataTexture.wrapMode = TextureWrapMode.Clamp;
 
         Color[] displayPixels = new Color[Width * Height];
@@ -242,10 +335,17 @@ public class TerrainMapRenderer : MonoBehaviour
                 float h = HeightMap[x, y];
                 displayPixels[y * Width + x] = HeightToColour(h);
 
-                // Data (R = Terrain Type Brut, G = Raw Global Height)
-                int type = types[x, y];
-                byte heightVal = (byte)Mathf.Clamp(HeightMap[x, y] * 255f, 0f, 255f);
-                dataPixels[y * Width + x] = new Color32((byte)type, heightVal, 0, 255);
+                // Data (R = Biome ID, G = Hauteur, B = Température, A = Humidité)
+                float hVal  = HeightMap[x, y];
+                float temp  = GetTemperature(x, y);
+                float humid = GetHumidity(x, y);
+                float slope = GetSlope(x, y);
+                int   biome = GetBiome(hVal, temp, humid, slope);
+                dataPixels[y * Width + x] = new Color32(
+                    (byte)biome,
+                    (byte)Mathf.Clamp(hVal  * 255f, 0f, 255f),
+                    (byte)Mathf.Clamp(temp  * 255f, 0f, 255f),
+                    (byte)Mathf.Clamp(humid * 255f, 0f, 255f));
             }
         }
 
@@ -313,6 +413,20 @@ public class TerrainMapRenderer : MonoBehaviour
             mat.SetVector("_RockOffset",   new Vector4(28, 0, 0, 0));
             mat.SetVector("_SnowOffset",   new Vector4(35, 0, 0, 0));
             mat.SetVector("_CliffOffset",  new Vector4( 0, 7, 0, 0));
+
+            // Grille de biomes → texture 10x10, R = biomeID / 7.0
+            var gridTex = new Texture2D(10, 10, TextureFormat.R8, false);
+            gridTex.filterMode = FilterMode.Point;
+            gridTex.wrapMode   = TextureWrapMode.Clamp;
+            var gridPixels = new Color[100];
+            for (int gi = 0; gi < 100; gi++)
+                gridPixels[gi] = new Color(Mathf.Clamp(Biomes.cells[gi], 0, 5) / 5f, 0, 0, 1);
+            gridTex.SetPixels(gridPixels);
+            gridTex.Apply();
+            mat.SetTexture("_BiomeGridTex", gridTex);
+            mat.SetFloat("_SnowAltitude", SnowAltitude);
+            mat.SetFloat("_SlopeRockMax", SlopeRockMax);
+            mat.SetFloat("_WaterThreshold", WaterThreshold);
         }
     }
 
