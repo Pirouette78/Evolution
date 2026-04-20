@@ -31,9 +31,9 @@ public class TerrainMapRenderer : MonoBehaviour
     [Header("Altitude Grid")]
     public AltitudeGrid AltitudeBiomes = new AltitudeGrid();
     [Range(0f, 1f)] public float AltitudeGridInfluence = 0f;
-    [Range(0.001f, 0.1f)] public float AltitudeBlendScale = 0.01f;
     [Range(0f,1f)] public float SnowAltitude = 0.85f;
     [Range(0f,1f)] public float SlopeRockMax = 0.30f;
+    [Range(0f, 0.3f)] public float BeachWidth = 0.05f;
 
     [Header("Temperature Noise")]
     [Range(0.1f, 10f)] public float TemperatureScale  = 1.5f;
@@ -231,6 +231,19 @@ public class TerrainMapRenderer : MonoBehaviour
         return Mathf.Clamp01(n);
     }
 
+    float FBMCustom(float x, float y, int octaves, float persistence, float lacunarity)
+    {
+        float value = 0f, amplitude = 1f, freq = 1f, maxVal = 0f;
+        for (int o = 0; o < octaves; o++)
+        {
+            value  += SmoothN(x * freq + o * 31.7f, y * freq + o * 17.3f) * amplitude;
+            maxVal += amplitude;
+            amplitude *= persistence;
+            freq      *= lacunarity;
+        }
+        return Mathf.Clamp01(value / maxVal);
+    }
+
     float GetTemperature(int x, int y)
     {
         float baseTemp = FBM(x / (float)Width * TemperatureScale + TemperatureOffset.x,
@@ -238,8 +251,9 @@ public class TerrainMapRenderer : MonoBehaviour
         float altitude = HeightMap[x, y];
         // Latitude : 0=équateur (chaud), 1=pôles (froid) — symétrique par rapport au centre
         float latNorm = Mathf.Abs((y / (float)Height) - 0.5f) * 2f; // 0 au centre, 1 aux bords
+        // (0.5 - latNorm) : +0.5 à l'équateur, -0.5 aux pôles → chaud au centre, froid aux bords
         return Mathf.Clamp01(baseTemp - altitude * AltitudeTemperatureInfluence
-                                      - latNorm * LatitudeTemperatureInfluence);
+                                      + (0.5f - latNorm) * LatitudeTemperatureInfluence);
     }
 
     float GetHumidity(int x, int y) =>
@@ -249,7 +263,7 @@ public class TerrainMapRenderer : MonoBehaviour
     // Méthodes publiques pour l'éditeur debug
     public float GetTemperaturePublic(int x, int y) => GetTemperature(x, y);
     public float GetHumidityPublic(int x, int y)    => GetHumidity(x, y);
-    public int   GetBiomePublic(int x, int y)       => GetBiome(HeightMap[x,y], GetTemperature(x,y), GetHumidity(x,y), GetSlope(x,y), x, y, FBM(x*AltitudeBlendScale+31.7f, y*AltitudeBlendScale+17.3f));
+    public int   GetBiomePublic(int x, int y)       => GetBiome(HeightMap[x,y], GetTemperature(x,y), GetHumidity(x,y), GetSlope(x,y), x, y);
 
     public void SetDebugTexture(Texture2D tex)
     {
@@ -276,28 +290,38 @@ public class TerrainMapRenderer : MonoBehaviour
         return Mathf.Clamp01(Mathf.Sqrt((hR-hL)*(hR-hL) + (hU-hD)*(hU-hD)) * 4f);
     }
 
-    int GetBiome(float h, float temp, float humidity, float slope, int x = 0, int y = 0, float blendNoise = 0.5f)
+    // Température canonique par biome (0=froid, 1=chaud) — pour l'influence continue de l'altitude
+    static readonly float[] BiomeCanonicalTemp = { 0.5f, 0.85f, 0.65f, 0.40f, 0.15f, 0.05f };
+
+    int GetBiome(float h, float temp, float humidity, float slope, int x = 0, int y = 0)
     {
         if (h < WaterThreshold) return 0;
         float land = Mathf.InverseLerp(WaterThreshold, 1f, h);
         if (land > SnowAltitude) return 5;
 
-        // Biome depuis grille température × humidité
+        // L'altitude grid modifie la température d'entrée de façon continue
+        if (AltitudeGridInfluence > 0f)
+        {
+            float landNorm = Mathf.Clamp01(land / SnowAltitude);
+            int aIdx = Mathf.Clamp((int)(landNorm * AltitudeGrid.Size), 0, AltitudeGrid.Size - 1);
+            int altBiome = Mathf.Clamp(AltitudeBiomes.Get(aIdx), 0, 5);
+            float targetTemp = BiomeCanonicalTemp[altBiome];
+            temp = Mathf.Lerp(temp, targetTemp, AltitudeGridInfluence);
+        }
+
         int tIdx = Mathf.Clamp((int)(temp     * BiomeGrid.Size), 0, BiomeGrid.Size - 1);
         int hIdx = Mathf.Clamp((int)(humidity * BiomeGrid.Size), 0, BiomeGrid.Size - 1);
-        int tempHumidBiome = Mathf.Clamp(Biomes.Get(tIdx, hIdx), 0, 5);
+        int gridBiome = Mathf.Clamp(Biomes.Get(tIdx, hIdx), 0, 5);
 
-        if (AltitudeGridInfluence <= 0f) return tempHumidBiome;
+        // Plage : sable si proche de l'eau ET grille ne donne pas un biome froid (roche/neige)
+        // BeachWidth contrôle la largeur, la grille peut l'overrider avec roche/neige
+        if (land < BeachWidth && gridBiome != 4 && gridBiome != 5)
+        {
+            float beachStrength = 1f - (land / BeachWidth); // 1 au bord, 0 à BeachWidth
+            if (beachStrength > 0.5f) return 1; // sable
+        }
 
-        // Biome depuis grille altitude — indexé sur land (0=bord eau, 1=bord neige)
-        float landNorm = Mathf.Clamp01(land / SnowAltitude);
-        int aIdx = Mathf.Clamp((int)(landNorm * AltitudeGrid.Size), 0, AltitudeGrid.Size - 1);
-        int altBiome = Mathf.Clamp(AltitudeBiomes.Get(aIdx), 0, 5);
-
-        if (AltitudeGridInfluence >= 1f) return altBiome;
-
-        // Blend noise déjà calculé et passé en paramètre via le canal R
-        return (blendNoise < AltitudeGridInfluence) ? altBiome : tempHumidBiome;
+        return gridBiome;
     }
 
     private int GetTerrainType(float h)
@@ -357,14 +381,13 @@ public class TerrainMapRenderer : MonoBehaviour
                 float tempV  = GetTemperature(x, y);
                 float humidV = GetHumidity(x, y);
                 float slopeV = GetSlope(x, y);
-                float blendN = FBM(x * AltitudeBlendScale + 31.7f, y * AltitudeBlendScale + 17.3f);
-                int biomeV = GetBiome(h, tempV, humidV, slopeV, x, y, blendN);
+                int biomeV = GetBiome(h, tempV, humidV, slopeV, x, y);
                 biomeV = Mathf.Clamp(biomeV, 0, BiomeGrid.BiomeColors.Length - 1);
                 displayPixels[y * Width + x] = BiomeGrid.BiomeColors[biomeV];
 
-                // Data (R = blend noise, G = hauteur, B = temp, A = humid)
+                // Data (R = biome ID, G = hauteur, B = temp, A = humid)
                 dataPixels[y * Width + x] = new Color32(
-                    (byte)Mathf.Clamp(blendN  * 255f, 0f, 255f),
+                    (byte)biomeV,
                     (byte)Mathf.Clamp(h       * 255f, 0f, 255f),
                     (byte)Mathf.Clamp(tempV   * 255f, 0f, 255f),
                     (byte)Mathf.Clamp(humidV  * 255f, 0f, 255f));
@@ -460,6 +483,7 @@ public class TerrainMapRenderer : MonoBehaviour
             mat.SetFloat("_AltitudeGridInfluence", AltitudeGridInfluence);
             mat.SetFloat("_SnowAltitude", SnowAltitude);
             mat.SetFloat("_SlopeRockMax", SlopeRockMax);
+            mat.SetFloat("_BeachWidth",   BeachWidth);
             mat.SetFloat("_WaterThreshold", WaterThreshold);
         }
     }

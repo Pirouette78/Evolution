@@ -153,6 +153,7 @@ Shader "Evolution/TerrainOverlay"
             float _Waviness;
             float _WaterThreshold;
             float _SnowAltitude;
+            float _BeachWidth;
             sampler2D _BiomeGridTex;
             sampler2D _AltitudeGridTex;
             float _AltitudeGridInfluence;
@@ -382,27 +383,32 @@ Shader "Evolution/TerrainOverlay"
                 } else if (land > _SnowAltitude) {
                     renderBiome = 5;
                 } else {
-                    // Biome grille température × humidité
-                    float2 gridUV = float2(tempVal, humidVal);
-                    int tempHumidBiome = (int)clamp(round(tex2D(_BiomeGridTex, gridUV).r * 5.0), 0, 5);
-
-                    if (_AltitudeGridInfluence <= 0.0) {
-                        renderBiome = tempHumidBiome;
-                    } else {
-                        // Biome grille altitude — indexé sur land normalisé [0=bord eau, 1=bord neige]
+                    // Altitude grid modifie la température d'entrée de façon continue — pas de on/off
+                    float effectiveTemp = tempVal;
+                    if (_AltitudeGridInfluence > 0.0) {
                         float landNorm = saturate(land / _SnowAltitude);
                         float altUV = clamp(landNorm, 0.05, 0.95);
                         int altBiome = (int)clamp(round(tex2D(_AltitudeGridTex, float2(altUV, 0.5)).r * 5.0), 0, 5);
-
-                        if (_AltitudeGridInfluence >= 1.0) {
-                            renderBiome = altBiome;
-                        } else {
-                            // Blend via noise organique
-                            // Blend noise précalculé en C# — stocké dans canal R, lu en bilinéaire
-                            float blendNoise = tex2D(_MainTex, i.uv).r;
-                            renderBiome = (blendNoise < _AltitudeGridInfluence) ? altBiome : tempHumidBiome;
-                        }
+                        // Températures canoniques : eau=0.5, sable=0.85, herbe=0.65, foret=0.40, roche=0.15, neige=0.05
+                        float canonicalTemps[6];
+                        canonicalTemps[0] = 0.50;
+                        canonicalTemps[1] = 0.85;
+                        canonicalTemps[2] = 0.65;
+                        canonicalTemps[3] = 0.40;
+                        canonicalTemps[4] = 0.15;
+                        canonicalTemps[5] = 0.05;
+                        float targetTemp = canonicalTemps[altBiome];
+                        effectiveTemp = lerp(tempVal, targetTemp, _AltitudeGridInfluence);
                     }
+                    float2 gridUV = float2(effectiveTemp, humidVal);
+                    int gridBiome = (int)clamp(round(tex2D(_BiomeGridTex, gridUV).r * 5.0), 0, 5);
+
+                    // Plage : sable près de l'eau sauf si grille = roche(4) ou neige(5)
+                    if (land < _BeachWidth && gridBiome != 4 && gridBiome != 5
+                        && (1.0 - land / _BeachWidth) > 0.5)
+                        renderBiome = 1;
+                    else
+                        renderBiome = gridBiome;
                 }
 
                 int continuousBiome = renderBiome;

@@ -77,8 +77,12 @@ public class TerrainEdgeRendererFeature : ScriptableRendererFeature
 
         void EnsureRT(int w, int h)
         {
-            if (_sunShadeRT != null && _sunShadeRT.width == w && _sunShadeRT.height == h) return;
-            _sunShadeRT?.Release();
+            if (_sunShadeRT != null && _sunShadeRT.IsCreated() && _sunShadeRT.width == w && _sunShadeRT.height == h) return;
+            if (_sunShadeRT != null)
+            {
+                if (_sunShadeRT.IsCreated()) _sunShadeRT.Release();
+                _sunShadeRT = null;
+            }
             _sunShadeRT = new RenderTexture(w, h, 0, RenderTextureFormat.ARGB32) { filterMode = FilterMode.Bilinear };
             _sunShadeRT.Create();
         }
@@ -143,7 +147,7 @@ public class TerrainEdgeRendererFeature : ScriptableRendererFeature
                 {
                     var cmd = CommandBufferHelpers.GetNativeCommandBuffer(ctx.cmd);
 
-                    if (d.terrainRenderer != null && d.sunShadeRT != null && d.sunShadeMat != null)
+                    if (d.terrainRenderer != null && d.sunShadeRT != null && d.sunShadeRT.IsCreated() && d.sunShadeMat != null)
                     {
                         cmd.SetRenderTarget(d.sunShadeRT);
                         cmd.ClearRenderTarget(false, true, Color.clear);
@@ -164,7 +168,8 @@ public class TerrainEdgeRendererFeature : ScriptableRendererFeature
 
         public void Dispose()
         {
-            _sunShadeRT?.Release();
+            if (_sunShadeRT != null && _sunShadeRT.IsCreated()) _sunShadeRT.Release();
+            _sunShadeRT = null;
             CoreUtils.Destroy(_edgeMat);
             CoreUtils.Destroy(_sunShadeMat);
         }
