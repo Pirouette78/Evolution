@@ -33,6 +33,8 @@ public class TerrainMapRenderer : MonoBehaviour
     [Header("Temperature Noise")]
     [Range(0.1f, 10f)] public float TemperatureScale  = 1.5f;
     public Vector2 TemperatureOffset = Vector2.zero;
+    [Range(0f, 1f)] public float AltitudeTemperatureInfluence = 0.5f;
+    [Range(0f, 1f)] public float LatitudeTemperatureInfluence = 0.5f;
 
     [Header("Humidity Noise")]
     [Range(0.1f, 10f)] public float HumidityScale = 1.2f;
@@ -224,9 +226,16 @@ public class TerrainMapRenderer : MonoBehaviour
         return Mathf.Clamp01(n);
     }
 
-    float GetTemperature(int x, int y) =>
-        FBM(x / (float)Width * TemperatureScale + TemperatureOffset.x,
-            y / (float)Height * TemperatureScale + TemperatureOffset.y);
+    float GetTemperature(int x, int y)
+    {
+        float baseTemp = FBM(x / (float)Width * TemperatureScale + TemperatureOffset.x,
+                             y / (float)Height * TemperatureScale + TemperatureOffset.y);
+        float altitude = HeightMap[x, y];
+        // Latitude : 0=équateur (chaud), 1=pôles (froid) — symétrique par rapport au centre
+        float latNorm = Mathf.Abs((y / (float)Height) - 0.5f) * 2f; // 0 au centre, 1 aux bords
+        return Mathf.Clamp01(baseTemp - altitude * AltitudeTemperatureInfluence
+                                      - latNorm * LatitudeTemperatureInfluence);
+    }
 
     float GetHumidity(int x, int y) =>
         FBM(x / (float)Width * HumidityScale + HumidityOffset.x,

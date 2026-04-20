@@ -126,11 +126,11 @@ Material:
     - _ShadeSnow: 1
     - _ShadeSteps: 0
     - _ShadeWater: 1
-    - _SlopeRockMax: 0.3
+    - _SlopeRockMax: 1
     - _SlopeScale: 11
-    - _SlopeScaleForest: 18.4
+    - _SlopeScaleForest: 13.8
     - _SlopeScaleGrass: 13.2
-    - _SlopeScaleRock: 100
+    - _SlopeScaleRock: 79.9
     - _SlopeScaleSand: 13.2
     - _SlopeScaleSnow: 100
     - _SlopeScaleWater: 0
