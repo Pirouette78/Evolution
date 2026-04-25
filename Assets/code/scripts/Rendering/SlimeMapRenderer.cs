@@ -32,7 +32,14 @@ public class SlimeMapRenderer : MonoBehaviour
     [Header("Simulation Settings")]
     public int Width = 512;
     public int Height = 512;
-    [Range(1, 8)]       public int   StepsPerFrame     = 1;
+    [Range(1, 8)]       public int   StepsPerFrame     = 1; // simulation speed multiplier (× FIXED_STEP_HZ)
+
+    // Fixed-timestep accumulator: stutters (long frames) are absorbed by running multiple
+    // small substeps instead of one giant step, preventing visible agent teleports.
+    private const float FIXED_STEP_HZ        = 60f;
+    private const float FIXED_STEP           = 1f / FIXED_STEP_HZ;
+    private const int   MAX_SUBSTEPS_PER_FRAME = 5; // anti spiral-of-death cap
+    private float simAccumulator = 0f;
     
     [Header("Initial Spawn")]
     public int InitialAgentCount = 5000;
@@ -989,6 +996,10 @@ public class SlimeMapRenderer : MonoBehaviour
 
             float dt = GetScaledDeltaTime();
 
+            // Accumulate real time; the substep loop below consumes it in FIXED_STEP chunks.
+            // StepsPerFrame is a speed multiplier on the accumulator (NOT a substep count anymore).
+            simAccumulator += dt * StepsPerFrame;
+
             // We scale distances/sizes so that Simulation Space matches Terrain Space physically
             float scaleS = TerrainMapRenderer.Instance != null && Width > 0
                 ? (float)Width / TerrainMapRenderer.Instance.Width
@@ -998,9 +1009,9 @@ public class SlimeMapRenderer : MonoBehaviour
             BuildScaledSettings();
             speciesSettingsBuffer.SetData(scaledSettingsCache);
 
-            // Per-frame global uniforms
+            // Per-frame global uniforms — deltaTime is the FIXED substep size, not the frame dt
             SlimeShader.SetFloat("time",             Time.time);
-            SlimeShader.SetFloat("deltaTime",        dt);
+            SlimeShader.SetFloat("deltaTime",        FIXED_STEP);
             SlimeShader.SetFloat("mapScale",         scaleS);
             SlimeShader.SetInt  ("numAgents",        currentAgentCount);
 
@@ -1049,7 +1060,10 @@ public class SlimeMapRenderer : MonoBehaviour
             SlimeShader.SetTexture(applyVegEmitKernel, "TrailMap",           TrailMap);
             SlimeShader.SetBuffer (applyVegEmitKernel, "speciesSettings",    speciesSettingsBuffer);
 
-            for (int step = 0; step < StepsPerFrame; step++)
+            // Substep loop: drains the accumulator in fixed-size chunks. A long frame produces
+            // multiple substeps (up to MAX) instead of one big jump → no visible teleport.
+            int substeps = 0;
+            while (simAccumulator >= FIXED_STEP && substeps < MAX_SUBSTEPS_PER_FRAME)
             {
                 // 1. Move agents (lit AgentMap du step précédent — avant de l'effacer)
                 SlimeShader.Dispatch(updateKernel, agentGroups, 1, 1);
@@ -1068,7 +1082,18 @@ public class SlimeMapRenderer : MonoBehaviour
 
                 // Copy diffused result back as the new trail source
                 Graphics.CopyTexture(DiffusedMap, TrailMap);
+
+                simAccumulator -= FIXED_STEP;
+                substeps++;
             }
+
+            // Anti spiral-of-death: if we hit the substep cap with leftover time, drop it.
+            // Otherwise next frame would owe even more steps and we'd never recover.
+            if (substeps >= MAX_SUBSTEPS_PER_FRAME && simAccumulator > FIXED_STEP)
+                simAccumulator = 0f;
+
+            // Effective simulated time this frame — used for CPU-side timers below
+            float simulatedDt = substeps * FIXED_STEP;
 
             // Count living agents (throttled — GPU readback stalls the pipeline)
             countFrameAccum++;
@@ -1114,6 +1139,8 @@ public class SlimeMapRenderer : MonoBehaviour
             }
 
             // ── Germination végétale (timer par slot) ──────────────────────────
+            // Avance avec simulatedDt (pas dt frame brut) pour rester cohérent quand la
+            // simulation a plafonné ses substeps : pas d'avance si substeps == 0.
             int seedMask = 0;
             var specLib = SpeciesLibrary.Instance;
             for (int s = 0; s < numActiveSlots; s++)
@@ -1121,7 +1148,7 @@ public class SlimeMapRenderer : MonoBehaviour
                 if (speciesSettings[s].seedProbHigh <= 0f) continue;
                 float interval = specLib?.Get(speciesIds[s])?.seedInterval ?? 0f;
                 if (interval <= 0f) continue;
-                seedTimers[s] += dt;
+                seedTimers[s] += simulatedDt;
                 if (seedTimers[s] >= interval)
                 {
                     seedTimers[s] = 0f;
