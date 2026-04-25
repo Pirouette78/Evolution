@@ -81,6 +81,12 @@ Shader "Evolution/AgentTactical"
                 float2 worldPos2D = _MapWorldBounds.xy
                                   + (a.position / _MapSimParams.xy) * _MapWorldBounds.zw;
 
+                // --- Pixel-snap : snap l'ancre de l'agent à la grille de pixels
+                // écran de la caméra ortho. Élimine le scintillement sub-pixel
+                // pendant le mouvement, à tout niveau de zoom.
+                float pixelSize = (unity_OrthoParams.y * 2.0) / _ScreenParams.y;
+                worldPos2D = round(worldPos2D / pixelSize) * pixelSize;
+
                 // --- Fetch scale & anchor for this species ---
                 float4 scaleAnchor = _SpriteScaleAnchor[a.speciesIndex];
                 float stW = scaleAnchor.x;

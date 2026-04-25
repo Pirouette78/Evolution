@@ -77,6 +77,10 @@ Shader "Evolution/AgentTacticalShadow"
                 float2 worldPos2D = _MapWorldBounds.xy
                                   + (a.position / _MapSimParams.xy) * _MapWorldBounds.zw;
 
+                // --- Pixel-snap : aligne l'ancre sur la grille de pixels écran.
+                float pixelSize = (unity_OrthoParams.y * 2.0) / _ScreenParams.y;
+                worldPos2D = round(worldPos2D / pixelSize) * pixelSize;
+
                 float4 scaleAnchor = _SpriteScaleAnchor[a.speciesIndex];
                 float stW = scaleAnchor.x;
                 float stH = scaleAnchor.y;
