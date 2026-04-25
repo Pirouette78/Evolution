@@ -98,7 +98,6 @@ public class SlimeMapRenderer : MonoBehaviour
     private ComputeBuffer[] _visibleAgentIdsBuffers = new ComputeBuffer[2];
     private ComputeBuffer[] _visibleArgsBuffers     = new ComputeBuffer[2];
     private int _cullWriteIdx = 0; // index du buffer en cours d'écriture par CullAgents
-    private int _cullLogAccum = 0;
     public ComputeBuffer VisibleAgentIdsBuffer => _visibleAgentIdsBuffers[1 - _cullWriteIdx]; // buffer lu par le rendu
     public ComputeBuffer VisibleArgsBuffer     => _visibleArgsBuffers    [1 - _cullWriteIdx];
     /// <summary>Nombre max d'agents pouvant être rendus en mode tactique.</summary>
@@ -1345,20 +1344,6 @@ public class SlimeMapRenderer : MonoBehaviour
 
         ComputeBuffer.CopyCount(writeIds, writeArgs, 4);
 
-        // Log du count visible (readback CPU — throttlé toutes les 120 frames)
-        _cullLogAccum++;
-        if (_cullLogAccum >= 120)
-        {
-            _cullLogAccum = 0;
-            uint[] args = new uint[5];
-            writeArgs.GetData(args);
-            Debug.Log($"[CullAgents] frame={Time.frameCount} totalAgents={currentAgentCount} visibleCount={args[1]} MaxVisible={MaxVisibleAgents}");
-        }
-        else if (_cullLogAccum == 1)
-        {
-            Debug.Log($"[CullAgents] appelé frame={Time.frameCount} totalAgents={currentAgentCount}");
-        }
-
         // Swap : le buffer qu'on vient d'écrire devient le buffer de rendu à la prochaine frame
         _cullWriteIdx = 1 - _cullWriteIdx;
     }
@@ -1370,6 +1355,7 @@ public class SlimeMapRenderer : MonoBehaviour
         agentBuffer?.Release();
         speciesSettingsBuffer?.Release();
         interactionMatrixBuffer?.Release();
+        agentInteractionMatrixBuffer?.Release();
         speciesCountsBuffer?.Release();
         slotColorsBuffer?.Release();
         waypointBuffer?.Release();
