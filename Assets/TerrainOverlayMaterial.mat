@@ -78,7 +78,7 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _Alpha: 0
+    - _Alpha: 0.93618983
     - _AtlasCols: 7
     - _AtlasRows: 7
     - _BiomeBlendMinSource: 0
@@ -168,7 +168,7 @@ Material:
     - _HeightOffsetSand: {r: 12, g: 7, b: 0, a: 0}
     - _HeightOffsetSnow: {r: 40, g: 7, b: 0, a: 0}
     - _HeightOffsetWater: {r: 5, g: 7, b: 0, a: 0}
-    - _MapSize: {r: 512, g: 512, b: 0, a: 0}
+    - _MapSize: {r: 256, g: 256, b: 0, a: 0}
     - _RockOffset: {r: 28, g: 0, b: 0, a: 0}
     - _SandOffset: {r: 7, g: 0, b: 0, a: 0}
     - _SnowOffset: {r: 35, g: 0, b: 0, a: 0}

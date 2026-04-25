@@ -40,6 +40,10 @@ RWTexture2D<float4> DisplayMap;
 Texture2D<float4> TerrainWalkabilityMap; // Used to block movement
 SamplerState sampler_TerrainWalkabilityMap;
 
+// Map data : R=biome, G=hauteur (0..1), B=temp, A=humid. On utilise G pour la pente.
+Texture2D<float4> TerrainHeightMap;
+SamplerState sampler_TerrainHeightMap;
+
 int width;
 int height;
 
@@ -89,6 +93,9 @@ struct SpeciesSettings {
     int   trailSliceIndex;        // index tranche TrailMap (4 catégories par tranche RGBA)
     int   speciesId;              // index unique dans le tableau global des espèces GPU
     int   trailChannel;           // canal RGBA dans la tranche (0=R, 1=G, 2=B, 3=A)
+    int   subjectToTerrain;       // 0 = ignore pente, 1 = vitesse modulée par la pente
+    float subjectToTerrainCoeffUp;   // multiplicateur en montée max (ex: 0.7 = vitesse à 70%)
+    float subjectToTerrainCoeffDown; // multiplicateur en descente max (ex: 1.1 = +10%)
     int   _pad0;                  // padding alignement 16 bytes
 };
 
@@ -514,6 +521,31 @@ void UpdateAgents (uint3 id : SV_DispatchThreadID)
     if (!stayPut)
     {
         float2 dir = float2(cos(agent.angle), sin(agent.angle));
+
+        // Pente : ralentit en montée, accélère en descente.
+        // Sample en UV [0..1] (l'espace sim peut différer de l'espace terrain).
+        // Canal G = hauteur normalisée [0..1]. ∂h sur petit écart est faible : amplifie pour saturer.
+        if (settings.subjectToTerrain != 0)
+        {
+            float invW = 1.0 / (float)width;
+            float invH = 1.0 / (float)height;
+            float2 uv = float2(agent.position.x * invW, agent.position.y * invH);
+            float du = 4.0 * invW;
+            float dv = 4.0 * invH;
+            float hL = TerrainHeightMap.SampleLevel(sampler_TerrainHeightMap, uv + float2(-du, 0.0), 0).g;
+            float hR = TerrainHeightMap.SampleLevel(sampler_TerrainHeightMap, uv + float2( du, 0.0), 0).g;
+            float hD = TerrainHeightMap.SampleLevel(sampler_TerrainHeightMap, uv + float2(0.0, -dv), 0).g;
+            float hU = TerrainHeightMap.SampleLevel(sampler_TerrainHeightMap, uv + float2(0.0,  dv), 0).g;
+            float dhdx = (hR - hL);
+            float dhdy = (hU - hD);
+            float slopeAlong = clamp((dhdx * dir.x + dhdy * dir.y) * 20.0, -1.0, 1.0);
+            float t = abs(slopeAlong);
+            float coeff = (slopeAlong > 0.0)
+                ? lerp(1.0, settings.subjectToTerrainCoeffUp,   t)  // montée
+                : lerp(1.0, settings.subjectToTerrainCoeffDown, t); // descente
+            currentSpeed *= coeff;
+        }
+
         newPos = agent.position + dir * currentSpeed * deltaTime;
 
         if (newPos.x < 1 || newPos.x >= (float)width  - 1 ||

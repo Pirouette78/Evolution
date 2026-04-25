@@ -86,6 +86,17 @@ Shader "Evolution/TerrainOverlay"
         [Toggle] _SunShadeForest ("Sun Shade Forest", Float) = 1
         [Toggle] _SunShadeRock ("Sun Shade Rock", Float) = 1
         [Toggle] _SunShadeSnow ("Sun Shade Snow", Float) = 1
+
+        // Source de l'axe principal du gradient par biome
+        // 0=Altitude, 1=Humidité, 2=Température, 3=Pente, 4=Bruit
+        [IntRange] _GradSrcWater  ("Gradient Source Water  (0=Alt 1=Humid 2=Temp 3=Slope 4=Noise)", Range(0, 4)) = 0
+        [IntRange] _GradSrcSand   ("Gradient Source Sand   (0=Alt 1=Humid 2=Temp 3=Slope 4=Noise)", Range(0, 4)) = 0
+        [IntRange] _GradSrcGrass  ("Gradient Source Grass  (0=Alt 1=Humid 2=Temp 3=Slope 4=Noise)", Range(0, 4)) = 1
+        [IntRange] _GradSrcForest ("Gradient Source Forest (0=Alt 1=Humid 2=Temp 3=Slope 4=Noise)", Range(0, 4)) = 1
+        [IntRange] _GradSrcRock   ("Gradient Source Rock   (0=Alt 1=Humid 2=Temp 3=Slope 4=Noise)", Range(0, 4)) = 0
+        [IntRange] _GradSrcSnow   ("Gradient Source Snow   (0=Alt 1=Humid 2=Temp 3=Slope 4=Noise)", Range(0, 4)) = 0
+        _GradSlopeScale ("Gradient Slope Scale", Range(0, 200)) = 50.0
+        _GradNoiseScale ("Gradient Noise Scale", Range(0.1, 20)) = 3.0
     }
 
     SubShader
@@ -185,6 +196,15 @@ Shader "Evolution/TerrainOverlay"
             float _SlopeScaleForest;
             float _SlopeScaleRock;
             float _SlopeScaleSnow;
+
+            float _GradSrcWater;
+            float _GradSrcSand;
+            float _GradSrcGrass;
+            float _GradSrcForest;
+            float _GradSrcRock;
+            float _GradSrcSnow;
+            float _GradSlopeScale;
+            float _GradNoiseScale;
 
             struct appdata
             {
@@ -464,14 +484,35 @@ Shader "Evolution/TerrainOverlay"
                 float2 pixelCoord = floor(i.uv * _MapSize.xy * _TileSize);
                 float dither = random(pixelCoord);
                 
-                // Hauteur normalisée par biome : 0=bas du biome, 1=haut du biome → chaque biome utilise tout son gradient
-                float modifiedHeight = saturate(localBiomeHeight + (wavy - 0.5) * _Waviness + (dither - 0.5) * _NoiseStrength);
+                // Sélection de la source d'axe principal du gradient par biome
+                float gradSrc = _GradSrcGrass;
+                if      (pixelBiome == 0) gradSrc = _GradSrcWater;
+                else if (pixelBiome == 1) gradSrc = _GradSrcSand;
+                else if (pixelBiome == 2) gradSrc = _GradSrcGrass;
+                else if (pixelBiome == 3) gradSrc = _GradSrcForest;
+                else if (pixelBiome == 4) gradSrc = _GradSrcRock;
+                else if (pixelBiome == 5) gradSrc = _GradSrcSnow;
+                int gradSrcId = (int)round(gradSrc);
+
+                float sourceValue = localBiomeHeight;
+                if (gradSrcId == 1) {
+                    sourceValue = saturate(humidVal);
+                } else if (gradSrcId == 2) {
+                    sourceValue = saturate(tempVal);
+                } else if (gradSrcId == 3) {
+                    sourceValue = saturate(length(float2(dX, dY)) * _GradSlopeScale);
+                } else if (gradSrcId == 4) {
+                    sourceValue = saturate(smoothNoise(i.uv * _MapSize.xy / max(_GradNoiseScale, 0.001)));
+                }
+
+                // Modulation organique : bruit + dither commun à toutes les sources
+                float modifiedHeight = saturate(sourceValue + (wavy - 0.5) * _Waviness + (dither - 0.5) * _NoiseStrength);
 
                 // Luminance du tile : 0.5 = neutre, <0.5 = tire vers le sombre du gradient, >0.5 = tire vers le clair
                 float tileLuminance = dot(result.rgb, float3(0.299, 0.587, 0.114));
                 float tileOffset = (tileLuminance - 0.5) * _ShadeDarkness;
 
-                // Shade altitude : quantifié en steps, modulé bruit/waviness + offset luminance tile
+                // Shade : quantifié en steps, modulé bruit/waviness + offset luminance tile
                 float heightWithTile = saturate(modifiedHeight + tileOffset);
                 float stepped = heightWithTile;
                 if (_ShadeSteps > 1.0) {

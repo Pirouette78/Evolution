@@ -59,6 +59,9 @@ public class SpeciesDefinition
     public float[]  sensorOffsetDst_arr;
     public float[]  trailWeight_arr;
     public float[]  trailEmitRadius_arr; // int values stored as float for JsonUtility
+    public float[]  subjectToTerrain_arr;          // 0/1 stored as float for JsonUtility
+    public float[]  subjectToTerrainCoeffUp_arr;
+    public float[]  subjectToTerrainCoeffDown_arr;
 
     /// <summary>
     /// Slot GPU assigné à cette espèce (espèce simple) ou à la catégorie 0.
@@ -113,6 +116,14 @@ public class SpeciesDefinition
     public float energyConsumptionRate;
     public float energyReward;
     public float startingEnergy;
+
+    // ── Terrain (pente) ───────────────────────────────────────────────
+    /// <summary>Si true, la vitesse est modifiée par la pente projetée sur la direction de l'agent.</summary>
+    public bool subjectToTerrain = false;
+    /// <summary>Multiplicateur de vitesse en montée maximale (ex: 0.7 = ralenti à 70%). 1 = pas de ralentissement.</summary>
+    public float subjectToTerrainCoeffUp = 1f;
+    /// <summary>Multiplicateur de vitesse en descente maximale (ex: 1.1 = +10%). 1 = pas d'accélération.</summary>
+    public float subjectToTerrainCoeffDown = 1f;
 
     // ── Navigation (agents à waypoints type GlobuleRouge) ─────────────
     public float arrivalRadius;
@@ -254,6 +265,9 @@ public class SpeciesDefinition
             blockTilesW           = blockTilesW,
             blockTilesH           = blockTilesH,
             blocksMovement        = blocksMovement,
+            subjectToTerrain          = subjectToTerrain,
+            subjectToTerrainCoeffUp   = subjectToTerrainCoeffUp,
+            subjectToTerrainCoeffDown = subjectToTerrainCoeffDown,
 
             // Indices GPU — copiés depuis le parent après assignation
             trailSliceIndex = trailSliceIndex,
@@ -277,6 +291,10 @@ public class SpeciesDefinition
         cat.trailEmitRadius= (int)GetFloat(trailEmitRadius_arr, catIndex, trailEmitRadius);
 
         cat.behaviorType   = GetString(behaviorType_arr, catIndex, behaviorType);
+
+        cat.subjectToTerrain          = GetFloat(subjectToTerrain_arr,          catIndex, subjectToTerrain ? 1f : 0f) > 0.5f;
+        cat.subjectToTerrainCoeffUp   = GetFloat(subjectToTerrainCoeffUp_arr,   catIndex, subjectToTerrainCoeffUp);
+        cat.subjectToTerrainCoeffDown = GetFloat(subjectToTerrainCoeffDown_arr, catIndex, subjectToTerrainCoeffDown);
 
         return cat;
     }
@@ -321,6 +339,9 @@ public class SpeciesDefinition
         trailSliceIndex           = trailSliceIndex,
         speciesId                 = speciesIdBase >= 0 ? speciesIdBase : slotIndex,
         trailChannel              = trailChannel,
+        subjectToTerrain          = subjectToTerrain ? 1 : 0,
+        subjectToTerrainCoeffUp   = subjectToTerrainCoeffUp,
+        subjectToTerrainCoeffDown = subjectToTerrainCoeffDown,
     };
 
     // ── Helpers privés ────────────────────────────────────────────────

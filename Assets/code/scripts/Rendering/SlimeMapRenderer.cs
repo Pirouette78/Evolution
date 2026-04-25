@@ -171,7 +171,10 @@ public class SlimeMapRenderer : MonoBehaviour
         public int   trailSliceIndex;       // index tranche TrailMap (4 catégories par tranche RGBA)
         public int   speciesId;             // index unique dans le tableau global des espèces GPU
         public int   trailChannel;          // canal RGBA dans la tranche (0=R, 1=G, 2=B, 3=A)
-        public int   _pad0;                 // padding alignement 16 bytes → 144 bytes total
+        public int   subjectToTerrain;      // 0 = ignore pente, 1 = vitesse modulée par la pente
+        public float subjectToTerrainCoeffUp;   // multiplicateur en montée max (ex: 0.7 = vitesse à 70%)
+        public float subjectToTerrainCoeffDown; // multiplicateur en descente max (ex: 1.1 = +10%)
+        public int   _pad0;                 // padding alignement 16 bytes
     }
 
     public enum DiplomaticState { Neutral, Ally, Peace, War }
@@ -460,6 +463,7 @@ public class SlimeMapRenderer : MonoBehaviour
         // Fallback for TerrainWalkabilityMap in case terrain isn't ready when UpdateAgents runs
         SlimeShader.SetTexture(updateKernel, "TerrainWalkabilityMap", Texture2D.whiteTexture);
         SlimeShader.SetTexture(seedKernel,   "TerrainWalkabilityMap", Texture2D.whiteTexture);
+        SlimeShader.SetTexture(updateKernel, "TerrainHeightMap",      Texture2D.blackTexture);
         SlimeShader.SetInt("useTerrainCollision", 0);
 
         // Clear to black
@@ -519,6 +523,10 @@ public class SlimeMapRenderer : MonoBehaviour
             SlimeShader.SetInt("useTerrainCollision", 0);
             Debug.LogWarning("[RENDERER] Walkability texture not ready — terrain collision disabled.");
         }
+
+        var dataTex = terrain.GetMapDataTexture();
+        if (dataTex != null)
+            SlimeShader.SetTexture(updateKernel, "TerrainHeightMap", dataTex);
     }
 
     // ================== Public API =================================
